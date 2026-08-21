@@ -1,8 +1,8 @@
 {
-    "name": "Nikyokki",
+    "name": "Csprof",
     "description": "Türkçe içerikli eklenti havuzu",
     "manifestVersion": 1,
     "pluginLists": [
-      "https://raw.githubusercontent.com/nikyokki/nik-cloudstream/builds/plugins.json"
+      "https://github.com/csprofesor/nik-cloudstream/blob/master/repo.json"
     ]
 }
