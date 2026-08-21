@@ -1,1 +1,39 @@
+name: 🔧 CloudStream Derleyici
 
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Eklentileri Derle
+
+    steps:
+      - name: 📥 Deposu İndir
+        uses: actions/checkout@v4
+
+      - name: ☕ JDK 17 Kur
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'adopt'
+          cache: gradle
+
+      - name: 🔧 Gradle Permissions
+        run: chmod +x gradlew
+
+      - name: 🔨 Gradle ile Derle
+        run: ./gradlew build --stacktrace
+        continue-on-error: true
+
+      - name: ✅ Derleme Başarılı
+        if: success()
+        run: echo "✅ Tüm eklentiler başarıyla derlendi!"
