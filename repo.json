@@ -3,6 +3,6 @@
     "description": "Türkçe içerikli eklenti havuzu",
     "manifestVersion": 1,
     "pluginLists": [
-      "https://github.com/csprofesor/nik-cloudstream/blob/master/repo.json"
+      "https://github.com/nikyokki/nik-cloudstream:master/repo.json"
     ]
 }
