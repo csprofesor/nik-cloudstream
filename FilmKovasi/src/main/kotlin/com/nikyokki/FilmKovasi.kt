@@ -138,26 +138,26 @@ class FilmKovasi : MainAPI() {
             if (candidate.isBlank() || candidate.startsWith("javascript:") || candidate == data) return
             try {
                 if (candidate.startsWith("http") && !candidate.contains("filmkovasi.co", true)) {
-                    if (loadExtractor(candidate, data, subtitleCallback) { link ->
+                    loadExtractor(candidate, data, subtitleCallback) { link ->
                         callback(link.copy(name = sourceName))
-                    }) found = true
+                    }
+                    found = true
                     return
                 }
 
                 val sourceDoc = app.get(candidate, referer = data).document
                 for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
                     val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
-                    if (loadExtractor(iframeUrl, candidate, subtitleCallback) { link ->
+                    loadExtractor(iframeUrl, candidate, subtitleCallback) { link ->
                         callback(link.copy(name = sourceName))
-                    }) found = true
+                    }
+                    found = true
                 }
             } catch (_: Throwable) {
                 // Try the next visible source; FilmKovası exposes multiple mirrors.
             }
         }
 
-        // Match the exact provider labels visible on the current FilmKovası page.
-        // This avoids treating unrelated page iframes or movie cards as sources.
         for (element in document.select("a, button, [role=button]")) {
             val label = element.text().replace(Regex("\\s+"), " ").trim().lowercase()
             if (label !in sourceNames) continue
@@ -177,13 +177,13 @@ class FilmKovasi : MainAPI() {
             for (iframe in element.select("iframe[src], iframe[data-src]")) {
                 val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
                 if (iframeUrl.isBlank()) continue
-                if (loadExtractor(iframeUrl, data, subtitleCallback) { link ->
+                loadExtractor(iframeUrl, data, subtitleCallback) { link ->
                     callback(link.copy(name = sourceName))
-                }) found = true
+                }
+                found = true
             }
         }
 
-        // Compatibility with the previous FilmKovası source-page implementation.
         for (source in document.select("div.sources a[href]")) {
             val sourceName = source.selectFirst("span")?.text()?.trim().takeUnless { it.isNullOrBlank() } ?: name
             val href = fixUrlNull(source.attr("href")) ?: continue
@@ -191,9 +191,10 @@ class FilmKovasi : MainAPI() {
                 val sourceDoc = app.get(href, referer = data).document
                 for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
                     val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
-                    if (loadExtractor(iframeUrl, href, subtitleCallback) { link ->
+                    loadExtractor(iframeUrl, href, subtitleCallback) { link ->
                         callback(link.copy(name = sourceName))
-                    }) found = true
+                    }
+                    found = true
                 }
             } catch (_: Throwable) {
                 // Continue with other source buttons.
