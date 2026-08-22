@@ -2,22 +2,22 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/4KFilmIzlesene.cs3",
         "status": 1,
-        "version": 6,
+        "version": 7,
         "name": "4KFilmIzlesene",
         "internalName": "4KFilmIzlesene",
         "authors": [
-            "nikyokki"
+            "gsrepo"
         ],
-        "description": "En yeni ve sorunsuz \u26a1  Full HD Film izle keyfi her yerde sizinle ! 4K ve 1080p online film izleme fark\u0131yla 4KFilmizlesene&amp;#039;nin Tad\u0131n\u0131 \u00c7\u0131kart.",
-        "fileSize": 12644,
+        "description": "En yeni ve sorunsuz \u26a1 Full HD Film izle keyfi her yerde sizinle ! 4K ve 1080p online film izleme fark\u0131yla 4KFilmizlesene'nin Tad\u0131n\u0131 \u00c7\u0131kart.",
+        "fileSize": 12649,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
             "Movie"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.4kfilmizlesene.org&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.4kfilmizlesene.us&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-62bbd9ca788945a6c84052b110718a9b4aa481528b37ac9122893e6573184f6f"
+        "fileHash": "sha256-f30ba306b4a9f67d3091bcfaaa78b1202005d6290f967ad485cfc2f0e6fbc414"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AnimeciX.cs3",
@@ -423,23 +423,24 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmModu.cs3",
         "status": 1,
-        "version": 15,
+        "version": 16,
         "name": "FilmModu",
         "internalName": "FilmModu",
         "authors": [
+            "gsrepo",
             "keyiflerolsun",
             "nikyokki"
         ],
-        "description": "Film modun geldiyse y\u00fcksek kalitede en yeni filmleri izle, 1080p izleyebilece\u011finiz reklamsiz film sitesi.",
-        "fileSize": 20546,
+        "description": "Film modun geldiyse y\u00fcksek kalitede en yeni filmleri izle, 1080p izleyebilece\u011finiz reklams\u0131z film sitesi.",
+        "fileSize": 19212,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
             "Movie"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.filmmodu17.com&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=filmmodu.cc&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-bcb966d5aadb0178b396b44052c37383d2f971dcd15021aa05255e45d98a547e"
+        "fileHash": "sha256-b7e44ef8e0ece959e855d646a76770f6ea80571306a15ab1a09c2cd7a6271b35"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FullHDFilm.cs3",
