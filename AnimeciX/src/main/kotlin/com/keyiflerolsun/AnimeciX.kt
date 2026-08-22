@@ -16,34 +16,57 @@ class AnimeciX : MainAPI() {
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Anime)
 
-    override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/-cloudstream/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
-    override var sequentialMainPageDelay       = 200L  // ? 0.20 saniye
-    override var sequentialMainPageScrollDelay = 200L  // ? 0.20 saniye
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay       = 200L
+    override var sequentialMainPageScrollDelay = 200L
 
     override val mainPage = mainPageOf(
+        "${mainUrl}/secure/last-episodes"                          to "Son Eklenen Bölümler",
         "${mainUrl}/secure/titles?type=series&onlyStreamable=true" to "Seriler",
         "${mainUrl}/secure/titles?type=movie&onlyStreamable=true"  to "Filmler",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val response = app.get(
-            "${request.data}&page=${page}&perPage=16",
-            headers = mapOf(
-                "x-e-h" to "7Y2ozlO+QysR5w9Q6Tupmtvl9jJp7ThFH8SB+Lo7NvZjgjqRSqOgcT2v4ISM9sP10LmnlYI8WQ==.xrlyOBFS5BHjQ2Lk"
-            )
-        ).parsedSafe<Category>()
+        return if (request.data.contains("/last-episodes")) {
+            val response = app.get(
+                "${mainUrl}/secure/last-episodes?page=$page&perPage=10",
+                headers = mapOf(
+                    "x-e-h" to "7Y2ozlO+QysR5w9Q6Tupmtvl9jJp7ThFH8SB+Lo7NvZjgjqRSqOgcT2v4ISM9sP10LmnlYI8WQ==.xrlyOBFS5BHjQ2Lk"
+                )
+            ).parsedSafe<LastEpisodesResponse>()?.data ?: emptyList()
 
-        val home     = response?.pagination?.data?.map { anime ->
-            newAnimeSearchResponse(
-                anime.title,
-                "${mainUrl}/secure/titles/${anime.id}?titleId=${anime.id}",
-                TvType.Anime
-            ) {
-                this.posterUrl = fixUrlNull(anime.poster)
+            val home = response.map {
+                val formattedTitle = "S${it.seasonNumber}B${it.episodeNumber} - ${it.titleName}"
+                newAnimeSearchResponse(
+                    formattedTitle,
+                    "${mainUrl}/secure/titles/${it.titleId}?titleId=${it.titleId}",
+                    TvType.Anime
+                ) {
+                    this.posterUrl = fixUrlNull(it.titlePoster)
+                }
             }
-        } ?: listOf<SearchResponse>()
 
-        return newHomePageResponse(request.name, home)
+            newHomePageResponse(request.name, home)
+        } else {
+            val response = app.get(
+                "${request.data}&page=${page}&perPage=16",
+                headers = mapOf(
+                    "x-e-h" to "7Y2ozlO+QysR5w9Q6Tupmtvl9jJp7ThFH8SB+Lo7NvZjgjqRSqOgcT2v4ISM9sP10LmnlYI8WQ==.xrlyOBFS5BHjQ2Lk"
+                )
+            ).parsedSafe<Category>()
+
+            val home = response?.pagination?.data?.map { anime ->
+                newAnimeSearchResponse(
+                    anime.title,
+                    "${mainUrl}/secure/titles/${anime.id}?titleId=${anime.id}",
+                    TvType.Anime
+                ) {
+                    this.posterUrl = fixUrlNull(anime.poster)
+                }
+            } ?: listOf()
+
+            newHomePageResponse(request.name, home)
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
@@ -92,7 +115,6 @@ class AnimeciX : MainAPI() {
                 })
             }
         }
-
 
         return newTvSeriesLoadResponse(
             response.title.title,
