@@ -138,20 +138,18 @@ class FilmKovasi : MainAPI() {
             if (candidate.isBlank() || candidate.startsWith("javascript:") || candidate == data) return
             try {
                 if (candidate.startsWith("http") && !candidate.contains("filmkovasi.co", true)) {
-                    loadExtractor(candidate, data, subtitleCallback) { link ->
-                        callback(link.copy(name = sourceName))
-                    }
-                    found = true
+                    if (loadExtractor(candidate, data, subtitleCallback) { link ->
+                        callback(link)
+                    }) found = true
                     return
                 }
 
                 val sourceDoc = app.get(candidate, referer = data).document
                 for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
                     val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
-                    loadExtractor(iframeUrl, candidate, subtitleCallback) { link ->
-                        callback(link.copy(name = sourceName))
-                    }
-                    found = true
+                    if (loadExtractor(iframeUrl, candidate, subtitleCallback) { link ->
+                        callback(link)
+                    }) found = true
                 }
             } catch (_: Throwable) {
                 // Try the next visible source; FilmKovası exposes multiple mirrors.
@@ -177,10 +175,9 @@ class FilmKovasi : MainAPI() {
             for (iframe in element.select("iframe[src], iframe[data-src]")) {
                 val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
                 if (iframeUrl.isBlank()) continue
-                loadExtractor(iframeUrl, data, subtitleCallback) { link ->
-                    callback(link.copy(name = sourceName))
-                }
-                found = true
+                if (loadExtractor(iframeUrl, data, subtitleCallback) { link ->
+                    callback(link)
+                }) found = true
             }
         }
 
@@ -191,10 +188,9 @@ class FilmKovasi : MainAPI() {
                 val sourceDoc = app.get(href, referer = data).document
                 for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
                     val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
-                    loadExtractor(iframeUrl, href, subtitleCallback) { link ->
-                        callback(link.copy(name = sourceName))
-                    }
-                    found = true
+                    if (loadExtractor(iframeUrl, href, subtitleCallback) { link ->
+                        callback(link)
+                    }) found = true
                 }
             } catch (_: Throwable) {
                 // Continue with other source buttons.
