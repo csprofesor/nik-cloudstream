@@ -32,7 +32,7 @@ jobs:
       - name: 📦 Bağımlılıkları kur
         run: |
           python -m pip install --upgrade pip
-          pip install requests
+          pip install requests duckduckgo-search>=3.9.0 waybackpy>=4.6
 
       - name: ⚙️ Git yapılandır
         run: |
@@ -42,7 +42,11 @@ jobs:
       - name: 🔍 Domainleri kontrol et ve düzelt
         id: domain_fix
         run: |
-          python auto_fix_domains.py --report-file /tmp/domain-check-report.json --no-commit
+          python auto_fix_domains.py \
+            --report-file /tmp/domain-check-report.json \
+            --discovery-log /tmp/domain-discovery-log.json \
+            --no-commit \
+            --max-search-time 30
           python - <<'PY'
           import json
           import os
@@ -61,10 +65,26 @@ jobs:
             f"- Updated plugins: {len(updated)}",
           ]
 
+          stats = report.get('strategy_stats', {})
+          if stats:
+            lines.append("\n## Strategy Stats")
+            for strategy, count in stats.items():
+              lines.append(f"- **{strategy}**: {count} domain(s) found")
+
           if updated:
             lines.append("\n## Updated domains")
             for item in updated:
-              lines.append(f"- **{item['plugin']}**: `{item['old_domain']}` → `{item['new_domain']}` ({item['source']})")
+              conf = item.get('confidence', 0)
+              lines.append(f"- **{item['plugin']}**: `{item['old_domain']}` → `{item['new_domain']}` ({item['source']}, {conf}% confidence)")
+
+          disc_log_path = Path('/tmp/domain-discovery-log.json')
+          if disc_log_path.exists():
+            disc = json.loads(disc_log_path.read_text(encoding='utf-8'))
+            eff = disc.get('strategy_effectiveness', {})
+            if eff:
+              lines.append("\n## Strategy Effectiveness")
+              for strat, data in eff.items():
+                lines.append(f"- **{strat}**: {data['successes']}/{data['attempts']} ({data['rate']}%)")
 
           Path('/tmp/domain-report.md').write_text("\n".join(lines), encoding='utf-8')
           PY

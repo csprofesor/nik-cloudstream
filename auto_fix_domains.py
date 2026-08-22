@@ -3,11 +3,12 @@
 
 import argparse
 import json
+import logging
 import re
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -18,8 +19,21 @@ import requests
 ROOT_DIR = Path(__file__).resolve().parent
 DOMAINS_PATH = ROOT_DIR / "domains.json"
 DEFAULT_REPORT_PATH = ROOT_DIR / "domain_check_report.json"
+DEFAULT_DISCOVERY_LOG_PATH = ROOT_DIR / "domain_discovery_log.json"
 SKIP_DIRS = {".git", ".github", "gradle", "build", "__Temel"}
-ALT_TLDS = ("com", "net", "org", "live", "tv", "co", "cc", "de", "io", "xyz", "site")
+ALT_TLDS = ("com", "net", "org", "live", "tv", "co", "cc", "de", "io", "xyz", "site", "nl", "me", "info", "plus", "to")
+
+# Strategy confidence scores (0-100)
+CONFIDENCE = {
+    "mapping": 100,
+    "heuristic": 75,
+    "duckduckgo": 90,
+    "wayback": 80,
+    "reachable": 100,
+    "none": 0,
+}
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -30,17 +44,46 @@ class DomainUpdate:
     old_domain: str
     new_domain: str
     source: str
-    files: List[str]
+    confidence: int
+    files: List[str] = field(default_factory=list)
+
+
+@dataclass
+class DiscoveryEntry:
+    plugin: str
+    old_domain: str
+    strategy: str
+    candidate: str
+    success: bool
+    confidence: int
+    elapsed_ms: int
+    error: Optional[str] = None
 
 
 class DomainAutoFixer:
-    def __init__(self, root_dir: Path, domains_path: Path, retries: int, timeout: int, commit: bool, report_file: Path):
+    def __init__(
+        self,
+        root_dir: Path,
+        domains_path: Path,
+        retries: int,
+        timeout: int,
+        commit: bool,
+        report_file: Path,
+        discovery_log_file: Path,
+        use_duckduckgo: bool = True,
+        use_wayback: bool = True,
+        max_search_time: int = 30,
+    ):
         self.root_dir = root_dir
         self.domains_path = domains_path
         self.retries = max(1, retries)
         self.timeout = max(1, timeout)
         self.commit = commit
         self.report_file = report_file
+        self.discovery_log_file = discovery_log_file
+        self.use_duckduckgo = use_duckduckgo
+        self.use_wayback = use_wayback
+        self.max_search_time = max_search_time
 
         self.session = requests.Session()
         self.session.headers.update({
@@ -49,6 +92,8 @@ class DomainAutoFixer:
 
         self.domain_mappings = self._load_domain_mappings()
         self.updates: List[DomainUpdate] = []
+        self.discovery_log: List[DiscoveryEntry] = []
+        self.strategy_stats: Dict[str, int] = {s: 0 for s in CONFIDENCE}
         self.checked_plugins = 0
         self.reachable_plugins = 0
         self.errors: List[str] = []
@@ -225,20 +270,209 @@ class DomainAutoFixer:
 
         return candidates
 
-    def _resolve_replacement(self, old_url: str) -> Tuple[Optional[str], str]:
-        old_domain = self._normalize_domain(urlparse(old_url).netloc or old_url)
+    @staticmethod
+    def _site_name_from_url(old_url: str) -> str:
+        """Extract a human-readable site name from a URL for use in search queries."""
+        parsed = urlparse(old_url)
+        netloc = parsed.netloc or old_url
+        # Remove www. prefix and TLD
+        host = netloc.lower().replace("www.", "")
+        base = re.sub(r"\.\w+$", "", host)
+        # Strip trailing numbers (e.g. dizipal683 → dizipal)
+        base = re.sub(r"\d+$", "", base)
+        return base
 
+    @staticmethod
+    def _extract_domains_from_text(text: str) -> List[str]:
+        """Extract domain names from arbitrary text using regex."""
+        pattern = re.compile(
+            r"(?:https?://)?(?:www\.)?([a-z0-9][a-z0-9\-]{2,}\.[a-z]{2,}(?:\.[a-z]{2,})?)",
+            re.IGNORECASE,
+        )
+        return [m.group(0) if m.group(0).startswith("http") else f"https://{m.group(0)}"
+                for m in pattern.finditer(text)]
+
+    def _duckduckgo_candidates(self, old_url: str, plugin: str) -> List[str]:
+        """Search DuckDuckGo for the new domain of a streaming site."""
+        try:
+            from duckduckgo_search import DDGS  # type: ignore
+        except ImportError:
+            self._log("[!] duckduckgo-search kütüphanesi bulunamadı; DuckDuckGo stratejisi atlandı")
+            return []
+
+        site_name = self._site_name_from_url(old_url) or plugin.lower()
+        queries = [
+            f"{site_name} streaming izle",
+            f"{site_name} film izle",
+            f"{site_name} yeni adres",
+        ]
+
+        candidates: List[str] = []
+        seen: set = set()
+
+        for query in queries:
+            try:
+                with DDGS() as ddg:
+                    results = list(ddg.text(query, max_results=8))
+                for result in results:
+                    for key in ("href", "url", "link"):
+                        href = result.get(key, "")
+                        if href:
+                            parsed = urlparse(href)
+                            if parsed.netloc and site_name.replace("-", "") in parsed.netloc.lower().replace("-", ""):
+                                full = f"{parsed.scheme}://{parsed.netloc}"
+                                if full not in seen:
+                                    seen.add(full)
+                                    candidates.append(full)
+                            # Also parse body/description for domain mentions
+                            for field_name in ("body", "snippet", "description"):
+                                snippet = result.get(field_name, "")
+                                if snippet:
+                                    for extracted in self._extract_domains_from_text(snippet):
+                                        ep = urlparse(extracted)
+                                        if ep.netloc and site_name.replace("-", "") in ep.netloc.lower().replace("-", ""):
+                                            full = f"{ep.scheme or 'https'}://{ep.netloc}"
+                                            if full not in seen:
+                                                seen.add(full)
+                                                candidates.append(full)
+                if candidates:
+                    break
+                time.sleep(1)  # polite delay between queries
+            except Exception as exc:
+                self._log(f"[!] DuckDuckGo sorgu hatası ({query!r}): {exc}")
+                time.sleep(2)  # back-off on error
+                continue
+
+        return candidates
+
+    def _wayback_candidates(self, old_url: str) -> List[str]:
+        """Check the Wayback Machine for the most recent snapshot of old_url and extract links."""
+        try:
+            import waybackpy  # type: ignore
+        except ImportError:
+            self._log("[!] waybackpy kütüphanesi bulunamadı; Wayback Machine stratejisi atlandı")
+            return []
+
+        candidates: List[str] = []
+        try:
+            ua = "Mozilla/5.0 (compatible; CloudStreamDomainAutoFix/1.0)"
+            url_obj = waybackpy.Url(old_url, ua)
+            newest = url_obj.newest()
+            archive_url = newest.archive_url
+
+            resp = self.session.get(archive_url, timeout=self.timeout, allow_redirects=True)
+            text = resp.text
+
+            # Look for redirect notices and meta-refresh in archived page
+            meta_pattern = re.compile(r'<meta[^>]+url=(["\'])([^"\']+)\1', re.IGNORECASE)
+            for m in meta_pattern.finditer(text):
+                href = m.group(2)
+                if href.startswith("http"):
+                    p = urlparse(href)
+                    if p.netloc and "web.archive.org" not in p.netloc:
+                        candidates.append(f"{p.scheme}://{p.netloc}")
+
+            # Extract anchor links from archived content
+            link_pattern = re.compile(r'href=(["\'])([^"\']+)\1', re.IGNORECASE)
+            old_domain = self._normalize_domain(urlparse(old_url).netloc)
+            base = re.sub(r"\d+$", "", old_domain.split(".")[0]) if old_domain else ""
+            for m in link_pattern.finditer(text):
+                href = m.group(2)
+                # Strip Wayback Machine prefix
+                if "web.archive.org" in href:
+                    href = re.sub(r"https?://web\.archive\.org/web/\d+\*/", "", href)
+                    href = re.sub(r"https?://web\.archive\.org/web/\d+/", "", href)
+                if not href.startswith("http"):
+                    continue
+                p = urlparse(href)
+                if not p.netloc or "web.archive.org" in p.netloc:
+                    continue
+                if base and base in p.netloc.lower():
+                    full = f"{p.scheme}://{p.netloc}"
+                    if full not in candidates:
+                        candidates.append(full)
+        except Exception as exc:
+            self._log(f"[!] Wayback Machine hatası ({old_url}): {exc}")
+
+        return candidates
+
+    def _resolve_replacement(self, old_url: str, plugin: str = "") -> Tuple[Optional[str], str]:
+        old_domain = self._normalize_domain(urlparse(old_url).netloc or old_url)
+        deadline = time.monotonic() + self.max_search_time
+
+        # Strategy 1: domains.json mapping
         for mapped in self._mapping_candidates(old_domain):
+            if time.monotonic() > deadline:
+                break
+            t0 = time.monotonic()
             final_url = self._verify_url(mapped)
+            elapsed = int((time.monotonic() - t0) * 1000)
+            self._record_discovery(plugin, old_domain, "mapping", mapped, bool(final_url), elapsed)
             if final_url:
                 return final_url, "mapping"
 
+        # Strategy 2: TLD heuristic enumeration
         for candidate in self._heuristic_candidates(old_url):
+            if time.monotonic() > deadline:
+                break
+            t0 = time.monotonic()
             final_url = self._verify_url(candidate)
+            elapsed = int((time.monotonic() - t0) * 1000)
+            self._record_discovery(plugin, old_domain, "heuristic", candidate, bool(final_url), elapsed)
             if final_url:
                 return final_url, "heuristic"
 
+        # Strategy 3: DuckDuckGo search
+        if self.use_duckduckgo and time.monotonic() < deadline:
+            ddg_candidates = self._duckduckgo_candidates(old_url, plugin)
+            for candidate in ddg_candidates:
+                if time.monotonic() > deadline:
+                    break
+                t0 = time.monotonic()
+                verified = self._verify_url(candidate)
+                elapsed = int((time.monotonic() - t0) * 1000)
+                self._record_discovery(plugin, old_domain, "duckduckgo", candidate, bool(verified), elapsed)
+                if verified:
+                    return verified, "duckduckgo"
+
+        # Strategy 4: Wayback Machine archive
+        if self.use_wayback and time.monotonic() < deadline:
+            wayback_candidates = self._wayback_candidates(old_url)
+            for candidate in wayback_candidates:
+                if time.monotonic() > deadline:
+                    break
+                t0 = time.monotonic()
+                verified = self._verify_url(candidate)
+                elapsed = int((time.monotonic() - t0) * 1000)
+                self._record_discovery(plugin, old_domain, "wayback", candidate, bool(verified), elapsed)
+                if verified:
+                    return verified, "wayback"
+
         return None, "none"
+
+    def _record_discovery(
+        self,
+        plugin: str,
+        old_domain: str,
+        strategy: str,
+        candidate: str,
+        success: bool,
+        elapsed_ms: int,
+        error: Optional[str] = None,
+    ) -> None:
+        confidence = CONFIDENCE.get(strategy, 0) if success else 0
+        self.discovery_log.append(
+            DiscoveryEntry(
+                plugin=plugin,
+                old_domain=old_domain,
+                strategy=strategy,
+                candidate=candidate,
+                success=success,
+                confidence=confidence,
+                elapsed_ms=elapsed_ms,
+                error=error,
+            )
+        )
 
     @staticmethod
     def _replace_main_url(kt_file: Path, new_url: str) -> bool:
@@ -339,14 +573,54 @@ class DomainAutoFixer:
                     "old_domain": u.old_domain,
                     "new_domain": u.new_domain,
                     "source": u.source,
+                    "confidence": u.confidence,
                     "files": u.files,
                 }
                 for u in self.updates
             ],
             "errors": self.errors,
             "committed": committed,
+            "strategy_stats": self.strategy_stats,
         }
         self.report_file.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+        self._write_discovery_log()
+
+    def _write_discovery_log(self) -> None:
+        strategy_totals: Dict[str, int] = {}
+        strategy_success: Dict[str, int] = {}
+        for entry in self.discovery_log:
+            strategy_totals[entry.strategy] = strategy_totals.get(entry.strategy, 0) + 1
+            if entry.success:
+                strategy_success[entry.strategy] = strategy_success.get(entry.strategy, 0) + 1
+
+        effectiveness = {
+            s: {
+                "attempts": strategy_totals.get(s, 0),
+                "successes": strategy_success.get(s, 0),
+                "rate": round(strategy_success.get(s, 0) / strategy_totals[s] * 100, 1)
+                if strategy_totals.get(s, 0) else 0,
+            }
+            for s in strategy_totals
+        }
+
+        log_data = {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "strategy_effectiveness": effectiveness,
+            "entries": [
+                {
+                    "plugin": e.plugin,
+                    "old_domain": e.old_domain,
+                    "strategy": e.strategy,
+                    "candidate": e.candidate,
+                    "success": e.success,
+                    "confidence": e.confidence,
+                    "elapsed_ms": e.elapsed_ms,
+                    **({"error": e.error} if e.error else {}),
+                }
+                for e in self.discovery_log
+            ],
+        }
+        self.discovery_log_file.write_text(json.dumps(log_data, indent=2, ensure_ascii=False), encoding="utf-8")
 
     def run(self) -> int:
         plugins = self._plugin_dirs()
@@ -370,7 +644,7 @@ class DomainAutoFixer:
             source = "reachable"
 
             if not verified:
-                replacement, source = self._resolve_replacement(main_url)
+                replacement, source = self._resolve_replacement(main_url, plugin=plugin)
                 verified = replacement
 
             if not verified:
@@ -410,11 +684,12 @@ class DomainAutoFixer:
                 old_domain=old_domain,
                 new_domain=new_domain,
                 source=source,
+                confidence=CONFIDENCE.get(source, 0),
                 files=changed_files,
             )
             self.updates.append(update)
-
-            self._log(f"[✓] {plugin}: {old_clean} -> {verified} (kaynak: {source})")
+            self.strategy_stats[source] = self.strategy_stats.get(source, 0) + 1
+            self._log(f"[✓] {plugin}: {old_clean} -> {verified} (kaynak: {source}, güven: {CONFIDENCE.get(source, 0)}%)")
 
         committed = self._commit_changes()
         self._write_report(committed=committed)
@@ -425,6 +700,7 @@ class DomainAutoFixer:
         self._log(f"Güncellenen:    {len(self.updates)}")
         self._log(f"Hata:           {len(self.errors)}")
         self._log(f"Rapor:          {self.report_file}")
+        self._log(f"Keşif log:      {self.discovery_log_file}")
         self._log("=" * 70)
 
         return 0
@@ -437,7 +713,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--retries", type=int, default=3, help="Retry sayısı")
     parser.add_argument("--timeout", type=int, default=10, help="İstek timeout (saniye)")
     parser.add_argument("--report-file", default=str(DEFAULT_REPORT_PATH), help="JSON rapor dosyası")
+    parser.add_argument("--discovery-log", default=str(DEFAULT_DISCOVERY_LOG_PATH), help="Keşif log JSON dosyası")
     parser.add_argument("--no-commit", action="store_true", help="Script içinden commit oluşturma")
+    parser.add_argument("--no-duckduckgo", action="store_true", help="DuckDuckGo aramasını devre dışı bırak")
+    parser.add_argument("--no-wayback", action="store_true", help="Wayback Machine aramasını devre dışı bırak")
+    parser.add_argument("--max-search-time", type=int, default=30, help="Domain başına maksimum arama süresi (saniye)")
     return parser.parse_args()
 
 
@@ -450,6 +730,10 @@ def main() -> int:
         timeout=args.timeout,
         commit=not args.no_commit,
         report_file=Path(args.report_file).resolve(),
+        discovery_log_file=Path(args.discovery_log).resolve(),
+        use_duckduckgo=not args.no_duckduckgo,
+        use_wayback=not args.no_wayback,
+        max_search_time=args.max_search_time,
     )
     return fixer.run()
 
