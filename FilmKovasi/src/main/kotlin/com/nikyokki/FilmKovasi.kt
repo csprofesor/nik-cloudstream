@@ -1,11 +1,6 @@
 package com.nikyokki
 
 import android.util.Log
-import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
@@ -25,6 +20,7 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class FilmKovasi : MainAPI() {
@@ -63,36 +59,47 @@ class FilmKovasi : MainAPI() {
         return newHomePageResponse(request.name, home)
     }
 
+    private fun Element.imageUrl(): String? {
+        val attrs = listOf("data-src", "data-lazy-src", "data-original", "data-image", "src")
+        for (attr in attrs) {
+            val value = attr(attr).trim()
+            if (value.isNotBlank() && !value.startsWith("data:image")) return fixUrlNull(value)
+        }
+        val srcset = attr("srcset").substringBefore(',').trim().split(' ').firstOrNull()
+        return srcset?.takeIf { it.isNotBlank() }?.let { fixUrlNull(it) }
+    }
+
     private fun Element.toMainPageResult(): SearchResponse? {
-        val title = this.selectFirst("div.film-ismi a")?.text()?.replace(" izle", "") ?: ""
-        val href = fixUrlNull(this.selectFirst("div.film-ismi a")?.attr("href")) ?: ""
-        val posterUrl = fixUrlNull(this.selectFirst("div.poster img")?.attr("data-src"))
+        val title = this.selectFirst("div.film-ismi a, .film-ismi a, a")?.text()?.replace(" izle", "")?.trim().orEmpty()
+        val href = fixUrlNull(this.selectFirst("div.film-ismi a, .film-ismi a, a")?.attr("href")) ?: return null
+        val posterUrl = this.selectFirst("div.poster img, .poster img, img")?.imageUrl()
+        if (title.isBlank()) return null
         return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/?s=${query}").document
-        return document.select("div.movie-box").mapNotNull { it.toMainPageResult() }
+        return document.select("div.movie-box, article, .movie-item").mapNotNull { it.toMainPageResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-        val title = document.selectFirst("h1.title-border")?.text()?.replace(" izle", "")?.trim() ?: ""
-        val poster = fixUrlNull(document.selectFirst("div.film-afis img")?.attr("src"))
-        val description = document.selectFirst("div#film-aciklama")?.text()?.trim()
+        val title = document.selectFirst("h1.title-border, h1, .title-border")?.text()?.replace(" izle", "")?.trim() ?: return null
+        val poster = document.selectFirst("div.film-afis img, .film-afis img, .poster img, .film-poster img")?.imageUrl()
+        val description = document.selectFirst("div#film-aciklama, #film-aciklama, .film-aciklama")?.text()?.trim()
         var year = document.selectFirst("div.release a")?.text()?.trim()?.toIntOrNull()
-        val tags = document.select("div#listelements a").map { it.text() }
+        val tags = document.select("div#listelements a, #listelements a").map { it.text() }
         var rating = document.selectFirst("div.imdb")?.text()?.replace("IMDb Puanı:", "")?.split("/")?.first()?.trim()
         var actors = document.select("div.actor a").map { it.text() }
-        val trailer = document.selectFirst("div.film-afis iframe")?.attr("src")
+        val trailer = document.selectFirst("div.film-afis iframe")?.let { iframe -> fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) }
         val listItems = document.select("div.list-item")
         for (item in listItems) {
             if (item.selectFirst("a")?.attr("href")?.contains("/yil/") == true) year = item.selectFirst("a")?.text()?.toIntOrNull()
             if (item.selectFirst("a")?.attr("href")?.contains("/oyuncu/") == true) actors = item.select("a").map { it.text() }
         }
-        document.select("div#listelements div").forEach {
+        document.select("div#listelements div, #listelements div").forEach {
             if (it.text().contains("IMDb:")) rating = it.text().trim().split(" ").last()
         }
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -106,40 +113,66 @@ class FilmKovasi : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("FKV", "data » ${data}")
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         val document = app.get(data).document
-        val iframe = document.selectFirst("iframe")?.attr("src")
-        val fName = document.selectFirst("div.sources span")?.text() ?: this.name
-        if (iframe != null) loadLinkExtractor(iframe, fName, subtitleCallback, callback)
-        document.select("div.sources a").forEach {
-            val name = it.selectFirst("span")?.text() ?: this.name
-            val doc = app.get(it.attr("href")).document
-            val iffi = doc.selectFirst("iframe")?.attr("src") ?: ""
-            if (iffi.isNotBlank()) loadLinkExtractor(iffi, name, subtitleCallback, callback)
+        val candidates = linkedSetOf<String>()
+
+        fun addCandidate(value: String?) {
+            val url = value?.trim()?.let { fixUrlNull(it) } ?: return
+            if (url.isBlank() || url.startsWith("javascript:") || url.startsWith("#")) return
+            val lower = url.lowercase()
+            if (lower.contains("filmkovasi.co") && !lower.contains("/embed") && !lower.contains("/player") && !lower.contains("/watch")) return
+            if (lower.contains("vidsrc") || lower.contains("vidplay") || lower.contains("filemoon") || lower.contains("streamtape") ||
+                lower.contains("streamwish") || lower.contains("dood") || lower.contains("mixdrop") || lower.contains("voe") ||
+                lower.contains("vk.com") || lower.contains("vkvideo") || lower.contains("ok.ru") || lower.contains("mail.ru") ||
+                lower.contains("2embed") || lower.contains("autoembed") || lower.contains("embed") || lower.contains("player") ||
+                lower.contains("iframe") || lower.contains("m3u8") || lower.endsWith(".mp4")
+            ) candidates += url
         }
-        return true
-    }
 
-    private suspend fun loadLinkExtractor(iframe: String, name: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val ianaLink = iframe.substringBefore("/watch/")
-        val idoc = app.get(iframe, referer = iframe).document
-        val script = idoc.select("script").find { it.data().contains("sources:") }?.data() ?: return
-        val vidJson = script.substringAfter("var video = ").substringBefore(";")
-        val source = script.substringAfter("sources: [").substringBefore("],").replace("`", "\"").addMarks("file").addMarks("type").addMarks("preload")
-        val tracks = script.substringAfter("tracks: [").substringBefore("]")
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-        val video: FKVSource = objectMapper.readValue(vidJson)
-        val file: FileSource = objectMapper.readValue(source)
-        val track: Track = objectMapper.readValue(tracks)
-        track.file?.let { subtitleCallback.invoke(SubtitleFile(lang = "Türkçe Altyazı", url = it)) }
-        val sonLink = ianaLink + file.file?.replace("\${video.uid}", "${video.uid}")?.replace("\${video.md5}", "${video.md5}")?.replace("\${video.id}", "${video.id}")?.replace("\${video.status}", "${video.status}")
-        if (!sonLink.isNullOrBlank()) callback.invoke(ExtractorLink(source = this.name, name = this.name, url = sonLink, referer = iframe, quality = Qualities.Unknown.value, type = ExtractorLinkType.M3U8))
-    }
+        document.select("iframe[src], iframe[data-src], video source[src], source[src], a[href], [data-src], [data-url], [data-embed], [data-link], [data-p]").forEach { element ->
+            addCandidate(element.attr("src"))
+            addCandidate(element.attr("data-src"))
+            addCandidate(element.attr("data-url"))
+            addCandidate(element.attr("data-embed"))
+            addCandidate(element.attr("data-link"))
+            addCandidate(element.attr("href"))
+        }
 
-    private data class FKVSource(@JsonProperty("uid") val uid: String? = null, @JsonProperty("md5") val md5: String? = null, @JsonProperty("title") val title: String? = null, @JsonProperty("id") val id: String? = null, @JsonProperty("status") val status: String? = null)
-    private data class FileSource(@JsonProperty("file") val file: String? = null, @JsonProperty("type") val type: String? = null, @JsonProperty("preload") val preload: String? = null)
-    private data class Track(@JsonProperty("label") val label: String? = null, @JsonProperty("file") val file: String? = null, @JsonProperty("kind") val kind: String? = null)
-    private fun String.addMarks(str: String): String = this.replace(Regex("\"?$str\"?"), "\"$str\"")
+        // Some providers are injected into JavaScript instead of a normal iframe element.
+        val html = document.html()
+        Regex("https?://[^\\\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(html).forEach { match -> addCandidate(match.value) }
+
+        Log.d("FKV", "video candidates = ${candidates.size}")
+        var loaded = false
+        candidates.forEachIndexed { index, candidate ->
+            try {
+                if (candidate.contains(".m3u8") || candidate.endsWith(".mp4")) {
+                    callback.invoke(
+                        ExtractorLink(
+                            source = "FilmKovası",
+                            name = "FilmKovası ${index + 1}",
+                            url = candidate,
+                            referer = data,
+                            quality = Qualities.Unknown.value,
+                            type = if (candidate.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        )
+                    )
+                    loaded = true
+                } else {
+                    loadExtractor(candidate, data, subtitleCallback, callback)
+                    loaded = true
+                }
+            } catch (_: Throwable) {
+                // Try the next provider; one dead provider must not stop the others.
+            }
+        }
+
+        return loaded
+    }
 }
