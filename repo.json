@@ -1,6 +1,6 @@
 {
   "name": "gsrepo",
-  "description": "gsrepo Türkçe CloudStream eklenti havuzu",
+  "description": "gsrepo Türkçe CloudStream eklenti havuzu - güncel",
   "manifestVersion": 1,
   "pluginLists": [
     "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/plugins.json"
