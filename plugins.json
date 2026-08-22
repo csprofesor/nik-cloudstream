@@ -784,14 +784,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3",
         "status": 1,
-        "version": 32,
+        "version": 33,
         "name": "SetFilmIzle",
         "internalName": "SetFilmIzle",
         "authors": [
             "keyiflerolsun"
         ],
         "description": "Setfilmizle sitemizde, donma ya\u015famadan T\u00fcrk\u00e7e dublaj ve altyaz\u0131l\u0131 filmleri ile dizileri muhte\u015fem 1080p full HD kalitesinde izleyebilirsiniz.",
-        "fileSize": 23756,
+        "fileSize": 23748,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -800,7 +800,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=setfilmizle.ltd&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-4cf38413c39af1a48ba944c20d98ec036b1736ce7eea20b70bb85eaae35bd48d"
+        "fileHash": "sha256-aff3589da118860d785aacb748287cc154f272bd7352312c460416ca68dc8bae"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SezonlukDizi.cs3",
