@@ -145,10 +145,9 @@ class FilmKovasi : MainAPI() {
                 }
 
                 val sourceDoc = app.get(candidate, referer = data).document
-                sourceDoc.select("iframe[src], iframe[data-src]").mapNotNull {
-                    fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") })
-                }.forEach { iframe ->
-                    if (loadExtractor(iframe, candidate, subtitleCallback) { link ->
+                for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
+                    val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
+                    if (loadExtractor(iframeUrl, candidate, subtitleCallback) { link ->
                         callback(link.copy(name = sourceName))
                     }) found = true
                 }
@@ -157,48 +156,42 @@ class FilmKovasi : MainAPI() {
             }
         }
 
-        // The current FilmKovası page visibly labels the providers. Match those
-        // exact labels first, instead of using a broad iframe/movie selector.
-        document.select("a, button, [role=button]").forEach { element ->
+        // Match the exact provider labels visible on the current FilmKovası page.
+        // This avoids treating unrelated page iframes or movie cards as sources.
+        for (element in document.select("a, button, [role=button]")) {
             val label = element.text().replace(Regex("\\s+"), " ").trim().lowercase()
-            if (label !in sourceNames) return@forEach
+            if (label !in sourceNames) continue
             val sourceName = element.text().replace(Regex("\\s+"), " ").trim()
             val attrs = listOf(
                 element.attr("href"), element.attr("src"), element.attr("data-url"),
                 element.attr("data-src"), element.attr("data-link"), element.attr("data-embed"),
                 element.attr("data-video"), element.attr("onclick")
             )
-            attrs.filter { it.isNotBlank() }.forEach { raw ->
-                Regex("https?://[^\\\"'\\s<>]+|/[^\\\"'\\s<>]+")
-                    .findAll(raw)
-                    .map { it.value }
-                    .forEach { candidate ->
-                        kotlinx.coroutines.runBlocking { resolveCandidate(candidate, sourceName) }
-                    }
+            for (raw in attrs.filter { it.isNotBlank() }) {
+                for (candidate in Regex("https?://[^\\\"'\\s<>]+|/[^\\\"'\\s<>]+")
+                    .findAll(raw).map { it.value }) {
+                    resolveCandidate(candidate, sourceName)
+                }
             }
 
-            element.select("iframe[src], iframe[data-src]").mapNotNull {
-                it.attr("src").ifBlank { it.attr("data-src") }.takeIf(String::isNotBlank)
-            }.forEach { iframe ->
-                kotlinx.coroutines.runBlocking {
-                    if (loadExtractor(iframe, data, subtitleCallback) { link ->
-                        callback(link.copy(name = sourceName))
-                    }) found = true
-                }
+            for (iframe in element.select("iframe[src], iframe[data-src]")) {
+                val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
+                if (iframeUrl.isBlank()) continue
+                if (loadExtractor(iframeUrl, data, subtitleCallback) { link ->
+                    callback(link.copy(name = sourceName))
+                }) found = true
             }
         }
 
-        // Compatibility with the older FilmKovası implementation: some source
-        // buttons still point to an intermediate page under div.sources.
-        document.select("div.sources a[href]").forEach { source ->
+        // Compatibility with the previous FilmKovası source-page implementation.
+        for (source in document.select("div.sources a[href]")) {
             val sourceName = source.selectFirst("span")?.text()?.trim().takeUnless { it.isNullOrBlank() } ?: name
-            val href = fixUrlNull(source.attr("href")) ?: return@forEach
+            val href = fixUrlNull(source.attr("href")) ?: continue
             try {
                 val sourceDoc = app.get(href, referer = data).document
-                sourceDoc.select("iframe[src], iframe[data-src]").mapNotNull {
-                    fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") })
-                }.forEach { iframe ->
-                    if (loadExtractor(iframe, href, subtitleCallback) { link ->
+                for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
+                    val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
+                    if (loadExtractor(iframeUrl, href, subtitleCallback) { link ->
                         callback(link.copy(name = sourceName))
                     }) found = true
                 }
