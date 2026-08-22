@@ -79,13 +79,16 @@ jobs:
         if: steps.update.outputs.has_changes == 'true'
         run: |
           git add .
-          git commit -m "🔄 Otomatik Eklenti Güncellemesi
+          git commit -m "$(cat <<'EOF'
+🔄 Otomatik Eklenti Güncellemesi
 
 - mainUrl'leri kontrol et
 - Versiyonları artır
 - Kütüphane bağımlılıklarını güncelle
 
-[skip ci]" || echo "Commit başarısız - değişiklik yok"
+[skip ci]
+EOF
+)" || echo "Commit başarısız - değişiklik yok"
 
       - name: 🚀 Değişiklikleri Push Et
         if: steps.update.outputs.has_changes == 'true'
