@@ -361,22 +361,22 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmKovasi.cs3",
         "status": 1,
-        "version": 3,
+        "version": 4,
         "name": "FilmKovasi",
         "internalName": "FilmKovasi",
         "authors": [
-            "nikyokki"
+            "gsrepo"
         ],
-        "description": "Film Kovasi \u26a1 ile en g\u00fcncel ve sorunsuz Full HD Film izle keyfi her yerde seninle! 1080p online film izleme ayr\u0131cal\u0131\u011f\u0131yla Film Kovas\u0131'n\u0131n Tad\u0131n\u0131 \u00c7\u0131kar\u0131n.",
-        "fileSize": 19265,
+        "description": "Film Kovas\u0131 ile en g\u00fcncel ve sorunsuz Full HD Film izle keyfi.",
+        "fileSize": 18629,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
             "Movie"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.tv&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.co&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-c8435e8a6ddc264f9982ccacda19b935dc85866b9511a463db0047a2ebdc8f23"
+        "fileHash": "sha256-cc62fb57c596ec295702e94e7286ad71d8c203ade425c65c50fb2f3896ecae68"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3",
