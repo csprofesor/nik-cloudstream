@@ -361,14 +361,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmKovasi.cs3",
         "status": 1,
-        "version": 9,
+        "version": 10,
         "name": "FilmKovasi",
         "internalName": "FilmKovasi",
         "authors": [
             "gsrepo"
         ],
         "description": "Film Kovas\u0131 ile en g\u00fcncel ve sorunsuz Full HD Film izle keyfi.",
-        "fileSize": 20228,
+        "fileSize": 20665,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -376,7 +376,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.co&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-855b4c824b89b1f22c58958a31831bd752c7aafc06ff197d6603ae4360fc74aa"
+        "fileHash": "sha256-7b43c88e7221faed634263a732767334d1ae866b5c0d96a5c663b89f71c60d02"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3",
