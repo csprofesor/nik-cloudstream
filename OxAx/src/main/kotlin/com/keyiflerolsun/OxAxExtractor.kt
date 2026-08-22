@@ -17,7 +17,7 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 
 class OxAxPlayer : ExtractorApi() {
     override var name            = "OxAxPlayer"
-    override var mainUrl         = "http://oxax.tv"
+    override var mainUrl         = "https://oxax.tv"
     override val requiresReferer = true
 
     private fun base64Encode(str: String): String {

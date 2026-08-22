@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: 📥 Deposu İndir
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: ☕ JDK 17 Kur
         uses: actions/setup-java@v4
@@ -32,7 +32,6 @@ jobs:
 
       - name: 🔨 Gradle ile Derle
         run: ./gradlew build --stacktrace
-        continue-on-error: true
 
       - name: ✅ Derleme Başarılı
         if: success()
