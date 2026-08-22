@@ -141,7 +141,7 @@
             "nikyokki"
         ],
         "description": "Yabanc\u0131 Dizi izle, T\u00fcm yabanc\u0131 dizilerin yeni ve eski sezonlar\u0131n\u0131 full hd izleyebilece\u011finiz elit site.",
-        "fileSize": 24942,
+        "fileSize": 24723,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -149,7 +149,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizibox.live&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-495262ccf8f72f7dcfaf82fa703359b55647b885a0cb218bb31479496e0a7825"
+        "fileHash": "sha256-e4da80f7585a60a6fece9e73b0dfdace82ad9c8a0852fb634e7614d0a3f3f471"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3",
@@ -764,14 +764,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=36",
         "status": 1,
-        "version": 36,
+        "version": 37,
         "name": "SetFilmIzle",
         "internalName": "SetFilmIzle",
         "authors": [
             "gsrepo"
         ],
         "description": "Setfilmizle sitemizde, donma ya\u015famadan T\u00fcrk\u00e7e dublaj ve altyaz\u0131l\u0131 filmleri ile dizileri muhte\u015fem 1080p full HD kalitesinde izleyebilirsiniz.",
-        "fileSize": 23615,
+        "fileSize": 23619,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -780,7 +780,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=setfilmizle.ltd&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-fcbc5b9e93ae29ee943134b3de560fd97e24bd3e0ee0d274120744942c82ac5d"
+        "fileHash": "sha256-3422a3fccf11993381754f91c70fffcaa2d9cdae71441958388ef969efd38f9c"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SezonlukDizi.cs3",
