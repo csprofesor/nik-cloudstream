@@ -24,7 +24,8 @@ import com.lagradost.cloudstream3.utils.*
 import org.jsoup.nodes.Element
 
 class `4KFilmIzlesene` : MainAPI() {
-    override var mainUrl = "https://www.4kfilmizlesene.nl"
+    // Güncel alan adı: 4kfilmizlesene.us
+    override var mainUrl = "https://www.4kfilmizlesene.us"
     override var name = "4KFilmİzlesene"
     override val hasMainPage = true
     override var lang = "tr"
@@ -34,9 +35,9 @@ class `4KFilmIzlesene` : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie)
 
     // ! CloudFlare bypass
-    override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/-cloudstream/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
-    override var sequentialMainPageDelay       = 50L  // ? 0.05 saniye
-    override var sequentialMainPageScrollDelay = 50L  // ? 0.05 saniye
+    override var sequentialMainPage = true
+    override var sequentialMainPageDelay       = 50L
+    override var sequentialMainPageScrollDelay = 50L
 
     override val mainPage = mainPageOf(
         "${mainUrl}/"                               to "Yeni Filmler",
@@ -102,7 +103,6 @@ class `4KFilmIzlesene` : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/?s=${query}").document
-
         return document.select("div.film-box").mapNotNull { it.toMainPageResult() }
     }
 
@@ -110,17 +110,14 @@ class `4KFilmIzlesene` : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-
         val orgTitle = document.selectFirst("div.film h1")?.text()?.trim() ?: return null
         val altTitle = document.selectFirst("div.original-name span")?.text()?.trim() ?: ""
         val title = if (altTitle.isNotEmpty()) "${orgTitle} - ${altTitle}" else orgTitle
         val poster = fixUrlNull(document.selectFirst("div.img img")?.attr("data-lazy-src"))
         val description = document.selectFirst("div.description")?.text()?.trim()
-        val year =
-            document.selectFirst("span[itemprop='dateCreated']")?.text()?.trim()?.toIntOrNull()
+        val year = document.selectFirst("span[itemprop='dateCreated']")?.text()?.trim()?.toIntOrNull()
         val tags = document.select("div.category a[href*='-filmleri/']").map { it.text() }
-        val rating =
-            document.selectFirst("div.imdb-count")?.text()?.split(" ")?.first()?.trim()
+        val rating = document.selectFirst("div.imdb-count")?.text()?.split(" ")?.first()?.trim()
         val actors = document.select("div.actors").map { it.text() }
         val trailer = document.selectFirst("div.container iframe")?.attr("src")
 
@@ -143,9 +140,8 @@ class `4KFilmIzlesene` : MainAPI() {
     ): Boolean {
         Log.d("4KI", "data » ${data}")
         val document = app.get(data).document
-        var iframe   = fixUrlNull(document.selectFirst("div.video-content iframe")?.attr("src")) ?: return false
+        val iframe = fixUrlNull(document.selectFirst("div.video-content iframe")?.attr("src")) ?: return false
         Log.d("4KI", "iframe » ${iframe}")
-
         loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
         return true
     }
