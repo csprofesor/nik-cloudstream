@@ -43,10 +43,34 @@ jobs:
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
 
+      - name: Güncel Site Kodlarını Uygula
+        run: |
+          cd $GITHUB_WORKSPACE/src
+
+          # Google aramasıyla doğrulanan güncel alan adları
+          sed -i 's#https://dizigom101.com#https://www.dizigom.love#g' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
+          sed -i 's#https://www.dizimom.bid#https://www.dizimom.surf#g' DiziMom/src/main/kotlin/com/keyiflerolsun/DiziMom.kt
+          sed -i 's#https://dizipal1214.com#https://dizipalt.com#g' DiziPal/src/main/kotlin/com/keyiflerolsun/DiziPal.kt
+
+          # DiziKorea için güncel çalışan siteye uyarlanmış güncel CloudStream kodu
+          curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKorea.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKorea.kt
+          curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaModels.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaModels.kt
+          curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaPlugin.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaPlugin.kt
+          curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/PlayerKoreaExtractor.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/PlayerKoreaExtractor.kt
+
       - name: TurkAnime Kotlin Uyumluluk Düzeltmesi
         run: |
           cd $GITHUB_WORKSPACE/src
           sed -i 's/private fun iframe2AesLink/private suspend fun iframe2AesLink/' TurkAnime/src/main/kotlin/com/keyiflerolsun/TurkAnime.kt
+
+      - name: Güncellenen Kaynakları Kaydet
+        run: |
+          cd $GITHUB_WORKSPACE/src
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          git add DiziGom/src DiziMom/src DiziPal/src DiziKorea/src TurkAnime/src
+          git commit -m "Güncel site adresleri ve eklenti kodları [skip ci]" || true
+          git push origin HEAD:master || true
 
       - name: Eklentileri Derle
         run: |
