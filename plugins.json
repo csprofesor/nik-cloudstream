@@ -32,7 +32,7 @@
             "nikyokki"
         ],
         "description": "AnimeciX, animeleri ke\u015ffedebilece\u011finiz ve animeler hakk\u0131nda her \u015feyi \u00f6\u011frenebilece\u011finiz bir payla\u015f\u0131m platformudur.",
-        "fileSize": 24675,
+        "fileSize": 26863,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -40,7 +40,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=animecix.net&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-d43ee2ecacfeec6e68a7e608dd6acf1b15186f150369ce00ad4f1931092b725e"
+        "fileHash": "sha256-b925e0a5decb3dbe19b52b7783f7cc1b06c205af3c639fc03e802a25020c943f"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AsyaWatch.cs3",
@@ -622,7 +622,7 @@
             "nikyokki"
         ],
         "description": "Binlerce Film \u0130zleme Se\u00e7ene\u011fiyle En \u0130yi Film \u0130zleme Sitesi",
-        "fileSize": 27610,
+        "fileSize": 21446,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -630,7 +630,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=https://jetfilmizle.de&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-28840899fa97b698b38f6a9d2d2b391474c28933d2cb540282a9a190339e22fb"
+        "fileHash": "sha256-2cebc0081d6799eb1baf433c29238ca6bff61d2d7e04217632d48ebfd541d8d7"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/KoreanTurk.cs3",
@@ -728,7 +728,7 @@
             "nikyokki"
         ],
         "description": "RecTv APK, T\u00fcrkiye\u2019deki en pop\u00fcler \u00c7evrimi\u00e7i Medya Ak\u0131\u015f platformlar\u0131ndan biridir. Filmlerin, Canl\u0131 Sporlar\u0131n, Web Dizilerinin ve \u00e7ok daha fazlas\u0131n\u0131n keyfini \u00fccretsiz \u00e7\u0131kar\u0131n.",
-        "fileSize": 23806,
+        "fileSize": 28744,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -738,7 +738,7 @@
         ],
         "iconUrl": "https://rectvapk.cc/wp-content/uploads/2023/02/Rec-TV.webp",
         "apiVersion": 1,
-        "fileHash": "sha256-2f08b3f4f19a00fb7990694f3afe1b343741db904ed92d148d4065df53ee1a5d"
+        "fileHash": "sha256-b7e77d319ac596d41e1fe954575251b8b81dd483918c04c8812baeff820ff120"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/RoketDizi.cs3",
