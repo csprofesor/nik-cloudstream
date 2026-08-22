@@ -1,0 +1,52 @@
+{
+  "updated_at": "2026-08-22",
+  "description": "Known old -> new domain mappings for CloudStream plugins",
+  "mappings": {
+    "dizibox.live": "https://www.dizibox.live",
+    "www.dizibox.live": "https://www.dizibox.live",
+    "dizibox.de": "https://www.dizibox.live",
+    "dizibox.eu": "https://www.dizibox.live",
+
+    "dizipal683.com": "https://dizipal952.com",
+    "dizipal741.com": "https://dizipal952.com",
+    "dizipal794.com": "https://dizipal952.com",
+    "dizipal952.com": "https://dizipal952.com",
+
+    "sezonlukdizi5.com": "https://sezonlukdizi6.com",
+    "sezonlukdizi6.net": "https://sezonlukdizi6.com",
+    "sezonlukdizi.com": "https://sezonlukdizi6.com",
+
+    "diziyou5.com": "https://www.diziyou6.com",
+    "diziyou6.com": "https://www.diziyou6.com",
+
+    "setfilmizle.lol": "https://www.setfilmizle.nl",
+    "setfilmizle.cc": "https://www.setfilmizle.nl",
+
+    "fullhdfilmizlesene.com": "https://www.fullhdfilmizlesene.de",
+    "fullhdfilmizlesene.de": "https://www.fullhdfilmizlesene.de",
+
+    "hdfilmcehennemi2.com": "https://www.hdfilmcehennemi2.site",
+    "hdfilmcehennemi2.site": "https://www.hdfilmcehennemi2.site",
+
+    "hdfilmcehennemi.com": "https://www.hdfilmcehennemi.nl",
+    "hdfilmcehennemi.nl": "https://www.hdfilmcehennemi.nl",
+
+    "filmmodu.net": "https://www.filmmodu.io",
+    "filmmodu.io": "https://www.filmmodu.io",
+
+    "filmizlesene.org": "https://www.filmizlesene.plus",
+    "filmizlesene.plus": "https://www.filmizlesene.plus",
+
+    "wfilmizle.org": "https://www.wfilmizle.plus",
+    "wfilmizle.plus": "https://www.wfilmizle.plus",
+
+    "webteizle.xyz": "https://webteizle1.xyz",
+    "webteizle1.xyz": "https://webteizle1.xyz",
+
+    "sinemax.cc": "https://www.sinemax.cc",
+    "dizimag.org": "https://dizimag.net",
+    "dizigom.tv": "https://dizigom1.co",
+    "yabancidizi.org": "https://yabancidizi.tv",
+    "vavoo.tv": "https://vavoo.to"
+  }
+}

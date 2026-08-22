@@ -32,6 +32,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install -U setuptools wheel Kekik cloudscraper requests
 
+      - name: 🌐 Domainleri Otomatik Kontrol Et
+        run: |
+          python auto_fix_domains.py --report-file /tmp/auto-update-domain-report.json --no-commit
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          report = json.loads(Path('/tmp/auto-update-domain-report.json').read_text(encoding='utf-8'))
+          print(f"Checked: {report.get('checked_plugins', 0)}")
+          print(f"Updated: {len(report.get('updated_plugins', []))}")
+          PY
+
       - name: 🔄 Eklentileri Güncelle
         id: update
         run: |
