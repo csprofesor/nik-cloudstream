@@ -3,95 +3,88 @@
 package com.keyiflerolsun
 
 import android.util.Log
-import com.lagradost.cloudstream3.Actor
-import com.lagradost.cloudstream3.Episode
-import com.lagradost.cloudstream3.HomePageResponse
-import com.lagradost.cloudstream3.LoadResponse
+import org.jsoup.nodes.Element
+import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
-import com.lagradost.cloudstream3.MainAPI
-import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.Score
-import com.lagradost.cloudstream3.SearchResponse
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.TvType
-import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.fixUrlNull
-import com.lagradost.cloudstream3.mainPageOf
-import com.lagradost.cloudstream3.newEpisode
-import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieLoadResponse
-import com.lagradost.cloudstream3.newTvSeriesLoadResponse
-import com.lagradost.cloudstream3.newTvSeriesSearchResponse
-import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import okhttp3.Interceptor
+import okhttp3.Response
 import org.jsoup.Jsoup
-import org.jsoup.nodes.Element
 
 class DiziKorea : MainAPI() {
-    override var mainUrl = "https://dizikorea.pw"
-    override var name = "DiziKorea"
-    override val hasMainPage = true
-    override var lang = "tr"
-    override val hasQuickSearch = true
-    override val supportedTypes = setOf(TvType.AsianDrama)
+    override var mainUrl              = "https://dizikorea3.com"
+    override var name                 = "DiziKorea"
+    override val hasMainPage          = true
+    override var lang                 = "tr"
+    override val hasQuickSearch       = true
+    override val supportedTypes       = setOf(TvType.AsianDrama)
+
+        override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/-cloudstream/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
+    override var sequentialMainPageDelay       = 150L  // ? 0.15 saniye
+    override var sequentialMainPageScrollDelay = 150L  // ? 0.15 saniye
+
+    // ! CloudFlare v2
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request  = chain.request()
+            val response = chain.proceed(request)
+            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
+
+            if (doc.html().contains("Just a moment")) {
+                return cloudflareKiller.intercept(chain)
+            }
+
+            return response
+        }
+    }
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/tum-kore-dizileri/" to "Kore Dizileri",
-        "${mainUrl}/kore-filmleri-izle1/" to "Kore Filmleri",
-        "${mainUrl}/tayland-dizileri/" to "Tayland Dizileri",
-        "${mainUrl}/tayland-filmleri/" to "Tayland Filmleri",
-        "${mainUrl}/cin-dizileri/" to "Çin Dizileri",
-        "${mainUrl}/cin-filmleri/" to "Çin Filmleri",
-        "${mainUrl}/yabanci-dizi/" to "Yabancı Dizi"
+        "${mainUrl}/kore-dizileri-izle-dq/sayfa/"   to "Kore Dizileri",
+        "${mainUrl}/kore-filmleri-izle-dq/sayfa/" to "Kore Filmleri",
+        "${mainUrl}/tayland-dizileri/sayfa/"    to "Tayland Dizileri",
+        "${mainUrl}/tayland-filmleri/sayfa/"    to "Tayland Filmleri",
+        "${mainUrl}/cin-dizileri/sayfa/"        to "Çin Dizileri",
+        "${mainUrl}/cin-filmleri/sayfa/"        to "Çin Filmleri"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}${page}").document
-        val home = document.select("div.poster-long").mapNotNull { it.toSearchResult() }
+        val document = app.get("${request.data}${page}", interceptor = interceptor).document
+        Log.d("DZK", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
+        val home     = document.select("a.poster-card").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("h2")?.text()?.trim() ?: return null
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
-        val score = this.selectFirst("span.rating")?.text()?.trim()
+        val title     = this.selectFirst("span.poster-card-title")?.text()?.trim()
+            ?: this.selectFirst("div.poster-card-meta")?.text()?.trim()
+            ?: return null
+        val href      = fixUrlNull(this.attr("href")) ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("div.poster-card-image img")?.attr("src"))
 
-        return newTvSeriesSearchResponse(title, href, TvType.AsianDrama) {
-            this.posterUrl = posterUrl
-            this.score = Score.from10(score)
-        }
-    }
-
-    private fun Element.toPostSearchResult(): SearchResponse? {
-        val title = this.selectFirst("span")?.text()?.trim() ?: return null
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
-
-        return newTvSeriesSearchResponse(title, href, TvType.AsianDrama) {
-            this.posterUrl = posterUrl
-        }
+        return newTvSeriesSearchResponse(title, href, TvType.AsianDrama) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.post(
-            "${mainUrl}/search",
-            headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-            referer = "${mainUrl}/",
-            data = mapOf("query" to query)
-        ).parsedSafe<KoreaSearch>()!!.theme
+        val response = app.get(
+            "${mainUrl}/ara?q=$query",
+            interceptor = interceptor
+        ).parsedSafe<KoreaSearchResponse>()
 
-        val document = Jsoup.parse(response)
         val results = mutableListOf<SearchResponse>()
+        response?.items?.forEach { item ->
+            val href = fixUrl(item.url)
+            val title = item.title
+            val posterUrl = fixUrlNull(item.poster)
 
-        document.select("ul li").forEach { listItem ->
-            val href = listItem.selectFirst("a")?.attr("href")
-            if (href != null && (href.contains("/dizi/") || href.contains("/film/"))) {
-                val result = listItem.toPostSearchResult()
-                result?.let { results.add(it) }
-            }
+            results.add(newTvSeriesSearchResponse(title, href, TvType.AsianDrama) {
+                this.posterUrl = posterUrl
+            })
         }
 
         return results
@@ -100,35 +93,19 @@ class DiziKorea : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, interceptor = interceptor).document
 
-        val title = document.selectFirst("h1 a")?.text()?.trim() ?: return null
-        val poster = fixUrlNull(document.selectFirst("div.series-profile-image img")?.attr("src"))
-            ?: return null
-        val year =
-            document.selectFirst("h1 span")?.text()?.substringAfter("(")?.substringBefore(")")
-                ?.toIntOrNull()
-        val description = document.selectFirst("div.series-profile-summary p")?.text()?.trim()
-        val tags = document.select("div.series-profile-type a").mapNotNull { it.text().trim() }
-        val rating = document.selectFirst("span.color-imdb")?.text()?.trim()
-        val duration =
-            document.selectXpath("//span[text()='Süre']//following-sibling::p").text().trim()
-                .split(" ").first().toIntOrNull()
-        val trailer = document.selectFirst("div.series-profile-trailer")?.attr("data-yt")
-        val actors = document.select("div.series-profile-cast li").map {
-            Actor(it.selectFirst("h5")!!.text(), it.selectFirst("img")!!.attr("data-src"))
-        }
+        val title       = document.selectFirst("h1.series-title, h1.watch-title")?.text()?.trim() ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.series-hero-poster img, img.sidebar-poster")?.attr("src"))
 
         if (url.contains("/dizi/")) {
-            val episodes = mutableListOf<Episode>()
-            document.select("div.series-profile-episode-list").forEach {
-                val epSeason = it.parent()!!.id().split("-").last().toIntOrNull()
+            val episodes    = mutableListOf<Episode>()
+            document.select("div.episode-list").forEach {
+                val epSeason = it.attr("data-season").toIntOrNull()
 
-                it.select("li").forEach ep@{ episodeElement ->
-                    val epHref =
-                        fixUrlNull(episodeElement.selectFirst("h6 a")?.attr("href")) ?: return@ep
-                    val epEpisode =
-                        episodeElement.selectFirst("a.truncate data")?.text()?.trim()?.toIntOrNull()
+                it.select("a.episode-item").forEach ep@ { episodeElement ->
+                    val epHref    = fixUrlNull(episodeElement.attr("href")) ?: return@ep
+                    val epEpisode = episodeElement.selectFirst("span.ep-number")?.text()?.trim()?.toIntOrNull()
 
                     episodes.add(newEpisode(epHref) {
                         this.name = "${epSeason}. Sezon ${epEpisode}. Bölüm"
@@ -140,45 +117,33 @@ class DiziKorea : MainAPI() {
 
             return newTvSeriesLoadResponse(title, url, TvType.AsianDrama, episodes) {
                 this.posterUrl = poster
-                this.year = year
-                this.plot = description
-                this.tags = tags
-                this.score = Score.from10(rating)
-                this.duration = duration
-                addActors(actors)
-                addTrailer("https://www.youtube.com/embed/${trailer}")
             }
         } else {
             return newMovieLoadResponse(title, url, TvType.AsianDrama, url) {
                 this.posterUrl = poster
-                this.year = year
-                this.plot = description
-                this.tags = tags
-                this.score = Score.from10(rating)
-                this.duration = duration
-                addActors(actors)
-                addTrailer("https://www.youtube.com/embed/${trailer}")
             }
         }
     }
 
     override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        Log.d("DZK", "data » $data")
-        val document = app.get(data).document
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    Log.d("DZK", "data » $data")
+    val document = app.get(data, interceptor = interceptor).document
 
+    document.select("div.player-source iframe").forEach {
+        val rawHhs = it.attr("data-src")
+        Log.d("DZK", "Found button with data-src: $rawHhs")
 
-        document.select("div.series-watch-alternatives button").forEach {
-            val iframe = fixUrlNull(it.attr("data-hhs")) ?: return@forEach
-            Log.d("DZK", "iframe » $iframe")
+        val iframe = fixUrlNull(rawHhs) ?: return@forEach
+        Log.d("DZK", "iframe » $iframe")
 
-            loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
-        }
+        loadExtractor(iframe, "$mainUrl/", subtitleCallback, callback)
+    }
 
-        return true
+    return true
     }
 }
