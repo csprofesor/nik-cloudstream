@@ -1,25 +1,5 @@
 [
     {
-        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/4KFilmIzlesene.cs3",
-        "status": 1,
-        "version": 7,
-        "name": "4KFilmIzlesene",
-        "internalName": "4KFilmIzlesene",
-        "authors": [
-            "gsrepo"
-        ],
-        "description": "En yeni ve sorunsuz \u26a1 Full HD Film izle keyfi her yerde sizinle ! 4K ve 1080p online film izleme fark\u0131yla 4KFilmizlesene'nin Tad\u0131n\u0131 \u00c7\u0131kart.",
-        "fileSize": 12649,
-        "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
-        "language": "tr",
-        "tvTypes": [
-            "Movie"
-        ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.4kfilmizlesene.us&sz=%size%",
-        "apiVersion": 1,
-        "fileHash": "sha256-f30ba306b4a9f67d3091bcfaaa78b1202005d6290f967ad485cfc2f0e6fbc414"
-    },
-    {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AnimeciX.cs3",
         "status": 1,
         "version": 11,
@@ -782,7 +762,7 @@
         "fileHash": "sha256-b005ccb984466070fce22fdfd7a38c9ef4f3e7242bb3dfe497e987b7c6ee8fb1"
     },
     {
-        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3",
+        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=36",
         "status": 1,
         "version": 36,
         "name": "SetFilmIzle",
@@ -791,7 +771,7 @@
             "gsrepo"
         ],
         "description": "Setfilmizle sitemizde, donma ya\u015famadan T\u00fcrk\u00e7e dublaj ve altyaz\u0131l\u0131 filmleri ile dizileri muhte\u015fem 1080p full HD kalitesinde izleyebilirsiniz.",
-        "fileSize": 24564,
+        "fileSize": 23615,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -800,7 +780,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=setfilmizle.ltd&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-ea675e3e7ec562334af42fef964c5c200b20ee35bfa42c7cf8658035f13947ee"
+        "fileHash": "sha256-fcbc5b9e93ae29ee943134b3de560fd97e24bd3e0ee0d274120744942c82ac5d"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SezonlukDizi.cs3",
