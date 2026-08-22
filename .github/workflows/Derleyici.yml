@@ -85,6 +85,8 @@ jobs:
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
           ./gradlew make makePluginsJson
+          # SetFilmIzle için GitHub Raw/CDN önbelleğini kır; aksi halde yeni .cs3 yerine eski dosya indirilebilir.
+          sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=36"#' build/plugins.json
           cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
           cp build/plugins.json $GITHUB_WORKSPACE/builds
 
