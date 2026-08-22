@@ -32,7 +32,6 @@ jobs:
 
       - name: 🔨 Gradle ile Derle
         run: ./gradlew build --stacktrace
-        continue-on-error: true
 
       - name: ✅ Derleme Başarılı
         if: success()
