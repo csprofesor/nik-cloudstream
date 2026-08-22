@@ -50,6 +50,7 @@ jobs:
           sed -i 's#https://dizigom101.com#https://www.dizigom.love#g' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
           sed -i 's#https://www.dizimom.bid#https://www.dizimom.surf#g' DiziMom/src/main/kotlin/com/keyiflerolsun/DiziMom.kt
           sed -i 's#https://dizipal1214.com#https://dizipalt.com#g' DiziPal/src/main/kotlin/com/keyiflerolsun/DiziPal.kt
+          sed -i 's#https://www.setfilmizle.uk#https://setfilmizle.ltd#g; s#https://setfilmizle.uk#https://setfilmizle.ltd#g' SetFilmIzle/src/main/kotlin/com/keyiflerolsun/SetFilmIzle.kt
 
           # Güncel site adreslerini eklenti metadata'sına da yansıt
           sed -i 's#dizigom1.co#www.dizigom.love#g; s/tvTypes = listOf("Movie")/tvTypes = listOf("TvSeries")/' DiziGom/build.gradle.kts
@@ -58,6 +59,7 @@ jobs:
           sed -i 's#www.dizimom.tv#www.dizimom.surf#g' DiziMom/build.gradle.kts
           sed -i 's#dizipal683.com#dizipalt.com#g' DiziPal/build.gradle.kts
           sed -i 's#dizilla.club#dizilla40.com#g' Dizilla/build.gradle.kts
+          sed -i 's#www.setfilmizle.uk#www.setfilmizle.ltd#g; s#https://setfilmizle.uk#https://setfilmizle.ltd#g' SetFilmIzle/build.gradle.kts
 
           curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKorea.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKorea.kt
           curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaModels.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaModels.kt
@@ -74,7 +76,7 @@ jobs:
           cd $GITHUB_WORKSPACE/src
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add DiziGom/src DiziGom/build.gradle.kts DiziMom/src DiziMom/build.gradle.kts DiziPal/src DiziPal/build.gradle.kts DiziKorea/src DiziKorea/build.gradle.kts DiziBox/build.gradle.kts Dizilla/build.gradle.kts TurkAnime/src
+          git add DiziGom/src DiziGom/build.gradle.kts DiziMom/src DiziMom/build.gradle.kts DiziPal/src DiziPal/build.gradle.kts DiziKorea/src DiziKorea/build.gradle.kts DiziBox/build.gradle.kts Dizilla/build.gradle.kts SetFilmIzle/src SetFilmIzle/build.gradle.kts TurkAnime/src
           git commit -m "Güncel site metadata ve eklenti kodları [skip ci]" || true
           git push origin HEAD:master || true
 
