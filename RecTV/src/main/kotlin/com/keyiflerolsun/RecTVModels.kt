@@ -33,24 +33,28 @@ data class Trailer(
 )
 
 data class Source(
-    @JsonProperty("id")    val id:Int,
-    @JsonProperty("type")  val type:String,
-    @JsonProperty("url")   val url:String
+    @JsonProperty("id")    val id: Int,
+    @JsonProperty("type")  val type: String,
+    @JsonProperty("url")   val url: String
 )
 
 data class RecSearch(
-    @JsonProperty("channels") val channels:List<RecItem>? = emptyList(),
-    @JsonProperty("posters")  val posters:List<RecItem>?  = emptyList(),
+    @JsonProperty("channels") val channels: List<RecItem>? = emptyList(),
+    @JsonProperty("posters")  val posters: List<RecItem>?  = emptyList(),
 )
 
 data class RecDizi(
-    @JsonProperty("id")       val id:Int,
-    @JsonProperty("title")    val title:String,
-    @JsonProperty("episodes") val episodes:List<RecEpisode>,
+    @JsonProperty("id")       val id: Int,
+    @JsonProperty("title")    val title: String,
+    @JsonProperty("episodes") val episodes: List<RecEpisode>,
 )
 
 data class RecEpisode(
-    @JsonProperty("id")       val id:Int,
-    @JsonProperty("title")    val title:String,
+    @JsonProperty("id")       val id: Int,
+    @JsonProperty("title")    val title: String,
     @JsonProperty("sources")  val sources: List<Source>
+)
+
+data class RecNonce(
+    @JsonProperty("nonce")    val nonce: String
 )
