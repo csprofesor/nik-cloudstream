@@ -167,7 +167,7 @@
         "tvTypes": [
             "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizibox.de&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizibox.live&sz=%size%",
         "apiVersion": 1,
         "fileHash": "sha256-495262ccf8f72f7dcfaf82fa703359b55647b885a0cb218bb31479496e0a7825"
     },
@@ -185,9 +185,9 @@
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
-            "Movie"
+            "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=dizigom1.co&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
         "fileHash": "sha256-180a16e264ccf0be75039e957a6abbd533254f82fdb0382323f453a669ee6353"
     },
@@ -208,7 +208,7 @@
         "tvTypes": [
             "AsianDrama"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=https://dizikorea.vip&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=https://dizikorea3.com&sz=%size%",
         "apiVersion": 1,
         "fileHash": "sha256-0398f0d5c2ea8c94a37355b73b63a0b667f3b4903be7845009d0724664965dfe"
     },
@@ -229,7 +229,7 @@
         "tvTypes": [
             "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=dizilla.club&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=dizilla40.com&sz=%size%",
         "apiVersion": 1,
         "fileHash": "sha256-7d70ad2e47f04eb237f8ee04df4296db59abe24829c42780c448192d0efdc1bf"
     },
@@ -270,7 +270,7 @@
         "tvTypes": [
             "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.tv&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.surf&sz=%size%",
         "apiVersion": 1,
         "fileHash": "sha256-3c18eaeaaab0c797794d13fae3d94a19411b48b63eb5a58fc66393816e9bb3b1"
     },
@@ -292,7 +292,7 @@
             "TvSeries",
             "Movie"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=https://dizipal683.com&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=https://dizipalt.com&sz=%size%",
         "apiVersion": 1,
         "fileHash": "sha256-9a12cd1171e6a2f0f40128394b68ddb4ec2eae7624d46525926bb6f9052c783d"
     },
