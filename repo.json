@@ -1,8 +1,8 @@
 {
-    "name": "Nikyokki",
-    "description": "Türkçe içerikli eklenti havuzu",
-    "manifestVersion": 1,
-    "pluginLists": [
-      "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/plugins.json"
-    ]
+  "name": "gsrepo",
+  "description": "gsrepo Türkçe CloudStream eklenti havuzu",
+  "manifestVersion": 1,
+  "pluginLists": [
+    "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/plugins.json"
+  ]
 }
