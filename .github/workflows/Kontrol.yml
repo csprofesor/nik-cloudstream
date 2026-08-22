@@ -6,6 +6,10 @@ concurrency:
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'KONTROL.py'
+      - '.github/workflows/Kontrol.yml'
   schedule:
     - cron: 11 */9 * * *
 
@@ -69,8 +73,5 @@ jobs:
           fi
 
           echo "PR #$PR_NUMBER hazır. Otomatik birleştirme başlatılıyor."
-
-          # GitHub API ile squash merge dene; branch koruma/inceleme gerektirirse
-          # workflow başarısız olur ve değişiklik master'a dokunulmadan kalır.
           gh pr merge "$PR_NUMBER" --squash --delete-branch --admin || \
           gh pr merge "$PR_NUMBER" --squash --delete-branch
