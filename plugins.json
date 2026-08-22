@@ -66,7 +66,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/BelgeselX.cs3",
         "status": 1,
-        "version": 6,
+        "version": 7,
         "name": "BelgeselX",
         "internalName": "BelgeselX",
         "authors": [
@@ -75,7 +75,7 @@
             "nikyokki"
         ],
         "description": "En yeni belgeseller, t\u00fcrk\u00e7e altyaz\u0131l\u0131 yada dublaj olarak 1080p kalitesinde HD belgesel izle.",
-        "fileSize": 23321,
+        "fileSize": 30366,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -83,7 +83,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=belgeselx.com&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-cee4e36361bad8599887b3bdcaede214c23ff9b4ca7dbf0d680ea143f379cfcf"
+        "fileHash": "sha256-2fb77bb7db224629bb64ce642e8607ff04bf8c5f46f3cb6b85fcf080c5557f0b"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/CanliTV.cs3",
@@ -784,23 +784,23 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3",
         "status": 1,
-        "version": 14,
+        "version": 30,
         "name": "SetFilmIzle",
         "internalName": "SetFilmIzle",
         "authors": [
             "keyiflerolsun"
         ],
         "description": "Setfilmizle sitemizde, donma ya\u015famadan T\u00fcrk\u00e7e dublaj ve altyaz\u0131l\u0131 filmleri ile dizileri muhte\u015fem 1080p full HD kalitesinde izleyebilirsiniz.",
-        "fileSize": 25922,
+        "fileSize": 23756,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
             "Movie",
             "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.setfilmizle.de&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.setfilmizle.uk&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-eaaf4e4b40a5d0cd3bf73eee159a4d8e7be981145754ddee65d8fc7a929ff272"
+        "fileHash": "sha256-219ff7634160e17f335cb603285ba3466411dc92acab0f93df3cf3af5a0bd68d"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SezonlukDizi.cs3",
