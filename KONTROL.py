@@ -228,24 +228,30 @@ class MainUrlUpdater:
                     return candidate_final
         return None
 
-    def _update_iconurl(self, build_gradle_path: str, old_url: str, new_url: str) -> bool:
+    def _update_icon_url(self, build_gradle_path: str, old_url: str, new_url: str) -> bool:
         """build.gradle.kts içindeki iconUrl domain parametresini güncelle"""
         try:
             with open(build_gradle_path, "r", encoding="utf-8") as file:
                 content = file.read()
 
             old_domain = self._normalize_domain(old_url)
-            new_domain = self._normalize_domain(new_url)
-            if not old_domain or not new_domain:
+            new_host = urlparse(new_url).netloc or self._normalize_domain(new_url)
+            if not old_domain or not new_host:
                 return False
 
             new_content = re.sub(
                 r'(iconUrl\s*=\s*"https://www\.google\.com/s2/favicons\?domain=)([^"&]+)(&sz=%size%")',
-                rf"\1{new_domain}\3",
-                content
+                rf"\1{new_host}\3",
+                content,
+                count=1
             )
             if new_content == content:
-                new_content = content.replace(old_domain, new_domain)
+                new_content = re.sub(
+                    r'(iconUrl\s*=\s*"https?://)([^/"]+)([^"]*")',
+                    rf"\1{new_host}\3",
+                    content,
+                    count=1
+                )
 
             if new_content != content:
                 with open(build_gradle_path, "w", encoding="utf-8") as file:
@@ -310,7 +316,7 @@ class MainUrlUpdater:
                     # Versiyon artır
                     build_gradle = f"{plugin_name}/build.gradle.kts"
                     if os.path.exists(build_gradle):
-                        self._update_iconurl(build_gradle, mainurl, final_url)
+                        self._update_icon_url(build_gradle, mainurl, final_url)
                         new_version = self._increment_version(build_gradle)
                         if new_version:
                             konsol.log(f"[✓] {plugin_name}: v{new_version} - {mainurl} → {final_url}")
@@ -346,9 +352,10 @@ class MainUrlUpdater:
 
         if self.change_log:
             try:
-                with open("domain_update_log.json", "w", encoding="utf-8") as file:
+                log_file = os.path.join(self.base_dir, "domain_update_log.json")
+                with open(log_file, "w", encoding="utf-8") as file:
                     json.dump(self.change_log, file, ensure_ascii=False, indent=2)
-                konsol.log("[*] domain_update_log.json dosyasına değişiklikler yazıldı")
+                konsol.log(f"[*] {log_file} dosyasına değişiklikler yazıldı")
             except Exception as e:
                 konsol.log(f"[!] Değişiklik logu yazılamadı: {e}")
 

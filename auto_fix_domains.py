@@ -190,9 +190,9 @@ class DomainAutoFixer:
             candidates.append(direct)
 
         token = re.sub(r"\d+$", "", normalized.split(".")[0])
-        if token:
-            for source, target in self.domain_mappings.items():
-                if token in source:
+        if token and len(token) >= 5 and not direct:
+            for source_key, target in self.domain_mappings.items():
+                if source_key.startswith(token):
                     candidates.append(target)
 
         unique = []
@@ -247,12 +247,8 @@ class DomainAutoFixer:
         except OSError:
             return False
 
-        new_content, count = re.subn(
-            r'(override\s+var\s+mainUrl\s*=\s*")([^"]+)(")',
-            rf'\1{new_url}\3',
-            content,
-            count=1,
-        )
+        pattern = re.compile(r'(override\s+var\s+mainUrl\s*=\s*")([^"]+)(")')
+        new_content, count = pattern.subn(lambda m: f'{m.group(1)}{new_url}{m.group(3)}', content, count=1)
 
         if count and new_content != content:
             kt_file.write_text(new_content, encoding="utf-8")
@@ -260,7 +256,7 @@ class DomainAutoFixer:
         return False
 
     @staticmethod
-    def _update_icon_url(build_gradle: Path, new_domain: str) -> bool:
+    def _update_icon_url(build_gradle: Path, new_host: str) -> bool:
         try:
             content = build_gradle.read_text(encoding="utf-8")
         except OSError:
@@ -276,11 +272,11 @@ class DomainAutoFixer:
 
         if "domain=" in parsed.query:
             query = parse_qs(parsed.query, keep_blank_values=True)
-            query["domain"] = [new_domain]
+            query["domain"] = [new_host]
             updated_query = urlencode(query, doseq=True)
             updated_icon = urlunparse(parsed._replace(query=updated_query))
         elif parsed.scheme and parsed.netloc:
-            updated_icon = urlunparse(parsed._replace(netloc=new_domain))
+            updated_icon = urlunparse(parsed._replace(netloc=new_host))
 
         if updated_icon == icon_url:
             return False
@@ -382,7 +378,8 @@ class DomainAutoFixer:
                 self._log(f"[!] {plugin}: alan adı doğrulanamadı")
                 continue
 
-            self.reachable_plugins += 1
+            if source == "reachable":
+                self.reachable_plugins += 1
             verified = self._clean_url(verified)
             old_clean = self._clean_url(main_url)
 
@@ -392,18 +389,19 @@ class DomainAutoFixer:
 
             old_domain = self._normalize_domain(old_clean)
             new_domain = self._normalize_domain(verified)
+            new_host = urlparse(verified).netloc or new_domain
             changed_files: List[str] = []
 
             if self._replace_main_url(kt_file, verified):
                 changed_files.append(str(kt_file.relative_to(self.root_dir)))
 
-            if self._update_icon_url(build_gradle, new_domain):
+            if self._update_icon_url(build_gradle, new_host):
                 changed_files.append(str(build_gradle.relative_to(self.root_dir)))
 
-            self._increment_version(build_gradle)
-            if str(build_gradle.relative_to(self.root_dir)) not in changed_files:
-                if build_gradle.exists():
-                    changed_files.append(str(build_gradle.relative_to(self.root_dir)))
+            if self._increment_version(build_gradle):
+                gradle_path = str(build_gradle.relative_to(self.root_dir))
+                if gradle_path not in changed_files:
+                    changed_files.append(gradle_path)
 
             update = DomainUpdate(
                 plugin=plugin,
