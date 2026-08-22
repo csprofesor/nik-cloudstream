@@ -131,7 +131,7 @@ class MainUrlUpdater:
             response = self.session.post(
                 url="https://firebaseremoteconfig.googleapis.com/v1/projects/791583031279/namespaces/firebase:fetch",
                 headers={
-                    "X-Goog-Api-Key": "AIzaSyBbhpzG8Ecohu9yArfCO5tF13BQLhjLahc",
+                    "X-Goog-Api-Key": os.environ.get("GOOGLE_API_KEY", ""),
                     "X-Android-Package": "com.rectv.shot",
                     "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 12)",
                 },

@@ -30,7 +30,7 @@ jobs:
       - name: 📦 Bağımlılıkları Yükle
         run: |
           python -m pip install --upgrade pip
-          pip install cloudscraper requests
+          pip install -U setuptools wheel Kekik cloudscraper requests
 
       - name: 🔄 Eklentileri Güncelle
         id: update
@@ -77,7 +77,7 @@ jobs:
 
       - name: 🚀 Değişiklikleri Push Et
         if: steps.update.outputs.has_changes == 'true'
-        uses: ad-m/github-push-action@master
+        uses: ad-m/github-push-action@v0.8.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           branch: master
