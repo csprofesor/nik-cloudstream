@@ -43,6 +43,11 @@ jobs:
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
 
+      - name: TurkAnime Kotlin Uyumluluk Düzeltmesi
+        run: |
+          cd $GITHUB_WORKSPACE/src
+          sed -i 's/private fun iframe2AesLink/private suspend fun iframe2AesLink/' TurkAnime/src/main/kotlin/com/keyiflerolsun/TurkAnime.kt
+
       - name: Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
