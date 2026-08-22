@@ -530,14 +530,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3",
         "status": 1,
-        "version": 7,
+        "version": 8,
         "name": "HDFilmCehennemi2",
         "internalName": "HDFilmCehennemi2",
         "authors": [
             "nikyokki"
         ],
         "description": "Full hd film izleme keyfini hdfilmcehennemi2 ile ya\u015fay\u0131n. T\u00fcrkiyenin en g\u00fcncel y\u00fcksek hd kalitede film izleme sitesi.",
-        "fileSize": 27805,
+        "fileSize": 27803,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -545,7 +545,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.hdfilmcehennemi2.nl&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-701a5ef58fb87f185bfd951f4d5c206f636c71f322172789cb37c523435045a7"
+        "fileHash": "sha256-9d40401d743f0104f44cd3344756d516932333697295b808e9b278cbcea2897b"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmIzle.cs3",
@@ -571,14 +571,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmSitesi.cs3",
         "status": 1,
-        "version": 18,
+        "version": 19,
         "name": "HDFilmSitesi",
         "internalName": "HDFilmSitesi",
         "authors": [
             "nikyokki"
         ],
         "description": "Film izle, Hdfilmsitesi ile Online 1080p ve 4K kalite Full HD Filmlere T\u00fcrk\u00e7e Dublaj ve Altyaz\u0131l\u0131 olarak Reklams\u0131z Kesintisiz HD Film izle.",
-        "fileSize": 22923,
+        "fileSize": 22922,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -586,7 +586,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmsitesi.net&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-8dd8e490e70474fa06418269a5e0edabf761ce68678a7871dd126e430eb36aea"
+        "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3",
@@ -805,7 +805,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SezonlukDizi.cs3",
         "status": 1,
-        "version": 9,
+        "version": 10,
         "name": "SezonlukDizi",
         "internalName": "SezonlukDizi",
         "authors": [
@@ -814,7 +814,7 @@
             "nikyokki"
         ],
         "description": "G\u00fcncel ve eski dizileri en iyi g\u00f6r\u00fcnt\u00fc kalitesiyle bulabilece\u011finiz yabanc\u0131 dizi izleme siteniz.",
-        "fileSize": 25461,
+        "fileSize": 25468,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -822,7 +822,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=sezonlukdizi6.com&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-5429e840b25c586e4d07dc8291bc1cd30511f5dbddac9c779f7d7cc2fe1c635f"
+        "fileHash": "sha256-994f79f8f2a00e7cf3eea35c644801a55fa8795f4e2da4a377564d810dd5d22a"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaCX.cs3",
@@ -951,14 +951,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/TvDiziler.cs3",
         "status": 1,
-        "version": 5,
+        "version": 6,
         "name": "TvDiziler",
         "internalName": "TvDiziler",
         "authors": [
             "nikyokki"
         ],
         "description": "\u00dccretsiz yerli dizi izleme sitesi en pop\u00fcler dizileri tek par\u00e7a hd kalitesiyle ve reklams\u0131z bedava olarak buradan tv dizileri izleyin.",
-        "fileSize": 29048,
+        "fileSize": 29036,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -966,7 +966,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=tvdiziler.cc&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-91d6ea11af607eb8a633ecc43b21eef33bce6911de1a69820661387c44d65eb1"
+        "fileHash": "sha256-ae61e416eec6f14e23b8dc1dcdf811adcc1d5790bba8b3cf9150361f8f4299ea"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/UgurFilm.cs3",
