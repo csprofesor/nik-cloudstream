@@ -9,9 +9,10 @@ import re
 import sys
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Dict, Optional, List
-from urllib.parse import urljoin
+from urllib.parse import urlparse
 
 try:
     from Kekik.cli import konsol
@@ -43,6 +44,40 @@ class MainUrlUpdater:
         self.updated_count = 0
         self.error_count = 0
         self.unchanged_count = 0
+        self.retry_count = 3
+        self.timeout = 10
+        self.change_log: List[Dict[str, str]] = []
+        self.domain_mappings = self._load_domain_mappings()
+
+    def _load_domain_mappings(self) -> Dict[str, str]:
+        """domains.json dosyasından domain eşlemelerini yükle"""
+        mapping_file = os.path.join(self.base_dir, "domains.json")
+        if not os.path.exists(mapping_file):
+            return {}
+        try:
+            with open(mapping_file, "r", encoding="utf-8") as file:
+                payload = json.load(file)
+            mappings = payload.get("mappings", {}) if isinstance(payload, dict) else {}
+            return {
+                self._normalize_domain(old): new
+                for old, new in mappings.items()
+                if isinstance(new, str) and new.strip()
+            }
+        except Exception as e:
+            konsol.log(f"[!] domains.json okuma hatası: {e}")
+            return {}
+
+    @staticmethod
+    def _normalize_domain(url_or_domain: str) -> str:
+        raw = (url_or_domain or "").strip().lower()
+        if not raw:
+            return ""
+        if "://" in raw:
+            raw = urlparse(raw).netloc
+        raw = raw.split("/")[0]
+        if raw.startswith("www."):
+            raw = raw[4:]
+        return raw
 
     @property
     def plugins(self) -> List[str]:
@@ -154,20 +189,77 @@ class MainUrlUpdater:
 
     def _verify_url(self, url: str) -> Optional[str]:
         """URL'i doğrula ve son URL'yi döndür"""
-        try:
-            response = self.session.head(url, allow_redirects=True, timeout=10)
-            if response.status_code < 400:
-                final_url = response.url.rstrip("/")
-                return final_url
-        except Exception:
-            try:
-                response = self.session.get(url, allow_redirects=True, timeout=10)
-                if response.status_code < 400:
-                    final_url = response.url.rstrip("/")
-                    return final_url
-            except Exception as e:
-                konsol.log(f"[!] URL doğrulama hatası: {url} -> {e}")
+        for attempt in range(1, self.retry_count + 1):
+            for method in ("head", "get"):
+                try:
+                    response = self.session.request(
+                        method=method,
+                        url=url,
+                        allow_redirects=True,
+                        timeout=self.timeout
+                    )
+                    if response.status_code < 400:
+                        return response.url.rstrip("/")
+                except Exception:
+                    continue
+            if attempt < self.retry_count:
+                time.sleep(min(attempt, 3))
         return None
+
+    def _find_replacement_url(self, current_url: str) -> Optional[str]:
+        """Bozuk domain için mapping veya sezgisel adaylardan yeni URL bul"""
+        current_domain = self._normalize_domain(current_url)
+        mapping_target = self.domain_mappings.get(current_domain)
+        if mapping_target:
+            mapped_final = self._verify_url(mapping_target)
+            if mapped_final:
+                return mapped_final
+
+        base = re.sub(r"\d+$", "", current_domain.split(".")[0])
+        if not base:
+            return None
+
+        tlds = ["com", "net", "org", "live", "tv", "co", "cc", "de", "io", "xyz", "site"]
+        for tld in tlds:
+            for prefix in ("", "www."):
+                candidate = f"https://{prefix}{base}.{tld}"
+                candidate_final = self._verify_url(candidate)
+                if candidate_final:
+                    return candidate_final
+        return None
+
+    def _update_icon_url(self, build_gradle_path: str, old_url: str, new_url: str) -> bool:
+        """build.gradle.kts içindeki iconUrl domain parametresini güncelle"""
+        try:
+            with open(build_gradle_path, "r", encoding="utf-8") as file:
+                content = file.read()
+
+            old_domain = self._normalize_domain(old_url)
+            new_host = urlparse(new_url).netloc or self._normalize_domain(new_url)
+            if not old_domain or not new_host:
+                return False
+
+            new_content = re.sub(
+                r'(iconUrl\s*=\s*"https://www\.google\.com/s2/favicons\?domain=)([^"&]+)(&sz=%size%")',
+                rf"\1{new_host}\3",
+                content,
+                count=1
+            )
+            if new_content == content:
+                new_content = re.sub(
+                    r'(iconUrl\s*=\s*"https?://)([^/"]+)([^"]*")',
+                    rf"\1{new_host}\3",
+                    content,
+                    count=1
+                )
+
+            if new_content != content:
+                with open(build_gradle_path, "w", encoding="utf-8") as file:
+                    file.write(new_content)
+                return True
+        except Exception as e:
+            konsol.log(f"[!] iconUrl güncelleme hatası ({build_gradle_path}): {e}")
+        return False
 
     @property
     def mainurl_list(self) -> Dict[str, Optional[str]]:
@@ -205,9 +297,14 @@ class MainUrlUpdater:
                 else:
                     final_url = self._verify_url(mainurl)
                     if not final_url:
-                        konsol.log(f"[!] {plugin_name}: URL doğrulanamadı")
-                        self.error_count += 1
-                        continue
+                        mapped_url = self._find_replacement_url(mainurl)
+                        if mapped_url:
+                            konsol.log(f"[~] {plugin_name}: Eşleme ile yeni domain bulundu ({mapped_url})")
+                            final_url = mapped_url
+                        else:
+                            konsol.log(f"[!] {plugin_name}: URL doğrulanamadı")
+                            self.error_count += 1
+                            continue
 
                 if mainurl == final_url:
                     konsol.log(f"[✓] {plugin_name}: Güncel")
@@ -219,10 +316,18 @@ class MainUrlUpdater:
                     # Versiyon artır
                     build_gradle = f"{plugin_name}/build.gradle.kts"
                     if os.path.exists(build_gradle):
+                        self._update_icon_url(build_gradle, mainurl, final_url)
                         new_version = self._increment_version(build_gradle)
                         if new_version:
                             konsol.log(f"[✓] {plugin_name}: v{new_version} - {mainurl} → {final_url}")
                             self.updated_count += 1
+                            self.change_log.append({
+                                "plugin": plugin_name,
+                                "old_mainUrl": mainurl,
+                                "new_mainUrl": final_url,
+                                "old_domain": self._normalize_domain(mainurl),
+                                "new_domain": self._normalize_domain(final_url)
+                            })
                         else:
                             konsol.log(f"[!] {plugin_name}: Versiyon güncellenemedi")
                             self.error_count += 1
@@ -244,6 +349,15 @@ class MainUrlUpdater:
         konsol.log(f"    ✓ Güncel: {self.unchanged_count}")
         konsol.log(f"    ✗ Hata: {self.error_count}")
         konsol.log(f"{'='*60}\n")
+
+        if self.change_log:
+            try:
+                log_file = os.path.join(self.base_dir, "domain_update_log.json")
+                with open(log_file, "w", encoding="utf-8") as file:
+                    json.dump(self.change_log, file, ensure_ascii=False, indent=2)
+                konsol.log(f"[*] {log_file} dosyasına değişiklikler yazıldı")
+            except Exception as e:
+                konsol.log(f"[!] Değişiklik logu yazılamadı: {e}")
 
         return self.updated_count > 0
 
