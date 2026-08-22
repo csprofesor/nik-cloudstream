@@ -181,7 +181,7 @@
             "nikyokki"
         ],
         "description": "T\u00fcrk\u00e7e altyaz\u0131l\u0131 yabanc\u0131 dizi izle, T\u00fcm yabanc\u0131, kore, netflix dizilerin yeni ve eski sezonlar\u0131n\u0131 orijinal dilinde dizigom1 alt yaz\u0131l\u0131 film izleyebilir, sadece t\u00fcrk\u00e7e altyaz\u0131l\u0131 en iyi yabanc\u0131 diziler ve filmler hakk\u0131nda yorum yapabilirsiniz.",
-        "fileSize": 19652,
+        "fileSize": 19650,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -189,7 +189,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=dizigom1.co&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-79cee81c9687382bdc8b047595bd500ed86b58669b4660ccef46323d24873682"
+        "fileHash": "sha256-180a16e264ccf0be75039e957a6abbd533254f82fdb0382323f453a669ee6353"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
@@ -202,7 +202,7 @@
             "nikyokki"
         ],
         "description": "En G\u00fcncel Kore Dizileri izleme Sitesi",
-        "fileSize": 20772,
+        "fileSize": 23563,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -210,7 +210,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=https://dizikorea.vip&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-5ed610b08c3b5735f9ebeda72cfbf83825296994034d1edfe5fff520e3952409"
+        "fileHash": "sha256-0398f0d5c2ea8c94a37355b73b63a0b667f3b4903be7845009d0724664965dfe"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Dizilla.cs3",
@@ -264,7 +264,7 @@
             "nikyokki"
         ],
         "description": "Binlerce yerli yabanc\u0131 dizi ar\u015fivi, t\u00fcm sezonlar, kesintisiz b\u00f6l\u00fcmler. Sadece dizi izle, Dizimom heryerde seninle!",
-        "fileSize": 34336,
+        "fileSize": 34339,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -272,7 +272,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.tv&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-00deb8c67441c169c6c3f93b1bf26700db1a95844dc80747affb1443b8c70a68"
+        "fileHash": "sha256-3c18eaeaaab0c797794d13fae3d94a19411b48b63eb5a58fc66393816e9bb3b1"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3",
@@ -285,7 +285,7 @@
             "muratcesmecioglu"
         ],
         "description": "en yeni dizileri g\u00fcvenli ve h\u0131zl\u0131 \u015fekilde sunar.",
-        "fileSize": 20086,
+        "fileSize": 20078,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -294,7 +294,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=https://dizipal683.com&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-cc53f8e7603fae232bcd8934715a7cfd0f6a42e63d7f7c11fa5c9c4cd0666468"
+        "fileHash": "sha256-9a12cd1171e6a2f0f40128394b68ddb4ec2eae7624d46525926bb6f9052c783d"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziYou.cs3",
