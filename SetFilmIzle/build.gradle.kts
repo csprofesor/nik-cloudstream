@@ -1,4 +1,4 @@
-version = 30
+version = 31
 
 cloudstream {
     authors     = listOf("keyiflerolsun")
@@ -12,7 +12,7 @@ cloudstream {
      * 2: Slow
      * 3: Beta only
     **/
-    status  = 1 // will be 3 if unspecified
+    status  = 1
     tvTypes = listOf("Movie", "TvSeries")
-    iconUrl = "https://www.google.com/s2/favicons?domain=www.setfilmizle.uk&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=setfilmizle.uk&sz=%size%"
 }
