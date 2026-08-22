@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# Google API Key: set via environment variable GOOGLE_API_KEY
+# Example: export GOOGLE_API_KEY="your_api_key_here"
+
 import os
 import re
 import sys
@@ -131,7 +134,7 @@ class MainUrlUpdater:
             response = self.session.post(
                 url="https://firebaseremoteconfig.googleapis.com/v1/projects/791583031279/namespaces/firebase:fetch",
                 headers={
-                    "X-Goog-Api-Key": "AIzaSyBbhpzG8Ecohu9yArfCO5tF13BQLhjLahc",
+                    "X-Goog-Api-Key": os.getenv("GOOGLE_API_KEY"),
                     "X-Android-Package": "com.rectv.shot",
                     "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 12)",
                 },
@@ -183,7 +186,7 @@ class MainUrlUpdater:
         konsol.log(f"\n[*] {len(self.plugins)} eklenti kontrol ediliyor...\n")
 
         for kt_file, mainurl in self.mainurl_list.items():
-            plugin_name = kt_file.split("/")[0]
+            plugin_name = Path(kt_file).parts[0]
             
             if not mainurl:
                 konsol.log(f"[!] {plugin_name}: mainUrl bulunamadı")
