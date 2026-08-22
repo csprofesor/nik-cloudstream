@@ -126,78 +126,87 @@ class FilmKovasi : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        val html = document.html()
         var found = false
-
-        // FilmKovası now exposes the providers as buttons/links. Extract their
-        // actual URLs instead of relying only on the old div.sources layout.
-        val providerPattern = Regex(
-            "(?i)https?://[^\\\"'\\s<>]+(?:vidsrc|2embed|autoembed|smashy|multiembed|moviesapi)[^\\\"'\\s<>]*"
+        val sourceNames = setOf(
+            "harici kaynak 1", "harici kaynak 2",
+            "vidsrc me", "vidsrc xyz", "vidsrc to", "vidsrc pro", "vidsrc icu", "vidsrc cc",
+            "2embed", "autoembed", "smashystream", "multiembed", "moviesapi"
         )
-        val providerUrls = linkedSetOf<String>()
 
-        document.select("a[href], iframe[src], button, [onclick], [data-url], [data-src], [data-link], [data-embed], [data-video]")
-            .forEach { element ->
-                val text = element.text().lowercase()
-                val interesting = text.contains("vidsrc") || text.contains("embed") ||
-                    text.contains("kaynak") || text.contains("smashy") || text.contains("movies")
-                val attrs = listOf(
-                    element.attr("href"), element.attr("src"), element.attr("onclick"),
-                    element.attr("data-url"), element.attr("data-src"), element.attr("data-link"),
-                    element.attr("data-embed"), element.attr("data-video")
-                )
-                attrs.forEach { raw ->
-                    if (interesting || raw.contains("vidsrc", true) || raw.contains("embed", true) || raw.contains("moviesapi", true)) {
-                        providerUrls.addAll(providerPattern.findAll(raw).map { it.value.trimEnd(')', ';', ',') })
-                    }
-                }
-            }
-
-        // Some provider buttons are generated from JavaScript, so also inspect scripts.
-        providerUrls.addAll(providerPattern.findAll(html).map { it.value.trimEnd(')', ';', ',') })
-
-        // If the page exposes an IMDb id, construct the same provider URLs used by
-        // the site's visible source buttons. This bypasses the site's JavaScript UI.
-        val imdbId = Regex("\\btt\\d{7,10}\\b").find(html)?.value
-        if (imdbId != null) {
-            providerUrls += "https://vidsrc.me/embed/movie/$imdbId"
-            providerUrls += "https://vidsrc.xyz/embed/movie?imdb=$imdbId"
-            providerUrls += "https://vidsrc.to/embed/movie/$imdbId"
-            providerUrls += "https://vidsrc.pro/embed/movie/$imdbId"
-            providerUrls += "https://vidsrc.icu/embed/movie/$imdbId"
-            providerUrls += "https://vidsrc.cc/v2/embed/movie/$imdbId"
-            providerUrls += "https://www.2embed.cc/embed/$imdbId"
-            providerUrls += "https://player.autoembed.cc/embed/movie/$imdbId"
-            providerUrls += "https://player.smashy.stream/movie/$imdbId"
-            providerUrls += "https://multiembed.mov/?video_id=$imdbId"
-            providerUrls += "https://moviesapi.club/movie/$imdbId"
-        }
-
-        // Keep compatibility with the previous FilmKovası source-page implementation.
-        document.select("div.sources a[href]").forEach { source ->
-            val href = fixUrlNull(source.attr("href"))
-            if (href != null) {
-                runCatching {
-                    val sourceDoc = app.get(href).document
-                    sourceDoc.select("iframe[src]").mapNotNull { fixUrlNull(it.attr("src")) }
-                        .forEach { providerUrls += it }
-                }
-            }
-        }
-
-        for (provider in providerUrls.distinct()) {
-            if (provider.isBlank()) continue
+        suspend fun resolveCandidate(raw: String, sourceName: String) {
+            val candidate = fixUrlNull(raw.trim().trim('"', '\'', '(', ')', ';', ',')) ?: return
+            if (candidate.isBlank() || candidate.startsWith("javascript:") || candidate == data) return
             try {
-                val loaded = loadExtractor(provider, data, subtitleCallback) { link ->
-                    callback(link.copy(name = link.name.ifBlank { provider.substringAfter("//").substringBefore('/') }))
+                if (candidate.startsWith("http") && !candidate.contains("filmkovasi.co", true)) {
+                    if (loadExtractor(candidate, data, subtitleCallback) { link ->
+                        callback(link.copy(name = sourceName))
+                    }) found = true
+                    return
                 }
-                found = found || loaded
+
+                val sourceDoc = app.get(candidate, referer = data).document
+                sourceDoc.select("iframe[src], iframe[data-src]").mapNotNull {
+                    fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") })
+                }.forEach { iframe ->
+                    if (loadExtractor(iframe, candidate, subtitleCallback) { link ->
+                        callback(link.copy(name = sourceName))
+                    }) found = true
+                }
             } catch (_: Throwable) {
-                // Try the next provider; FilmKovası exposes many mirrors.
+                // Try the next visible source; FilmKovası exposes multiple mirrors.
             }
         }
 
-        // Last fallback: if the page itself contains a playable media URL, expose it.
+        // The current FilmKovası page visibly labels the providers. Match those
+        // exact labels first, instead of using a broad iframe/movie selector.
+        document.select("a, button, [role=button]").forEach { element ->
+            val label = element.text().replace(Regex("\\s+"), " ").trim().lowercase()
+            if (label !in sourceNames) return@forEach
+            val sourceName = element.text().replace(Regex("\\s+"), " ").trim()
+            val attrs = listOf(
+                element.attr("href"), element.attr("src"), element.attr("data-url"),
+                element.attr("data-src"), element.attr("data-link"), element.attr("data-embed"),
+                element.attr("data-video"), element.attr("onclick")
+            )
+            attrs.filter { it.isNotBlank() }.forEach { raw ->
+                Regex("https?://[^\\\"'\\s<>]+|/[^\\\"'\\s<>]+")
+                    .findAll(raw)
+                    .map { it.value }
+                    .forEach { candidate ->
+                        kotlinx.coroutines.runBlocking { resolveCandidate(candidate, sourceName) }
+                    }
+            }
+
+            element.select("iframe[src], iframe[data-src]").mapNotNull {
+                it.attr("src").ifBlank { it.attr("data-src") }.takeIf(String::isNotBlank)
+            }.forEach { iframe ->
+                kotlinx.coroutines.runBlocking {
+                    if (loadExtractor(iframe, data, subtitleCallback) { link ->
+                        callback(link.copy(name = sourceName))
+                    }) found = true
+                }
+            }
+        }
+
+        // Compatibility with the older FilmKovası implementation: some source
+        // buttons still point to an intermediate page under div.sources.
+        document.select("div.sources a[href]").forEach { source ->
+            val sourceName = source.selectFirst("span")?.text()?.trim().takeUnless { it.isNullOrBlank() } ?: name
+            val href = fixUrlNull(source.attr("href")) ?: return@forEach
+            try {
+                val sourceDoc = app.get(href, referer = data).document
+                sourceDoc.select("iframe[src], iframe[data-src]").mapNotNull {
+                    fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") })
+                }.forEach { iframe ->
+                    if (loadExtractor(iframe, href, subtitleCallback) { link ->
+                        callback(link.copy(name = sourceName))
+                    }) found = true
+                }
+            } catch (_: Throwable) {
+                // Continue with other source buttons.
+            }
+        }
+
         document.select("video source[src], video[src]").mapNotNull {
             fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") })
         }.filter { it.startsWith("http") }.forEach { media ->
