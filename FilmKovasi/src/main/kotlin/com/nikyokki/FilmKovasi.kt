@@ -48,7 +48,7 @@ class FilmKovasi : MainAPI() {
         "${mainUrl}/filmizle/gerilim/" to "Gerilim",
         "${mainUrl}/filmizle/gizem/" to "Gizem",
         "${mainUrl}/filmizle/komedi-hd/" to "Komedi",
-        "${mainUrl}/filmizle/korku-hd/" to "Korku",
+        "${mainUrl}/filmizle/korku/" to "Korku",
         "${mainUrl}/filmizle/macera-hd/" to "Macera",
         "${mainUrl}/filmizle/romantik-hd/" to "Romantik",
         "${mainUrl}/filmizle/savas-hd/" to "Savaş",
@@ -106,12 +106,7 @@ class FilmKovasi : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("FKV", "data » ${data}")
         val document = app.get(data).document
         val iframe = document.selectFirst("iframe")?.attr("src")
@@ -121,64 +116,30 @@ class FilmKovasi : MainAPI() {
             val name = it.selectFirst("span")?.text() ?: this.name
             val doc = app.get(it.attr("href")).document
             val iffi = doc.selectFirst("iframe")?.attr("src") ?: ""
-            Log.d("FKV", iffi)
             if (iffi.isNotBlank()) loadLinkExtractor(iffi, name, subtitleCallback, callback)
         }
         return true
     }
 
-    private suspend fun loadLinkExtractor(
-        iframe: String,
-        name: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ) {
+    private suspend fun loadLinkExtractor(iframe: String, name: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
         val ianaLink = iframe.substringBefore("/watch/")
-        Log.d("FKV", "ianaLink » $ianaLink")
-        val idoc = app.get(iframe, referer = mainUrl).document
+        val idoc = app.get(iframe, referer = iframe).document
         val script = idoc.select("script").find { it.data().contains("sources:") }?.data() ?: return
         val vidJson = script.substringAfter("var video = ").substringBefore(";")
-        val source = script.substringAfter("sources: [").substringBefore("],")
-            .replace("`", "\"").addMarks("file").addMarks("type").addMarks("preload")
+        val source = script.substringAfter("sources: [").substringBefore("],").replace("`", "\"").addMarks("file").addMarks("type").addMarks("preload")
         val tracks = script.substringAfter("tracks: [").substringBefore("]")
         val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         val video: FKVSource = objectMapper.readValue(vidJson)
         val file: FileSource = objectMapper.readValue(source)
         val track: Track = objectMapper.readValue(tracks)
-        Log.d("FKV", "video » $video")
-        Log.d("FKV", "file » $file")
-        Log.d("FKV", "track » $track")
         track.file?.let { subtitleCallback.invoke(SubtitleFile(lang = "Türkçe Altyazı", url = it)) }
-        val sonLink = ianaLink + file.file
-            ?.replace("\${video.uid}", "${video.uid}")
-            ?.replace("\${video.md5}", "${video.md5}")
-            ?.replace("\${video.id}", "${video.id}")
-            ?.replace("\${video.status}", "${video.status}")
-        if (!sonLink.isNullOrBlank()) {
-            callback.invoke(ExtractorLink(source = this.name, name = this.name, url = sonLink, referer = iframe, quality = Qualities.Unknown.value, type = ExtractorLinkType.M3U8))
-        }
+        val sonLink = ianaLink + file.file?.replace("\${video.uid}", "${video.uid}")?.replace("\${video.md5}", "${video.md5}")?.replace("\${video.id}", "${video.id}")?.replace("\${video.status}", "${video.status}")
+        if (!sonLink.isNullOrBlank()) callback.invoke(ExtractorLink(source = this.name, name = this.name, url = sonLink, referer = iframe, quality = Qualities.Unknown.value, type = ExtractorLinkType.M3U8))
     }
 
-    private data class FKVSource(
-        @JsonProperty("uid") val uid: String? = null,
-        @JsonProperty("md5") val md5: String? = null,
-        @JsonProperty("title") val title: String? = null,
-        @JsonProperty("id") val id: String? = null,
-        @JsonProperty("status") val status: String? = null,
-    )
-
-    private data class FileSource(
-        @JsonProperty("file") val file: String? = null,
-        @JsonProperty("type") val type: String? = null,
-        @JsonProperty("preload") val preload: String? = null,
-    )
-
-    private data class Track(
-        @JsonProperty("label") val label: String? = null,
-        @JsonProperty("file") val file: String? = null,
-        @JsonProperty("kind") val kind: String? = null,
-    )
-
+    private data class FKVSource(@JsonProperty("uid") val uid: String? = null, @JsonProperty("md5") val md5: String? = null, @JsonProperty("title") val title: String? = null, @JsonProperty("id") val id: String? = null, @JsonProperty("status") val status: String? = null)
+    private data class FileSource(@JsonProperty("file") val file: String? = null, @JsonProperty("type") val type: String? = null, @JsonProperty("preload") val preload: String? = null)
+    private data class Track(@JsonProperty("label") val label: String? = null, @JsonProperty("file") val file: String? = null, @JsonProperty("kind") val kind: String? = null)
     private fun String.addMarks(str: String): String = this.replace(Regex("\"?$str\"?"), "\"$str\"")
 }
