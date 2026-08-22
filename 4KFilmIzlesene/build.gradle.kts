@@ -1,9 +1,9 @@
-version = 6
+version = 7
 
 cloudstream {
-    authors     = listOf("nikyokki")
+    authors     = listOf("gsrepo")
     language    = "tr"
-    description = "En yeni ve sorunsuz ⚡  Full HD Film izle keyfi her yerde sizinle ! 4K ve 1080p online film izleme farkıyla 4KFilmizlesene&amp;#039;nin Tadını Çıkart."
+    description = "En yeni ve sorunsuz ⚡ Full HD Film izle keyfi her yerde sizinle ! 4K ve 1080p online film izleme farkıyla 4KFilmizlesene'nin Tadını Çıkart."
 
     /**
      * Status int as the following:
@@ -12,7 +12,7 @@ cloudstream {
      * 2: Slow
      * 3: Beta only
     **/
-    status  = 1 // will be 3 if unspecified
+    status  = 1
     tvTypes = listOf("Movie")
-    iconUrl = "https://www.google.com/s2/favicons?domain=www.4kfilmizlesene.org&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=www.4kfilmizlesene.us&sz=%size%"
 }
