@@ -365,11 +365,12 @@ class DomainAutoFixer:
 
             # Look for redirect notices and meta-refresh in archived page
             meta_pattern = re.compile(r'<meta[^>]+url=(["\'])([^"\']+)\1', re.IGNORECASE)
+            wayback_netloc = "web.archive.org"
             for m in meta_pattern.finditer(text):
                 href = m.group(2)
                 if href.startswith("http"):
                     p = urlparse(href)
-                    if p.netloc and "web.archive.org" not in p.netloc:
+                    if p.netloc and p.netloc != wayback_netloc and not p.netloc.endswith("." + wayback_netloc):
                         candidates.append(f"{p.scheme}://{p.netloc}")
 
             # Extract anchor links from archived content
@@ -378,14 +379,16 @@ class DomainAutoFixer:
             base = re.sub(r"\d+$", "", old_domain.split(".")[0]) if old_domain else ""
             for m in link_pattern.finditer(text):
                 href = m.group(2)
-                # Strip Wayback Machine prefix
-                if "web.archive.org" in href:
-                    href = re.sub(r"https?://web\.archive\.org/web/\d+\*/", "", href)
-                    href = re.sub(r"https?://web\.archive\.org/web/\d+/", "", href)
+                # Strip Wayback Machine prefix using regex before parsing
+                href = re.sub(r"https?://web\.archive\.org/web/\d+\*/", "", href)
+                href = re.sub(r"https?://web\.archive\.org/web/\d+/", "", href)
                 if not href.startswith("http"):
                     continue
                 p = urlparse(href)
-                if not p.netloc or "web.archive.org" in p.netloc:
+                # Reject missing netloc or Wayback Machine URLs (exact or subdomain match)
+                if not p.netloc:
+                    continue
+                if p.netloc == wayback_netloc or p.netloc.endswith("." + wayback_netloc):
                     continue
                 if base and base in p.netloc.lower():
                     full = f"{p.scheme}://{p.netloc}"
