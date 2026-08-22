@@ -25,6 +25,7 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class FilmKovasi : MainAPI() {
@@ -60,52 +61,58 @@ class FilmKovasi : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val pageUrl = if (page <= 1) request.data else "${request.data}page/$page/"
         val document = app.get(pageUrl).document
-        val home = document.select("div.movie-box").mapNotNull { it.toMainPageResult() }
+        val home = document.select("div.movie-box").mapNotNull { it.toMainPageResult() }.distinctBy { it.url }
         return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toMainPageResult(): SearchResponse? {
-        val title = selectFirst("div.film-ismi a")?.text()?.replace(" izle", "")?.trim()
-            ?: return null
-        val href = fixUrlNull(selectFirst("div.film-ismi a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(selectFirst("div.poster img")?.attr("data-src"))
-            ?: fixUrlNull(selectFirst("div.poster img")?.attr("data-lazy-src"))
-            ?: fixUrlNull(selectFirst("div.poster img")?.attr("src"))
+    private fun Element.posterUrl(): String? {
+        val image = if (tagName() == "img") this else selectFirst("img") ?: return null
+        val attrs = listOf("data-src", "data-lazy-src", "data-original", "data-image", "data-url", "src")
+        for (attr in attrs) {
+            val value = image.attr(attr).trim()
+            if (value.isNotBlank() && !value.startsWith("data:image")) return fixUrlNull(value)
+        }
+        val absolute = image.absUrl("src").trim()
+        if (absolute.isNotBlank()) return absolute
+        val srcset = image.attr("srcset").substringBefore(',').trim().split(" ").firstOrNull()
+        return srcset?.takeIf { it.isNotBlank() }?.let { fixUrlNull(it) }
+    }
 
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+    private fun Element.toMainPageResult(): SearchResponse? {
+        val link = selectFirst("div.film-ismi a[href]") ?: selectFirst("a[href]") ?: return null
+        val href = fixUrlNull(link.attr("href")) ?: return null
+        val title = link.text().replace(Regex("\\s+"), " ").replace(Regex("(?i)\\s+izle$"), "").trim()
+        if (title.length < 2 || !href.startsWith(mainUrl)) return null
+        val poster = selectFirst("div.poster img")?.posterUrl()
+            ?: selectFirst("img")?.posterUrl()
+        return newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/?s=${query}").document
-        return document.select("div.movie-box").mapNotNull { it.toMainPageResult() }
+        return document.select("div.movie-box").mapNotNull { it.toMainPageResult() }.distinctBy { it.url }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-        val title = document.selectFirst("h1.title-border")?.text()?.replace(" izle", "")?.trim()
-            ?: return null
-        val poster = fixUrlNull(document.selectFirst("div.film-afis img")?.attr("src"))
-            ?: fixUrlNull(document.selectFirst("div.film-afis img")?.attr("data-src"))
-            ?: fixUrlNull(document.selectFirst("div.film-afis img")?.attr("data-lazy-src"))
-        val description = document.selectFirst("div#film-aciklama")?.text()?.trim()
+        val title = document.selectFirst("h1.title-border, h1, .title-border")?.text()
+            ?.replace(Regex("(?i)\\s+izle$"), "")?.trim() ?: return null
+        val poster = document.selectFirst("meta[property='og:image']")?.attr("content")?.let { fixUrlNull(it) }
+            ?: document.selectFirst("div.film-afis img, .film-afis img, .poster img, .film-poster img")?.posterUrl()
+        val description = document.selectFirst("div#film-aciklama, #film-aciklama, .film-aciklama")?.text()?.trim()
         var year = document.selectFirst("div.release a")?.text()?.trim()?.toIntOrNull()
-        val tags = document.select("div#listelements a").map { it.text() }
-        var rating = document.selectFirst("div.imdb")?.text()?.replace("IMDb Puanı:", "")
-            ?.split("/")?.first()?.trim()
+        val tags = document.select("div#listelements a, #listelements a").map { it.text() }
+        var rating = document.selectFirst("div.imdb")?.text()?.replace("IMDb Puanı:", "")?.split("/")?.first()?.trim()
         var actors = document.select("div.actor a").map { it.text() }
-        val trailer = document.selectFirst("div.film-afis iframe")?.let { fixUrlNull(it.attr("src")) }
+        val trailer = document.selectFirst("div.film-afis iframe")?.let { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }
 
         document.select("div.list-item").forEach { item ->
-            if (item.selectFirst("a")?.attr("href")?.contains("/yil/") == true) {
-                year = item.selectFirst("a")?.text()?.toIntOrNull()
-            }
-            if (item.selectFirst("a")?.attr("href")?.contains("/oyuncu/") == true) {
-                actors = item.select("a").map { it.text() }
-            }
+            if (item.selectFirst("a")?.attr("href")?.contains("/yil/") == true) year = item.selectFirst("a")?.text()?.toIntOrNull()
+            if (item.selectFirst("a")?.attr("href")?.contains("/oyuncu/") == true) actors = item.select("a").map { it.text() }
         }
-        document.select("div#listelements div").forEach {
+        document.select("div#listelements div, #listelements div").forEach {
             if (it.text().contains("IMDb:")) rating = it.text().trim().split(" ").last()
         }
 
@@ -113,7 +120,7 @@ class FilmKovasi : MainAPI() {
             posterUrl = poster
             plot = description
             this.year = year
-            this.tags = tags
+            tags?.let { this.tags = it }
             score = Score.from10(rating)
             addActors(actors)
             addTrailer(trailer)
@@ -126,79 +133,91 @@ class FilmKovasi : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("FKV", "data » $data")
-        val document = app.get(data).document
-        val iframe = document.selectFirst("iframe")?.attr("src")
-        val sourceName = document.selectFirst("div.sources span")?.text() ?: name
-
-        if (!iframe.isNullOrBlank()) {
-            loadLinkExtractor(iframe, sourceName, subtitleCallback, callback)
+        val document = try { app.get(data).document } catch (e: Throwable) {
+            Log.e("FKV", "film page failed", e)
+            return false
         }
 
-        document.select("div.sources a[href]").forEach { source ->
-            val sourceUrl = fixUrlNull(source.attr("href")) ?: return@forEach
-            val sourceTitle = source.selectFirst("span")?.text() ?: name
-            try {
-                val sourceDoc = app.get(sourceUrl, referer = data).document
-                val sourceIframe = sourceDoc.selectFirst("iframe")?.attr("src")
-                if (!sourceIframe.isNullOrBlank()) {
-                    loadLinkExtractor(sourceIframe, sourceTitle, subtitleCallback, callback)
-                }
-            } catch (e: Throwable) {
-                Log.e("FKV", "source failed: $sourceUrl", e)
+        val candidates = linkedSetOf<String>()
+
+        // Current site/player markup: collect every iframe and lazy iframe first.
+        document.select("iframe[src], iframe[data-src], iframe[data-url], iframe[data-embed]").forEach { iframe ->
+            val url = iframe.attr("src").ifBlank { iframe.attr("data-src") }.ifBlank { iframe.attr("data-url") }.ifBlank { iframe.attr("data-embed") }
+            fixUrlNull(url)?.let { candidates.add(it) }
+        }
+
+        // Source/player buttons and links used by different FilmKovası templates.
+        document.select("div.sources a[href], .sources a[href], .player a[href], .video a[href], a[href]").forEach { link ->
+            val href = link.attr("href").trim()
+            val label = link.text().lowercase()
+            val cls = link.className().lowercase()
+            if (href.startsWith("http") && (
+                link.parents().any { it.className().lowercase().contains("source") || it.className().lowercase().contains("player") || it.className().lowercase().contains("video") } ||
+                cls.contains("source") || cls.contains("player") || cls.contains("play") || cls.contains("video") ||
+                label.contains("oynat") || label.contains("izle") || label.contains("player")
+            )) candidates.add(href)
+        }
+
+        // Some versions build the player URL in JavaScript instead of an iframe attribute.
+        val html = document.html()
+        Regex("https?://[^\\\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(html).forEach { match ->
+            val url = match.value.replace("\\u0026", "&")
+            val lower = url.lowercase()
+            if (listOf("iframe", "embed", "player", "stream", "video", "watch", "m3u8", "mp4").any { lower.contains(it) }) {
+                candidates.add(url)
             }
+        }
+
+        val visited = mutableSetOf<String>()
+        for (candidate in candidates) {
+            resolveVideoCandidate(candidate, data, subtitleCallback, callback, visited, depth = 0)
         }
         return true
     }
 
-    private suspend fun loadLinkExtractor(
-        iframe: String,
-        sourceName: String,
+    private suspend fun resolveVideoCandidate(
+        candidate: String,
+        referer: String,
         subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
+        callback: (ExtractorLink) -> Unit,
+        visited: MutableSet<String>,
+        depth: Int
     ) {
-        val ianaLink = iframe.substringBefore("/watch/")
-        val idoc = app.get(iframe, referer = iframe).document
-        val script = idoc.select("script").firstOrNull { it.data().contains("sources:") }?.data() ?: return
-        val vidJson = script.substringAfter("var video = ").substringBefore(";")
-        val source = script.substringAfter("sources: [").substringBefore("],")
-            .replace("`", "\"").addMarks("file").addMarks("type").addMarks("preload")
-        val tracks = script.substringAfter("tracks: [").substringBefore("]")
-        if (vidJson.isBlank() || source.isBlank()) return
+        if (depth > 2 || !visited.add(candidate)) return
+        val fixed = fixUrlNull(candidate) ?: return
+        val lower = fixed.lowercase()
+        if (lower.contains("filmkovasi.co") && !lower.contains("/player") && !lower.contains("/embed") && !lower.contains("/watch")) {
+            return
+        }
 
         try {
-            val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-            objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            val video: FKVSource = objectMapper.readValue(vidJson)
-            val file: FileSource = objectMapper.readValue(source)
+            if (lower.endsWith(".m3u8") || lower.contains(".m3u8?") || lower.endsWith(".mp4") || lower.contains(".mp4?")) {
+                callback(ExtractorLink(
+                    source = name,
+                    name = name,
+                    url = fixed,
+                    referer = referer,
+                    quality = Qualities.Unknown.value,
+                    type = if (lower.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ))
+                return
+            }
 
-            if (tracks.isNotBlank()) {
-                runCatching {
-                    val track: Track = objectMapper.readValue(tracks)
-                    track.file?.let { subtitleCallback(SubtitleFile(lang = "Türkçe Altyazı", url = it)) }
+            // Let CloudStream's maintained extractors handle external players.
+            if (!lower.contains("filmkovasi.co")) {
+                loadExtractor(fixed, referer, subtitleCallback, callback)
+            }
+
+            // Also inspect an external player page for a nested iframe or direct media URL.
+            val doc = app.get(fixed, referer = referer).document
+            doc.select("iframe[src], iframe[data-src], iframe[data-url], video source[src], source[src]").forEach { element ->
+                val media = element.attr("src").ifBlank { element.attr("data-src") }.ifBlank { element.attr("data-url") }
+                fixUrlNull(media)?.let { url ->
+                    resolveVideoCandidate(url, fixed, subtitleCallback, callback, visited, depth + 1)
                 }
             }
-
-            val stream = ianaLink + (file.file ?: "")
-                .replace("\${video.uid}", video.uid ?: "")
-                .replace("\${video.md5}", video.md5 ?: "")
-                .replace("\${video.id}", video.id ?: "")
-                .replace("\${video.status}", video.status ?: "")
-
-            if (stream.isNotBlank() && !stream.contains("null")) {
-                callback(
-                    ExtractorLink(
-                        source = name,
-                        name = sourceName,
-                        url = stream,
-                        referer = iframe,
-                        quality = Qualities.Unknown.value,
-                        type = ExtractorLinkType.M3U8
-                    )
-                )
-            }
         } catch (e: Throwable) {
-            Log.e("FKV", "video parse failed", e)
+            Log.e("FKV", "video candidate failed: $fixed", e)
         }
     }
 
