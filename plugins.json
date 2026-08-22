@@ -784,7 +784,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3",
         "status": 1,
-        "version": 30,
+        "version": 32,
         "name": "SetFilmIzle",
         "internalName": "SetFilmIzle",
         "authors": [
@@ -798,9 +798,9 @@
             "Movie",
             "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.setfilmizle.uk&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=setfilmizle.ltd&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-219ff7634160e17f335cb603285ba3466411dc92acab0f93df3cf3af5a0bd68d"
+        "fileHash": "sha256-4cf38413c39af1a48ba944c20d98ec036b1736ce7eea20b70bb85eaae35bd48d"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SezonlukDizi.cs3",
