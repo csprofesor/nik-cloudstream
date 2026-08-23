@@ -21,11 +21,11 @@ class HDFilmCehennemi : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "$mainUrl/category/tavsiye-filmler-izle2/page/" to "Tavsiye Filmler Kategorisi",
-        "$mainUrl/yabancidiziizle-1/page/" to "Son Eklenen Yabancı Diziler",
-        "$mainUrl/imdb-7-puan-uzeri-filmler/page/" to "Imdb 7+ Filmler",
-        "$mainUrl/en-cok-yorumlananlar/page/" to "En Çok Yorumlananlar",
-        "$mainUrl/en-cok-begenilen-filmleri-izle/page/" to "En Çok Beğenilenler"
+        "$mainUrl/category/tavsiye-filmler-izle3/page/" to "Tavsiye Filmler Kategorisi",
+        "$mainUrl/yabancidiziizle-5/page/" to "Son Eklenen Yabancı Diziler",
+        "$mainUrl/imdb-7-puan-uzeri-filmler-2/page/" to "Imdb 7+ Filmler",
+        "$mainUrl/en-cok-yorumlananlar-2/page/" to "En Çok Yorumlananlar",
+        "$mainUrl/en-cok-begenilen-filmleri-izle-4/page/" to "En Çok Beğenilenler"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
