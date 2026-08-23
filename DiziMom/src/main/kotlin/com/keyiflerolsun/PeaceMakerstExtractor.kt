@@ -48,8 +48,8 @@ open class PeaceMakerst : ExtractorApi() {
             throw ErrorLoadingException("PeaceMakerst boş yanıt döndürdü")
         }
 
-        // Bu servis zaman zaman geçersiz/eksik JSON döndürüyor.
-        // Bu nedenle response.parsed() kullanmıyoruz; ham gövdeden gerçek medya URL'lerini çıkarıyoruz.
+        // Servis zaman zaman geçersiz/eksik JSON döndürüyor.
+        // response.parsed() kullanmak yerine ham gövdeden medya URL'sini çıkarıyoruz.
         val candidates = LinkedHashSet<String>()
 
         val quotedUrlRegex = Regex(
@@ -61,7 +61,7 @@ open class PeaceMakerst : ExtractorApi() {
             .mapNotNull { normalizeUrl(it.groupValues[1]) }
             .forEach(candidates::add)
 
-        // JSON düzgün değilse bile doğrudan m3u8/mp4 URL'sini yakala.
+        // JSON tamamen bozuk olsa bile doğrudan m3u8/mp4 URL'sini yakala.
         Regex(
             "https?://[^\\s\\\"'<>\\\\]+(?:\\.m3u8(?:\\?[^\\s\\\"'<>\\\\]*)?|\\.mp4(?:\\?[^\\s\\\"'<>\\\\]*)?)",
             RegexOption.IGNORE_CASE
@@ -69,7 +69,7 @@ open class PeaceMakerst : ExtractorApi() {
             .mapNotNull { normalizeUrl(it.value) }
             .forEach(candidates::add)
 
-        // Teve2 embed'i varsa JSON parse etmeden embed URL'sini kaynak olarak döndür.
+        // Teve2 embed adresini de doğrudan yakala.
         Regex(
             "https?://(?:www\\.)?teve2\\.com\\.tr/(?:embed|video)/[^\\s\\\"'<>]+",
             RegexOption.IGNORE_CASE
@@ -104,23 +104,27 @@ open class PeaceMakerst : ExtractorApi() {
     private suspend fun emit(
         url: String,
         referer: String,
-        callback: (SubtitleFile) -> Unit = {},
-        linkCallback: ((ExtractorLink) -> Unit)? = null
+        callback: (ExtractorLink) -> Unit
     ) {
-        val target = newExtractorLink(
-            source = name,
-            name = name,
-            url = url,
-            type = INFER_TYPE
-        ) {
-            this.referer = referer
-            this.quality = when {
-                url.contains("1080", true) -> Qualities.P1080.value
-                url.contains("720", true) -> Qualities.P720.value
-                url.contains("480", true) -> Qualities.P480.value
-                else -> Qualities.Unknown.value
+        callback.invoke(
+            newExtractorLink(
+                source = name,
+                name = name,
+                url = url,
+                type = INFER_TYPE
+            ) {
+                this.referer = referer
+                this.quality = when {
+                    url.contains("1080", true) -> Qualities.P1080.value
+                    url.contains("720", true) -> Qualities.P720.value
+                    url.contains("480", true) -> Qualities.P480.value
+                    else -> Qualities.Unknown.value
+                }
             }
-        }
-        linkCallback?.invoke(target)
+        )
+    }
+
+    private companion object {
+        const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
     }
 }
