@@ -168,7 +168,7 @@ class DiziMom : MainAPI() {
                 this.quality = 0
             }
         )
-        Log.d("DZM", "direct media » $normalized")
+        Log.d("DZM", "direct media found")
     }
 
     override suspend fun loadLinks(
@@ -177,7 +177,7 @@ class DiziMom : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("DZM", "data » $data")
+        Log.d("DZM", "loadLinks: $data")
 
         val headers = mapOf(
             "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
@@ -208,14 +208,16 @@ class DiziMom : MainAPI() {
         }
 
         var loaded = false
-        val queue = ArrayDeque<Pair<String, String>>()
+        val queue = mutableListOf<Pair<String, String>>()
         links.forEach { queue.add(it to data) }
 
-        var depth = 0
-        while (queue.isNotEmpty() && depth < 20) {
-            val (link, referer) = queue.removeFirst()
+        var processed = 0
+        while (queue.isNotEmpty() && processed < 20) {
+            val current = queue.removeAt(0)
+            val link = current.first
+            val referer = current.second
             if (!visited.add(link)) continue
-            depth++
+            processed++
 
             if (looksLikeMedia(link)) {
                 addDirectMediaLink(link, referer, callback)
@@ -234,26 +236,27 @@ class DiziMom : MainAPI() {
 
                 frameDocument.select("video, source, iframe, embed").forEach { element ->
                     listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
-                        val candidate = fixUrlNull(element.attr(attr)) ?: return@forEach
+                        val raw = element.attr(attr)
+                        val candidate = fixUrlNull(raw) ?: return@forEach
                         if (looksLikeMedia(candidate)) {
                             addDirectMediaLink(candidate, link, callback)
                             loaded = true
-                        } else if (visited.size < 20) {
+                        } else if (!visited.contains(candidate) && queue.size < 20) {
                             queue.add(candidate to link)
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.d("DZM", "iframe parse failed: $link - ${e.message}")
+                Log.d("DZM", "iframe parse failed: ${e.message}")
             }
 
             try {
                 if (loadExtractor(link, referer, subtitleCallback, callback)) {
                     loaded = true
-                    Log.d("DZM", "extractor accepted » $link")
+                    Log.d("DZM", "extractor accepted")
                 }
             } catch (e: Exception) {
-                Log.d("DZM", "Extractor failed: $link - ${e.message}")
+                Log.d("DZM", "extractor failed: ${e.message}")
             }
         }
 
