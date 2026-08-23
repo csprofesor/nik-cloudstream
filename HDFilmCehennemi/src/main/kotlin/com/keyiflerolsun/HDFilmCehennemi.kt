@@ -172,7 +172,9 @@ class HDFilmCehennemi : MainAPI() {
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        app.get(data).document.select("nav.nav.card-nav.nav-slider a.nav-link").map { Pair(it.attr("href"), it.text()) }.forEach { (url, source) ->
+        val sources = app.get(data).document.select("nav.nav.card-nav.nav-slider a.nav-link")
+            .map { Pair(it.attr("href"), it.text()) }
+        for ((url, source) in sources) {
             try {
                 val iframeUrl = app.get(url).document.select("div.card-video > iframe").attr("data-src")
                 if (iframeUrl.startsWith(mainUrl)) {
