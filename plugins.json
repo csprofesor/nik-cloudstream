@@ -237,22 +237,22 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3",
         "status": 1,
-        "version": 28,
+        "version": 29,
         "name": "DiziMom",
         "internalName": "DiziMom",
         "authors": [
             "gsrepo"
         ],
         "description": "Binlerce yerli yabanc\u0131 dizi ar\u015fivi, t\u00fcm sezonlar, kesintisiz b\u00f6l\u00fcmler. Sadece dizi izle, Dizimom heryerde seninle!",
-        "fileSize": 38394,
+        "fileSize": 37622,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
             "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.surf&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.work&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-f75eca264938de66d7ac35bad260da109404fe9d0e20e512a6ec4dd7f9cf884e"
+        "fileHash": "sha256-833f18fa3d27793bd37d47a1877eb348ef2bbd9d3ee280cead58eb9233bc804e"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3",
