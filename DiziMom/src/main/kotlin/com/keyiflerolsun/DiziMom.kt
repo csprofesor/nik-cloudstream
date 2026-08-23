@@ -20,11 +20,8 @@ import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
 class DiziMom : MainAPI() {
@@ -63,20 +60,20 @@ class DiziMom : MainAPI() {
     }
 
     private suspend fun Element.sonBolumler(): SearchResponse? {
-        val name = this.selectFirst("div.episode-name a")?.text()?.substringBefore(" izle") ?: return null
+        val name = selectFirst("div.episode-name a")?.text()?.substringBefore(" izle") ?: return null
         val title = name.replace(".Sezon ", "x").replace(".Bölüm", "")
-        val epHref = fixUrlNull(this.selectFirst("div.episode-name a")?.attr("href")) ?: return null
+        val epHref = fixUrlNull(selectFirst("div.episode-name a")?.attr("href")) ?: return null
         val epDoc = app.get(epHref).document
         val href = epDoc.selectFirst("div#benzerli a")?.attr("href") ?: return null
-        val posterUrl = this.selectFirst("a img")?.imageUrl()
+        val posterUrl = selectFirst("a img")?.imageUrl()
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
 
     private fun Element.diziler(): SearchResponse? {
-        val title = this.selectFirst("div.categorytitle a")?.text()?.substringBefore(" izle") ?: return null
-        val href = fixUrlNull(this.selectFirst("div.categorytitle a")?.attr("href")) ?: return null
-        val posterUrl = this.selectFirst("div.cat-img img")?.imageUrl()
-        val score = this.selectFirst("div.imdbp")?.text()?.replace("(IMDb:", "")?.replace(")", "")?.trim()
+        val title = selectFirst("div.categorytitle a")?.text()?.substringBefore(" izle") ?: return null
+        val href = fixUrlNull(selectFirst("div.categorytitle a")?.attr("href")) ?: return null
+        val posterUrl = selectFirst("div.cat-img img")?.imageUrl()
+        val score = selectFirst("div.imdbp")?.text()?.replace("(IMDb:", "")?.replace(")", "")?.trim()
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
             this.score = Score.from10(score)
@@ -98,7 +95,8 @@ class DiziMom : MainAPI() {
         val description = document.selectFirst("div.category_desc")?.text()?.trim()
         val tags = document.select("div.genres a").mapNotNull { it.text().trim() }
         val rating = document.selectXpath("//div[span[contains(text(), 'IMDB')]]").text().substringAfter("IMDB : ").trim()
-        val actors = document.selectXpath("//div[span[contains(text(), 'Oyuncular')]]").text().substringAfter("Oyuncular : ").split(", ").map { Actor(it.trim()) }
+        val actors = document.selectXpath("//div[span[contains(text(), 'Oyuncular')]]").text()
+            .substringAfter("Oyuncular : ").split(", ").filter { it.isNotBlank() }.map { Actor(it.trim()) }
         val episodes = document.select("div.bolumust").mapNotNull {
             val epName = it.selectFirst("div.baslik")?.text()?.trim() ?: return@mapNotNull null
             val epHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
@@ -124,30 +122,12 @@ class DiziMom : MainAPI() {
         var url = value.trim().replace("\\/", "/").replace("&amp;", "&")
             .trim('"', '\'', '`', '”', '“', '’', '‘')
         if (url.startsWith("//")) url = "https:$url"
-        if (!url.startsWith("http://") && !url.startsWith("https://")) return null
-        return url
+        return url.takeIf { it.startsWith("http://") || it.startsWith("https://") }
     }
 
-    private fun mediaUrlsFromHtml(html: String): List<String> {
-        val regex = Regex("""https?://[^\s\"'<>]+?\.(?:m3u8|mp4)(?:\?[^\s\"'<>]*)?""", RegexOption.IGNORE_CASE)
-        return regex.findAll(html).mapNotNull { normalizeUrl(it.value) }.distinct().toList()
-    }
-
-    private fun isM3u8(url: String): Boolean = url.contains(".m3u8", ignoreCase = true)
-
-    private fun addMedia(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
-        val media = normalizeUrl(url) ?: return
-        callback(
-            newExtractorLink(
-                source = "DiziMom",
-                name = "DiziMom",
-                url = media,
-                type = if (isM3u8(media)) ExtractorLinkType.M3U8 else INFER_TYPE
-            ) {
-                this.referer = referer
-                this.quality = Qualities.Unknown.value
-            }
-        )
+    private fun addCandidate(set: LinkedHashSet<String>, value: String?) {
+        val normalized = normalizeUrl(value ?: "") ?: fixUrlNull(value ?: "")
+        if (!normalized.isNullOrBlank()) set.add(normalized)
     }
 
     override suspend fun loadLinks(
@@ -156,72 +136,70 @@ class DiziMom : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val ua = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
-        val root = app.get(data, headers = ua, referer = mainUrl).document
-        val candidates = linkedSetOf<String>()
-
-        fun add(value: String?) {
-            val fixed = normalizeUrl(value ?: "") ?: fixUrlNull(value ?: "")
-            if (!fixed.isNullOrBlank()) candidates.add(fixed)
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        )
+        val visited = mutableSetOf<String>()
+        val queue = ArrayDeque<Pair<String, String>>()
+        val initial = linkedSetOf<String>()
+        val document = try {
+            app.get(data, headers = headers, referer = mainUrl).document
+        } catch (_: Exception) {
+            return false
         }
 
-        root.select("iframe, video, source, embed, [src], [data-src], [data-lazy-src], [data-url], [data-embed], [file], a[href]").forEach { element ->
-            listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file", "href").forEach { attr ->
-                if (element.hasAttr(attr)) add(element.attr(attr))
+        document.select("iframe, video, source, embed, [src], [data-src], [data-lazy-src], [data-url], [data-embed], [file]").forEach { element ->
+            listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
+                if (element.hasAttr(attr)) addCandidate(initial, element.attr(attr))
             }
         }
+        document.select("div.sources a, .sources a").forEach { addCandidate(initial, it.attr("href")) }
 
-        root.select("div.sources a, .sources a").forEach { add(it.attr("href")) }
-        mediaUrlsFromHtml(root.outerHtml()).forEach { candidates.add(it) }
-
+        initial.forEach { queue.addLast(it to data) }
         var loaded = false
-        val queue = mutableListOf<Pair<String, String>>()
-        candidates.forEach { queue.add(it to data) }
-        val visited = mutableSetOf<String>()
-        var count = 0
+        var scanned = 0
 
-        while (queue.isNotEmpty() && count < 20) {
-            val current = queue.removeAt(0)
-            val url = current.first
-            val referer = current.second
+        while (queue.isNotEmpty() && scanned < 24) {
+            val (url, referer) = queue.removeFirst()
             if (!visited.add(url)) continue
-            count++
+            scanned++
 
-            if (isM3u8(url) || url.contains(".mp4", ignoreCase = true)) {
-                addMedia(url, referer, callback)
-                loaded = true
+            val lower = url.lowercase()
+            if (lower.contains(".m3u8") || lower.contains(".mp4")) {
+                try {
+                    loadExtractor(url, referer, subtitleCallback, callback)
+                    loaded = true
+                } catch (_: Exception) { }
                 continue
             }
 
             try {
-                val player = app.get(url, headers = ua, referer = referer)
+                val player = app.get(url, headers = headers, referer = referer)
                 val html = player.text
-                mediaUrlsFromHtml(html).forEach {
-                    addMedia(it, url, callback)
-                    loaded = true
-                }
+                Regex("""https?://[^\s\"'<>]+?\.(?:m3u8|mp4)(?:\?[^\s\"'<>]*)?""", RegexOption.IGNORE_CASE)
+                    .findAll(html)
+                    .map { it.value.replace("\\/", "/").replace("&amp;", "&") }
+                    .distinct()
+                    .forEach {
+                        try {
+                            loadExtractor(it, url, subtitleCallback, callback)
+                            loaded = true
+                        } catch (_: Exception) { }
+                    }
+
                 player.document.select("iframe, video, source, embed, [src], [data-src], [data-lazy-src], [data-url], [data-embed], [file]").forEach { element ->
                     listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
                         if (!element.hasAttr(attr)) return@forEach
                         val next = normalizeUrl(element.attr(attr)) ?: fixUrlNull(element.attr(attr)) ?: return@forEach
-                        if (isM3u8(next) || next.contains(".mp4", ignoreCase = true)) {
-                            addMedia(next, url, callback)
-                            loaded = true
-                        } else if (!visited.contains(next) && queue.size < 20) {
-                            queue.add(next to url)
-                        }
+                        if (!visited.contains(next) && queue.size < 24) queue.addLast(next to url)
                     }
                 }
-            } catch (_: Exception) {
-                // Continue to extractor fallback.
-            }
+            } catch (_: Exception) { }
 
             try {
                 loadExtractor(url, referer, subtitleCallback, callback)
                 loaded = true
-            } catch (_: Exception) {
-                // Continue with the next provider.
-            }
+            } catch (_: Exception) { }
         }
 
         return loaded
