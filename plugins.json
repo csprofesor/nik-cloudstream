@@ -223,7 +223,7 @@
             "nikyokki"
         ],
         "description": "En son \u00e7\u0131kan yabanc\u0131 dizi ve filmleri DiziMag fark\u0131yla full hd 1080p kalitede izle. Dizimag Geni\u015f ve g\u00fcncel ar\u015fiviyle dizi ve filmlerin tad\u0131n\u0131 \u00e7\u0131kart\u0131n.",
-        "fileSize": 29434,
+        "fileSize": 29437,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -231,7 +231,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=dizimag.com.tr&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-646532f802b0a3ce9a8119ba59029ddcbd5be41a816f2509d08efe028c843ff5"
+        "fileHash": "sha256-493293263fb01bbfd342551a118fed0e14ea24a7233b32b72dce5207175287dc"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3",
