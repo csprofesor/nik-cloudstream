@@ -21,10 +21,7 @@ import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
 class DiziMom : MainAPI() {
@@ -53,8 +50,6 @@ class DiziMom : MainAPI() {
         return newHomePageResponse(request.name, home)
     }
 
-    // DiziMOM artık görselleri lazy-load ediyor. src çoğu zaman placeholder oluyor;
-    // gerçek poster farklı data-* alanlarında veya srcset içinde bulunabiliyor.
     private fun Element.imageUrl(): String? {
         val raw = listOf(
             attr("data-src"),
@@ -101,7 +96,6 @@ class DiziMom : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/?s=${query}").document
-
         return document.select("div.single-item").mapNotNull { it.diziler() }
     }
 
@@ -121,17 +115,13 @@ class DiziMom : MainAPI() {
         val rating = document.selectXpath("//div[span[contains(text(), 'IMDB')]]").text()
             .substringAfter("IMDB : ").trim()
         val actors = document.selectXpath("//div[span[contains(text(), 'Oyuncular')]]").text()
-            .substringAfter("Oyuncular : ").split(", ").map {
-            Actor(it.trim())
-        }
+            .substringAfter("Oyuncular : ").split(", ").map { Actor(it.trim()) }
 
         val episodes = document.select("div.bolumust").mapNotNull {
             val epName = it.selectFirst("div.baslik")?.text()?.trim() ?: return@mapNotNull null
             val epHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val epEpisode =
-                Regex("""(\d+)\.Bölüm""").find(epName)?.groupValues?.get(1)?.toIntOrNull()
-            val epSeason =
-                Regex("""(\d+)\.Sezon""").find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val epEpisode = Regex("""(\d+)\.Bölüm""").find(epName)?.groupValues?.get(1)?.toIntOrNull()
+            val epSeason = Regex("""(\d+)\.Sezon""").find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
 
             newEpisode(epHref) {
                 this.name = epName.substringBefore(" izle").replace(title, "").trim()
@@ -158,57 +148,67 @@ class DiziMom : MainAPI() {
     ): Boolean {
         Log.d("DZM", "data » $data")
 
-        val ua =
-            mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
-
-        app.post(
-            "${mainUrl}/wp-login.php",
-            headers = ua,
-            referer = "${mainUrl}/",
-            data = mapOf(
-                "log" to "keyiflerolsun",
-                "pwd" to "12345",
-                "rememberme" to "forever",
-                "redirect_to" to mainUrl,
-            )
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
         )
 
-        val document = app.get(data, headers = ua).document
+        val document = app.get(
+            data,
+            headers = headers,
+            referer = "${mainUrl}/"
+        ).document
 
-        val iframes = mutableListOf<String>()
-        val mainIframe = document.selectFirst("div.video p iframe")?.attr("src") ?: return false
-        iframes.add(mainIframe)
+        val links = linkedSetOf<String>()
 
-        document.select("div.sources a").forEach {
-            val subDocument = app.get(it.attr("href"), headers = ua).document
-            val subIframe =
-                subDocument.selectFirst("div.video p iframe")?.attr("src") ?: return@forEach
-
-            iframes.add(subIframe)
-        }
-
-        for (iframe in iframes) {
-            Log.d("DZM", "iframe » $iframe")
-            if (iframe.contains("youtube.com")) {
-                val id = iframe.substringAfter("/embed/").substringBefore("?")
-                callback(
-                    newExtractorLink(
-                        "Youtube",
-                        "Youtube",
-                        "https://nyc1.ivc.ggtyler.dev/api/manifest/dash/id/$id",
-                        ExtractorLinkType.DASH
-                    ) {
-                        this.referer = ""
-                        this.headers = mapOf()
-                        this.quality = Qualities.Unknown.value
-                        this.extractorData = null
-                    }
-                )
-            } else {
-                loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
+        // Yeni ve eski player yapılarının tamamını tara.
+        document.select("iframe").forEach { iframe ->
+            listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed").forEach { attr ->
+                val value = iframe.attr(attr).trim()
+                if (value.isNotEmpty()) {
+                    fixUrlNull(value, data)?.let { links.add(it) }
+                }
             }
         }
 
-        return true
+        // Bazı kaynaklar iframe yerine video/source veya embed bağlantısı olarak geliyor.
+        document.select("video source, video, source").forEach { element ->
+            listOf("src", "data-src", "data-url").forEach { attr ->
+                val value = element.attr(attr).trim()
+                if (value.isNotEmpty()) {
+                    fixUrlNull(value, data)?.let { links.add(it) }
+                }
+            }
+        }
+
+        // Kaynak butonları ayrı sayfalara gidiyorsa onları da takip et.
+        document.select("div.sources a, .sources a, a[data-embed], a[data-src]").forEach { element ->
+            val href = element.attr("href").trim()
+            if (href.isNotEmpty()) {
+                fixUrlNull(href, data)?.let { links.add(it) }
+            }
+        }
+
+        if (links.isEmpty()) {
+            Log.d("DZM", "Video kaynağı bulunamadı: $data")
+            return false
+        }
+
+        var loaded = false
+
+        for (link in links) {
+            try {
+                Log.d("DZM", "source » $link")
+                if (link.contains("youtube.com") || link.contains("youtu.be")) {
+                    loadExtractor(link, data, subtitleCallback, callback)
+                } else {
+                    loadExtractor(link, data, subtitleCallback, callback)
+                }
+                loaded = true
+            } catch (e: Exception) {
+                Log.d("DZM", "Extractor başarısız: $link - ${e.message}")
+            }
+        }
+
+        return loaded
     }
 }
