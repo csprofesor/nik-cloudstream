@@ -29,6 +29,8 @@ class DiziMom : MainAPI() {
     override var name = "DiziMom"
     override val hasMainPage = true
     override var lang = "tr"
+    override val hasMainPage = true
+    override var lang = "tr"
     override val hasQuickSearch = false
     override val supportedTypes = setOf(TvType.TvSeries)
 
@@ -46,48 +48,34 @@ class DiziMom : MainAPI() {
         } else {
             document.select("div.single-item").mapNotNull { it.diziler() }
         }
-
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.imageUrl(): String? {
         val raw = listOf(
-            attr("data-src"),
-            attr("data-lazy-src"),
-            attr("data-original"),
-            attr("data-image"),
-            attr("data-url"),
-            attr("src")
+            attr("data-src"), attr("data-lazy-src"), attr("data-original"),
+            attr("data-image"), attr("data-url"), attr("src")
         ).firstOrNull { it.isNotBlank() && !it.startsWith("data:image") }
             ?: attr("srcset").substringBefore(",").substringBefore(" ").takeIf { it.isNotBlank() }
             ?: return null
-
         return fixUrlNull(raw)
     }
 
     private suspend fun Element.sonBolumler(): SearchResponse? {
-        val name =
-            this.selectFirst("div.episode-name a")?.text()?.substringBefore(" izle") ?: return null
+        val name = this.selectFirst("div.episode-name a")?.text()?.substringBefore(" izle") ?: return null
         val title = name.replace(".Sezon ", "x").replace(".Bölüm", "")
-
         val epHref = fixUrlNull(this.selectFirst("div.episode-name a")?.attr("href")) ?: return null
         val epDoc = app.get(epHref).document
         val href = epDoc.selectFirst("div#benzerli a")?.attr("href") ?: return null
-
         val posterUrl = this.selectFirst("a img")?.imageUrl()
-
-        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            this.posterUrl = posterUrl
-        }
+        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
 
     private fun Element.diziler(): SearchResponse? {
-        val title =
-            this.selectFirst("div.categorytitle a")?.text()?.substringBefore(" izle") ?: return null
+        val title = this.selectFirst("div.categorytitle a")?.text()?.substringBefore(" izle") ?: return null
         val href = fixUrlNull(this.selectFirst("div.categorytitle a")?.attr("href")) ?: return null
         val posterUrl = this.selectFirst("div.cat-img img")?.imageUrl()
         val score = this.selectFirst("div.imdbp")?.text()?.replace("(IMDb:", "")?.replace(")", "")?.trim()
-
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
             this.score = Score.from10(score)
@@ -103,33 +91,24 @@ class DiziMom : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-
-        val title =
-            document.selectFirst("div.title h1")?.text()?.substringBefore(" izle") ?: return null
-        val poster =
-            document.selectFirst("div.category_image img")?.imageUrl() ?: return null
-        val year = document.selectXpath("//div[span[contains(text(), 'Yapım Yılı')]]").text()
-            .substringAfter("Yapım Yılı : ").trim().toIntOrNull()
+        val title = document.selectFirst("div.title h1")?.text()?.substringBefore(" izle") ?: return null
+        val poster = document.selectFirst("div.category_image img")?.imageUrl() ?: return null
+        val year = document.selectXpath("//div[span[contains(text(), 'Yapım Yılı')]]").text().substringAfter("Yapım Yılı : ").trim().toIntOrNull()
         val description = document.selectFirst("div.category_desc")?.text()?.trim()
         val tags = document.select("div.genres a").mapNotNull { it.text().trim() }
-        val rating = document.selectXpath("//div[span[contains(text(), 'IMDB')]]").text()
-            .substringAfter("IMDB : ").trim()
-        val actors = document.selectXpath("//div[span[contains(text(), 'Oyuncular')]]").text()
-            .substringAfter("Oyuncular : ").split(", ").map { Actor(it.trim()) }
-
+        val rating = document.selectXpath("//div[span[contains(text(), 'IMDB')]]").text().substringAfter("IMDB : ").trim()
+        val actors = document.selectXpath("//div[span[contains(text(), 'Oyuncular')]]").text().substringAfter("Oyuncular : ").split(", ").map { Actor(it.trim()) }
         val episodes = document.select("div.bolumust").mapNotNull {
             val epName = it.selectFirst("div.baslik")?.text()?.trim() ?: return@mapNotNull null
             val epHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
             val epEpisode = Regex("""(\d+)\.Bölüm""").find(epName)?.groupValues?.get(1)?.toIntOrNull()
             val epSeason = Regex("""(\d+)\.Sezon""").find(epName)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-
             newEpisode(epHref) {
                 this.name = epName.substringBefore(" izle").replace(title, "").trim()
                 this.season = epSeason
                 this.episode = epEpisode
             }
         }
-
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             this.posterUrl = poster
             this.year = year
@@ -140,75 +119,39 @@ class DiziMom : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("DZM", "data » $data")
-
-        val headers = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
-        )
-
-        val document = app.get(
-            data,
-            headers = headers,
-            referer = "${mainUrl}/"
-        ).document
-
+        val headers = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
+        val document = app.get(data, headers = headers, referer = "${mainUrl}/").document
         val links = linkedSetOf<String>()
 
-        // Yeni ve eski player yapılarının tamamını tara.
         document.select("iframe").forEach { iframe ->
             listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed").forEach { attr ->
                 val value = iframe.attr(attr).trim()
-                if (value.isNotEmpty()) {
-                    fixUrlNull(value, data)?.let { links.add(it) }
-                }
+                if (value.isNotEmpty()) fixUrlNull(value)?.let { links.add(it) }
             }
         }
-
-        // Bazı kaynaklar iframe yerine video/source veya embed bağlantısı olarak geliyor.
         document.select("video source, video, source").forEach { element ->
             listOf("src", "data-src", "data-url").forEach { attr ->
                 val value = element.attr(attr).trim()
-                if (value.isNotEmpty()) {
-                    fixUrlNull(value, data)?.let { links.add(it) }
-                }
+                if (value.isNotEmpty()) fixUrlNull(value)?.let { links.add(it) }
             }
         }
-
-        // Kaynak butonları ayrı sayfalara gidiyorsa onları da takip et.
         document.select("div.sources a, .sources a, a[data-embed], a[data-src]").forEach { element ->
             val href = element.attr("href").trim()
-            if (href.isNotEmpty()) {
-                fixUrlNull(href, data)?.let { links.add(it) }
-            }
+            if (href.isNotEmpty()) fixUrlNull(href)?.let { links.add(it) }
         }
-
-        if (links.isEmpty()) {
-            Log.d("DZM", "Video kaynağı bulunamadı: $data")
-            return false
-        }
-
+        if (links.isEmpty()) return false
         var loaded = false
-
         for (link in links) {
             try {
                 Log.d("DZM", "source » $link")
-                if (link.contains("youtube.com") || link.contains("youtu.be")) {
-                    loadExtractor(link, data, subtitleCallback, callback)
-                } else {
-                    loadExtractor(link, data, subtitleCallback, callback)
-                }
+                loadExtractor(link, data, subtitleCallback, callback)
                 loaded = true
             } catch (e: Exception) {
                 Log.d("DZM", "Extractor başarısız: $link - ${e.message}")
             }
         }
-
         return loaded
     }
 }
