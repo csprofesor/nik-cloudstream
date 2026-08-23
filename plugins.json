@@ -245,7 +245,7 @@
             "nikyokki"
         ],
         "description": "Binlerce yerli yabanc\u0131 dizi ar\u015fivi, t\u00fcm sezonlar, kesintisiz b\u00f6l\u00fcmler. Sadece dizi izle, Dizimom heryerde seninle!",
-        "fileSize": 33783,
+        "fileSize": 38694,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -253,7 +253,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.surf&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-d2d6939d1062382ad0b596f805e19e4e46c06200e8744df4998d82ee451e3dd9"
+        "fileHash": "sha256-a582a73ddc2701f1f5cc6f02203b78134bfab90a0594875d4c3bc8e5f8e07e74"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3",
