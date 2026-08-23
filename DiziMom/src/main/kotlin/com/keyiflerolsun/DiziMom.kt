@@ -40,10 +40,6 @@ class DiziMom : MainAPI() {
         "${mainUrl}/yerli-dizi-izle/page/" to "Yerli Diziler",
         "${mainUrl}/yabanci-dizi-izle/page/" to "Yabancı Diziler",
         "${mainUrl}/tv-programlari-izle/page/" to "TV Programları",
-        // "${mainUrl}/turkce-dublaj-diziler/page/"      to "Dublajlı Diziler",   // ! "Son Bölümler" Ana sayfa yüklenmesini yavaşlattığı için bunlar devre dışı bırakılmıştır..
-        // "${mainUrl}/netflix-dizileri-izle/page/"      to "Netflix Dizileri",
-        // "${mainUrl}/kore-dizileri-izle/page/"         to "Kore Dizileri",
-        // "${mainUrl}/full-hd-hint-dizileri-izle/page/" to "Hint Dizileri",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -57,6 +53,23 @@ class DiziMom : MainAPI() {
         return newHomePageResponse(request.name, home)
     }
 
+    // DiziMOM artık görselleri lazy-load ediyor. src çoğu zaman placeholder oluyor;
+    // gerçek poster farklı data-* alanlarında veya srcset içinde bulunabiliyor.
+    private fun Element.imageUrl(): String? {
+        val raw = listOf(
+            attr("data-src"),
+            attr("data-lazy-src"),
+            attr("data-original"),
+            attr("data-image"),
+            attr("data-url"),
+            attr("src")
+        ).firstOrNull { it.isNotBlank() && !it.startsWith("data:image") }
+            ?: attr("srcset").substringBefore(",").substringBefore(" ").takeIf { it.isNotBlank() }
+            ?: return null
+
+        return fixUrlNull(raw)
+    }
+
     private suspend fun Element.sonBolumler(): SearchResponse? {
         val name =
             this.selectFirst("div.episode-name a")?.text()?.substringBefore(" izle") ?: return null
@@ -66,7 +79,7 @@ class DiziMom : MainAPI() {
         val epDoc = app.get(epHref).document
         val href = epDoc.selectFirst("div#benzerli a")?.attr("href") ?: return null
 
-        val posterUrl = fixUrlNull(this.selectFirst("a img")?.attr("src"))
+        val posterUrl = this.selectFirst("a img")?.imageUrl()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
@@ -77,7 +90,7 @@ class DiziMom : MainAPI() {
         val title =
             this.selectFirst("div.categorytitle a")?.text()?.substringBefore(" izle") ?: return null
         val href = fixUrlNull(this.selectFirst("div.categorytitle a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("div.cat-img img")?.attr("src"))
+        val posterUrl = this.selectFirst("div.cat-img img")?.imageUrl()
         val score = this.selectFirst("div.imdbp")?.text()?.replace("(IMDb:", "")?.replace(")", "")?.trim()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
@@ -100,7 +113,7 @@ class DiziMom : MainAPI() {
         val title =
             document.selectFirst("div.title h1")?.text()?.substringBefore(" izle") ?: return null
         val poster =
-            fixUrlNull(document.selectFirst("div.category_image img")?.attr("src")) ?: return null
+            document.selectFirst("div.category_image img")?.imageUrl() ?: return null
         val year = document.selectXpath("//div[span[contains(text(), 'Yapım Yılı')]]").text()
             .substringAfter("Yapım Yılı : ").trim().toIntOrNull()
         val description = document.selectFirst("div.category_desc")?.text()?.trim()
