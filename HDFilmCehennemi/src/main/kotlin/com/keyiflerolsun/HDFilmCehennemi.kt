@@ -4,7 +4,6 @@ import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
-import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import org.jsoup.nodes.Element
@@ -85,11 +84,7 @@ class HDFilmCehennemi : MainAPI() {
                 val name = it.select("h3").text().trim()
                 val episode = Regex("Sezon\\s?([0-9]+).").find(name)?.groupValues?.getOrNull(1)?.toIntOrNull()
                 val season = it.parents()[1].attr("id").substringAfter("-").toIntOrNull()
-                newEpisode(href) {
-                    this.name = name
-                    this.season = season
-                    this.episode = episode
-                }
+                newEpisode(href) { this.name = name; this.season = season; this.episode = episode }
             }
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.score = Score.from10(ratingText)
@@ -144,7 +139,6 @@ class HDFilmCehennemi : MainAPI() {
     private fun decodeVideoUrl(parts: List<String>): String? {
         val value = parts.joinToString("")
         val reversed = value.reversed()
-
         try { decodeVariant3(value).takeIf { isValidVideoUrl(it) }?.let { return it } } catch (_: Exception) {}
         try { decodeVariant1(reversed).takeIf { isValidVideoUrl(it) }?.let { return it } } catch (_: Exception) {}
         try { decodeVariant2(reversed).takeIf { isValidVideoUrl(it) }?.let { return it } } catch (_: Exception) {}
@@ -157,13 +151,9 @@ class HDFilmCehennemi : MainAPI() {
             val parts = Regex("\\\"([^\\\"]+)\\\"").findAll(partsMatch.groupValues[1]).map { it.groupValues[1] }.toList()
             decodeVideoUrl(parts)?.let { return it }
         }
-
         val fileLink = Regex("file_link=\\\"([^\\\"]+)\\\"").find(decoded)?.groupValues?.getOrNull(1)
         if (!fileLink.isNullOrBlank()) {
-            try {
-                val oldUrl = base64Decode(fileLink)
-                if (isValidVideoUrl(oldUrl)) return oldUrl
-            } catch (_: Exception) {}
+            try { base64Decode(fileLink).takeIf { isValidVideoUrl(it) }?.let { return it } } catch (_: Exception) {}
         }
         return null
     }
@@ -173,38 +163,28 @@ class HDFilmCehennemi : MainAPI() {
         val decodedScript = try { getAndUnpack(script) } catch (_: Exception) { script }
         val videoUrl = extractVideoUrl(decodedScript) ?: return
         val subData = decodedScript.substringAfter("tracks: [", "").substringBefore("]")
-
-        callback.invoke(
-            newExtractorLink(source, source, videoUrl, ExtractorLinkType.M3U8) {
-                referer = "$mainUrl/"
-                quality = Qualities.Unknown.value
-            }
-        )
-        tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions" }?.map {
+        callback.invoke(newExtractorLink(source, source, videoUrl, ExtractorLinkType.M3U8) {
+            referer = "$mainUrl/"; quality = Qualities.Unknown.value
+        })
+        tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions" }?.forEach {
             subtitleCallback.invoke(SubtitleFile(it.label.toString(), fixUrl(it.file.toString())))
         }
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         app.get(data).document.select("nav.nav.card-nav.nav-slider a.nav-link").map { Pair(it.attr("href"), it.text()) }.forEach { (url, source) ->
-            safeApiCall {
-                app.get(url).document.select("div.card-video > iframe").attr("data-src").let { iframeUrl ->
-                    if (iframeUrl.startsWith(mainUrl)) {
-                        invokeLocalSource(source, iframeUrl, subtitleCallback, callback)
-                    } else {
-                        loadExtractor(iframeUrl, "$mainUrl/", subtitleCallback) { link ->
-                            callback.invoke(
-                                newExtractorLink(source, source, link.url, link.type) {
-                                    referer = link.referer
-                                    quality = link.quality
-                                    headers = link.headers
-                                    extractorData = link.extractorData
-                                }
-                            )
-                        }
+            try {
+                val iframeUrl = app.get(url).document.select("div.card-video > iframe").attr("data-src")
+                if (iframeUrl.startsWith(mainUrl)) {
+                    invokeLocalSource(source, iframeUrl, subtitleCallback, callback)
+                } else {
+                    loadExtractor(iframeUrl, "$mainUrl/", subtitleCallback) { link ->
+                        callback.invoke(newExtractorLink(source, source, link.url, link.type) {
+                            referer = link.referer; quality = link.quality; headers = link.headers; extractorData = link.extractorData
+                        })
                     }
                 }
-            }
+            } catch (_: Exception) { }
         }
         return true
     }
