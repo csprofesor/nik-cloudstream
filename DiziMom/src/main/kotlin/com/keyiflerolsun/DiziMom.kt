@@ -29,8 +29,6 @@ class DiziMom : MainAPI() {
     override var name = "DiziMom"
     override val hasMainPage = true
     override var lang = "tr"
-    override val hasMainPage = true
-    override var lang = "tr"
     override val hasQuickSearch = false
     override val supportedTypes = setOf(TvType.TvSeries)
 
