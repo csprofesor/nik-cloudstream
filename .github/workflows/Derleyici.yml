@@ -58,8 +58,12 @@ jobs:
           sed -i 's#dizikorea.vip#dizikorea3.com#g' DiziKorea/build.gradle.kts
           sed -i 's#www.dizimom.tv#www.dizimom.surf#g' DiziMom/build.gradle.kts
           sed -i 's#dizipal683.com#dizipalt.com#g' DiziPal/build.gradle.kts
-          sed -i 's#dizilla.club#dizilla40.com#g' Dizilla/build.gradle.kts
-          sed -i 's#www.setfilmizle.uk#www.setfilmizle.ltd#g; s#https://setfilmizle.uk#https://setfilmizle.ltd#g' SetFilmIzle/build.gradle.kts
+          # Dizilla'nın güncel adresini build sırasında eski domaine çevirmiyoruz.
+          sed -i 's#dizilla.club#dizilla.now#g' Dizilla/build.gradle.kts
+          sed -i 's#dizilla40.com#dizilla.now#g' Dizilla/build.gradle.kts
+          sed -i 's#https://dizilla40.com#https://dizilla.now#g' Dizilla/src/main/kotlin/com/keyiflerolsun/Dizilla.kt
+          sed -i 's#https://dizilla.to#https://dizilla.now#g' Dizilla/src/main/kotlin/com/keyiflerolsun/Dizilla.kt
+          sed -i 's#https://www.setfilmizle.uk#https://setfilmizle.ltd#g; s#https://setfilmizle.uk#https://setfilmizle.ltd#g' SetFilmIzle/build.gradle.kts
 
           curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKorea.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKorea.kt
           curl -fsSL https://raw.githubusercontent.com/feroxx/Kekik-cloudstream/master/DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaModels.kt -o DiziKorea/src/main/kotlin/com/keyiflerolsun/DiziKoreaModels.kt
@@ -76,8 +80,8 @@ jobs:
           cd $GITHUB_WORKSPACE/src
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add DiziGom/src DiziGom/build.gradle.kts DiziMom/src DiziMom/build.gradle.kts DiziPal/src DiziPal/build.gradle.kts DiziKorea/src DiziKorea/build.gradle.kts DiziBox/build.gradle.kts Dizilla/build.gradle.kts SetFilmIzle/src SetFilmIzle/build.gradle.kts TurkAnime/src
-          git commit -m "Güncel site metadata ve eklenti kodları [skip ci]" || true
+          git add DiziGom/src DiziGom/build.gradle.kts DiziMom/src DiziMom/build.gradle.kts DiziPal/src DiziPal/build.gradle.kts DiziKorea/src DiziKorea/build.gradle.kts DiziBox/build.gradle.kts Dizilla/build.gradle.kts Dizilla/src SetFilmIzle/src SetFilmIzle/build.gradle.kts TurkAnime/src
+          git commit -m "Dizilla güncel domain düzeltmesi [skip ci]" || true
           git push origin HEAD:master || true
 
       - name: Eklentileri Derle
