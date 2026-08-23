@@ -124,7 +124,6 @@ class DiziMom : MainAPI() {
             .trim()
             .replace("\\/", "/")
             .replace("&amp;", "&")
-            .replace("&quot;", "")
             .trim('"', '\'', '`', '”', '“', '’', '‘')
 
         if (url.startsWith("//")) url = "https:$url"
@@ -134,7 +133,7 @@ class DiziMom : MainAPI() {
 
     private fun mediaUrlsFromHtml(html: String): List<String> {
         val regex = Regex(
-            """https?:\\?/\\?/[^\\s\"'<>]+?(?:\\.m3u8|\\.mp4)(?:\\?[^\\s\"'<>]*)?""",
+            """https?://[^\s\"'<>]+?\.(?:m3u8|mp4)(?:\?[^\s\"'<>]*)?""",
             RegexOption.IGNORE_CASE
         )
         return regex.findAll(html)
@@ -193,7 +192,6 @@ class DiziMom : MainAPI() {
             fixUrlNull(url)?.let { links.add(it) }
         }
 
-        // First collect real media URLs that are present directly in the episode HTML.
         mediaUrlsFromHtml(rootDocument.outerHtml()).forEach { links.add(it) }
 
         rootDocument.select("iframe, embed, video, source").forEach { element ->
@@ -213,8 +211,6 @@ class DiziMom : MainAPI() {
         val queue = ArrayDeque<Pair<String, String>>()
         links.forEach { queue.add(it to data) }
 
-        // Some DiziMom pages use an iframe player. Open the iframe itself and
-        // inspect its HTML for the actual m3u8/mp4 before falling back to CS extractors.
         var depth = 0
         while (queue.isNotEmpty() && depth < 20) {
             val (link, referer) = queue.removeFirst()
@@ -251,7 +247,6 @@ class DiziMom : MainAPI() {
                 Log.d("DZM", "iframe parse failed: $link - ${e.message}")
             }
 
-            // Let CloudStream's normal extractor system handle supported players too.
             try {
                 if (loadExtractor(link, referer, subtitleCallback, callback)) {
                     loaded = true
