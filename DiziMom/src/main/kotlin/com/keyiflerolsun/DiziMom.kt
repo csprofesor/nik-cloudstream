@@ -142,7 +142,7 @@ class DiziMom : MainAPI() {
             this.referer = referer
             this.quality = 0
         })
-        Log.d("DZM", "direct media » $normalized")
+        Log.d("DZM", "direct media found")
     }
 
     override suspend fun loadLinks(
@@ -151,8 +151,10 @@ class DiziMom : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("DZM", "data » $data")
-        val headers = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
+        Log.d("DZM", "loadLinks: $data")
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        )
         val rootDocument = app.get(data, headers = headers, referer = mainUrl).document
         val links = linkedSetOf<String>()
         val visited = mutableSetOf<String>()
@@ -162,9 +164,10 @@ class DiziMom : MainAPI() {
             fixUrlNull(url)?.let { links.add(it) }
         }
 
-        // DiziMom uses custom embed elements such as <embed7 src="...m3u8">.
-        // Prefer the actual player source over unrelated m3u8/mp4 strings elsewhere in the HTML.
-        rootDocument.select("embed7, embed8, embed9, embed, iframe, video, source").forEach { element ->
+        mediaUrlsFromHtml(rootDocument.outerHtml()).forEach { links.add(it) }
+
+        // Custom player tags such as embed7/embed8 are caught through their attributes.
+        rootDocument.select("[src], [data-src], [data-lazy-src], [data-url], [data-embed], [file]").forEach { element ->
             listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
                 addCandidate(element.attr(attr))
             }
@@ -177,16 +180,15 @@ class DiziMom : MainAPI() {
             addCandidate(element.attr("data-url"))
         }
 
-        // Fallback only when no player element exposed a source.
-        if (links.isEmpty()) mediaUrlsFromHtml(rootDocument.outerHtml()).forEach { links.add(it) }
-
         var loaded = false
         val queue = mutableListOf<Pair<String, String>>()
         links.forEach { queue.add(it to data) }
         var processed = 0
 
         while (queue.isNotEmpty() && processed < 20) {
-            val (link, referer) = queue.removeAt(0)
+            val current = queue.removeAt(0)
+            val link = current.first
+            val referer = current.second
             if (!visited.add(link)) continue
             processed++
 
@@ -198,28 +200,33 @@ class DiziMom : MainAPI() {
 
             try {
                 val frameDocument = app.get(link, headers = headers, referer = referer).document
-                frameDocument.select("embed7, embed8, embed9, embed, video, source, iframe").forEach { element ->
+                mediaUrlsFromHtml(frameDocument.outerHtml()).forEach {
+                    addDirectMediaLink(it, link, callback)
+                    loaded = true
+                }
+
+                frameDocument.select("[src], [data-src], [data-lazy-src], [data-url], [data-embed], [file]").forEach { element ->
                     listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
                         val candidate = fixUrlNull(element.attr(attr)) ?: return@forEach
                         if (looksLikeMedia(candidate)) {
                             addDirectMediaLink(candidate, link, callback)
                             loaded = true
-                        } else if (visited.size < 20) {
+                        } else if (!visited.contains(candidate) && queue.size < 20) {
                             queue.add(candidate to link)
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.d("DZM", "player parse failed: $link - ${e.message}")
+                Log.d("DZM", "player parse failed: ${e.message}")
             }
 
             try {
                 if (loadExtractor(link, referer, subtitleCallback, callback)) {
                     loaded = true
-                    Log.d("DZM", "extractor accepted » $link")
+                    Log.d("DZM", "extractor accepted")
                 }
             } catch (e: Exception) {
-                Log.d("DZM", "Extractor failed: $link - ${e.message}")
+                Log.d("DZM", "extractor failed: ${e.message}")
             }
         }
 
