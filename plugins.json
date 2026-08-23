@@ -244,7 +244,7 @@
             "gsrepo"
         ],
         "description": "Binlerce yerli yabanc\u0131 dizi ar\u015fivi, t\u00fcm sezonlar, kesintisiz b\u00f6l\u00fcmler. Sadece dizi izle, Dizimom heryerde seninle!",
-        "fileSize": 43090,
+        "fileSize": 38394,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -252,7 +252,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.surf&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-5b4d757781c9e3dab96e9c7056538b2a8fc580e9590ff0969b56c863d751ed05"
+        "fileHash": "sha256-f75eca264938de66d7ac35bad260da109404fe9d0e20e512a6ec4dd7f9cf884e"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3",
