@@ -12,11 +12,6 @@ import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.app
 import com.lagradost.cloudstream3.utils.parsedSafe
 
-/**
- * PeaceMakerst video endpoint.
- * The endpoint has returned more than one response shape over time, so both
- * videoSources and sourceList are supported and every usable source is tried.
- */
 open class PeaceMakerst : ExtractorApi() {
     override val name = "PeaceMakerst"
     override val mainUrl = "https://peacemakerst.com"
@@ -37,11 +32,7 @@ open class PeaceMakerst : ExtractorApi() {
         val response = try {
             app.post(
                 postUrl,
-                data = mapOf(
-                    "hash" to hash,
-                    "r" to extRef,
-                    "s" to ""
-                ),
+                data = mapOf("hash" to hash, "r" to extRef, "s" to ""),
                 referer = extRef,
                 headers = mapOf(
                     "Accept" to "application/json, text/javascript, */*; q=0.01",
@@ -58,7 +49,6 @@ open class PeaceMakerst : ExtractorApi() {
         val body = response.text
         if (body.isBlank()) throw ErrorLoadingException("PeaceMakerst boş yanıt döndürdü")
 
-        // Teve2 is returned as an embedded URL by some videos.
         val teve2Id = Regex("teve2\\.com\\.tr(?:\\\\/|/)embed(?:\\\\/|/)([^\\\"'\\s]+)")
             .find(body)?.groupValues?.getOrNull(1)
 
@@ -74,10 +64,10 @@ open class PeaceMakerst : ExtractorApi() {
             }
 
             val link = teve2?.media?.link?.let {
-                normalizeUrl(it.serviceUrl + "//" + it.securePath)
+                normalizeUrl((it.serviceUrl ?: "") + "//" + (it.securePath ?: ""))
             }
             if (!link.isNullOrBlank()) {
-                emit(link, extRef, subtitleCallback, callback)
+                emit(link, extRef, callback)
                 return
             }
         }
@@ -93,7 +83,6 @@ open class PeaceMakerst : ExtractorApi() {
             ?.mapNotNull { normalizeUrl(it) }
             ?.forEach(candidates::add)
 
-        // Fallback for response variants that Jackson cannot deserialize.
         Regex("(?:\\\"file\\\"|\\\"url\\\"|\\\"source\\\")\\s*:\\s*\\\"([^\\\"]+)\\\"")
             .findAll(body)
             .mapNotNull { normalizeUrl(it.groupValues[1]) }
@@ -106,7 +95,7 @@ open class PeaceMakerst : ExtractorApi() {
         var lastError: Throwable? = null
         for (candidate in candidates) {
             try {
-                emit(candidate, extRef, subtitleCallback, callback)
+                emit(candidate, extRef, callback)
                 return
             } catch (e: Exception) {
                 lastError = e
@@ -123,12 +112,7 @@ open class PeaceMakerst : ExtractorApi() {
         return result.takeIf { it.startsWith("http://") || it.startsWith("https://") }
     }
 
-    private suspend fun emit(
-        url: String,
-        referer: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ) {
+    private fun emit(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
         callback.invoke(
             newExtractorLink(
                 source = name,
@@ -143,7 +127,6 @@ open class PeaceMakerst : ExtractorApi() {
                     url.contains("480", true) -> Qualities.P480.value
                     else -> Qualities.Unknown.value
                 }
-                this.headers = mapOf("User-Agent" to USER_AGENT)
             }
         )
     }
@@ -161,14 +144,8 @@ open class PeaceMakerst : ExtractorApi() {
         @JsonProperty("type") val type: String? = null
     )
 
-    data class Teve2ApiResponse(
-        @JsonProperty("Media") val media: Teve2Media? = null
-    )
-
-    data class Teve2Media(
-        @JsonProperty("Link") val link: Teve2Link? = null
-    )
-
+    data class Teve2ApiResponse(@JsonProperty("Media") val media: Teve2Media? = null)
+    data class Teve2Media(@JsonProperty("Link") val link: Teve2Link? = null)
     data class Teve2Link(
         @JsonProperty("ServiceUrl") val serviceUrl: String? = null,
         @JsonProperty("SecurePath") val securePath: String? = null
