@@ -487,25 +487,23 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi.cs3",
         "status": 1,
-        "version": 36,
+        "version": 37,
         "name": "HDFilmCehennemi",
         "internalName": "HDFilmCehennemi",
         "authors": [
-            "hexated",
-            "keyiflerolsun",
-            "nikyokki"
+            "gsrepo"
         ],
-        "description": "T\u00fcrkiye'nin en h\u0131zl\u0131 hd film izleme sitesi",
-        "fileSize": 30317,
+        "description": "T\u00fcrkiye'nin h\u0131zl\u0131 hd film izleme sitesi",
+        "fileSize": 30160,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
             "Movie",
             "TvSeries"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.com&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.nl&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-85bd5d4007d17e2507162b11e3cf708de2505529bf2439f2eee07efad2caee3a"
+        "fileHash": "sha256-9c509701b10595662d374c13040f097265f91bd3c73770a96b7a63d581bdf4ef"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3",
