@@ -30,15 +30,21 @@ class HDFilmCehennemi : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(request.data + page).document
-        val home = document.select("div.card-body div.row div.col-6.col-sm-3.poster-container").mapNotNull { it.toSearchResult() }
+        val home = document.select("div.poster-container, div.poster").distinctBy { it.selectFirst("a")?.attr("href") }.mapNotNull { it.toSearchResult() }
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = selectFirst("h2.title")?.text() ?: return null
-        val href = fixUrlNull(selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(selectFirst("img")?.attr("data-src"))
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        val title = selectFirst("h2.title, h3.title, .title")?.text()?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val href = fixUrlNull(selectFirst("a[href]")?.attr("href")) ?: return null
+        val image = selectFirst("img")
+        val posterUrl = fixUrlNull(image?.attr("data-src")?.takeIf { it.isNotBlank() } ?: image?.attr("src"))
+        val isSeries = text().contains("Yabancı Dizi", ignoreCase = true)
+        return if (isSeries) {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
+        } else {
+            newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        }
     }
 
     private fun Media.toSearchResponse(): SearchResponse? {
