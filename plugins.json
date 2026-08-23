@@ -216,7 +216,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMag.cs3",
         "status": 1,
-        "version": 20,
+        "version": 21,
         "name": "DiziMag",
         "internalName": "DiziMag",
         "authors": [
@@ -227,11 +227,12 @@
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
-            "TvSeries"
+            "TvSeries",
+            "Movie"
         ],
-        "iconUrl": "https://www.google.com/s2/favicons?domain=dizimag.com.tr&sz=%size%",
+        "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimag.life&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-f1d99babd07f319c26fea4f5235bd4afb830eaeacb2a2ea94227918ca449d61d"
+        "fileHash": "sha256-ddc761516425ca800b642536c8ba384a96edb4d1c9c61b984f171f7917165418"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3",
