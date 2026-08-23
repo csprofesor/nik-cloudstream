@@ -120,55 +120,29 @@ class DiziMom : MainAPI() {
     }
 
     private fun normalizeMediaUrl(value: String): String? {
-        var url = value
-            .trim()
-            .replace("\\/", "/")
-            .replace("&amp;", "&")
+        var url = value.trim().replace("\\/", "/").replace("&amp;", "&")
             .trim('"', '\'', '`', '”', '“', '’', '‘')
-
         if (url.startsWith("//")) url = "https:$url"
         if (!url.startsWith("http://") && !url.startsWith("https://")) return null
         return url
     }
 
     private fun mediaUrlsFromHtml(html: String): List<String> {
-        val regex = Regex(
-            """https?://[^\s\"'<>]+?\.(?:m3u8|mp4)(?:\?[^\s\"'<>]*)?""",
-            RegexOption.IGNORE_CASE
-        )
-        return regex.findAll(html)
-            .mapNotNull { normalizeMediaUrl(it.value) }
-            .distinct()
-            .toList()
+        val regex = Regex("""https?://[^\s\"'<>]+?\.(?:m3u8|mp4)(?:\?[^\s\"'<>]*)?""", RegexOption.IGNORE_CASE)
+        return regex.findAll(html).mapNotNull { normalizeMediaUrl(it.value) }.distinct().toList()
     }
 
     private fun looksLikeMedia(url: String): Boolean =
         Regex("""\.(m3u8|mp4)(?:$|\?)""", RegexOption.IGNORE_CASE).containsMatchIn(url)
 
-    private suspend fun addDirectMediaLink(
-        url: String,
-        referer: String,
-        callback: (ExtractorLink) -> Unit
-    ) {
+    private suspend fun addDirectMediaLink(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
         val normalized = normalizeMediaUrl(url) ?: return
-        val type = if (normalized.contains(".m3u8", ignoreCase = true)) {
-            ExtractorLinkType.M3U8
-        } else {
-            ExtractorLinkType.VIDEO
-        }
-
-        callback(
-            newExtractorLink(
-                source = "DiziMom",
-                name = "DiziMom",
-                url = normalized,
-                type = type
-            ) {
-                this.referer = referer
-                this.quality = 0
-            }
-        )
-        Log.d("DZM", "direct media found")
+        val type = if (normalized.contains(".m3u8", ignoreCase = true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+        callback(newExtractorLink("DiziMom", "DiziMom", normalized, type) {
+            this.referer = referer
+            this.quality = 0
+        })
+        Log.d("DZM", "direct media » $normalized")
     }
 
     override suspend fun loadLinks(
@@ -177,12 +151,8 @@ class DiziMom : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("DZM", "loadLinks: $data")
-
-        val headers = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
-        )
-
+        Log.d("DZM", "data » $data")
+        val headers = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
         val rootDocument = app.get(data, headers = headers, referer = mainUrl).document
         val links = linkedSetOf<String>()
         val visited = mutableSetOf<String>()
@@ -192,9 +162,9 @@ class DiziMom : MainAPI() {
             fixUrlNull(url)?.let { links.add(it) }
         }
 
-        mediaUrlsFromHtml(rootDocument.outerHtml()).forEach { links.add(it) }
-
-        rootDocument.select("iframe, embed, video, source").forEach { element ->
+        // DiziMom uses custom embed elements such as <embed7 src="...m3u8">.
+        // Prefer the actual player source over unrelated m3u8/mp4 strings elsewhere in the HTML.
+        rootDocument.select("embed7, embed8, embed9, embed, iframe, video, source").forEach { element ->
             listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
                 addCandidate(element.attr(attr))
             }
@@ -207,15 +177,16 @@ class DiziMom : MainAPI() {
             addCandidate(element.attr("data-url"))
         }
 
+        // Fallback only when no player element exposed a source.
+        if (links.isEmpty()) mediaUrlsFromHtml(rootDocument.outerHtml()).forEach { links.add(it) }
+
         var loaded = false
         val queue = mutableListOf<Pair<String, String>>()
         links.forEach { queue.add(it to data) }
-
         var processed = 0
+
         while (queue.isNotEmpty() && processed < 20) {
-            val current = queue.removeAt(0)
-            val link = current.first
-            val referer = current.second
+            val (link, referer) = queue.removeAt(0)
             if (!visited.add(link)) continue
             processed++
 
@@ -227,36 +198,28 @@ class DiziMom : MainAPI() {
 
             try {
                 val frameDocument = app.get(link, headers = headers, referer = referer).document
-                val frameHtml = frameDocument.outerHtml()
-
-                mediaUrlsFromHtml(frameHtml).forEach {
-                    addDirectMediaLink(it, link, callback)
-                    loaded = true
-                }
-
-                frameDocument.select("video, source, iframe, embed").forEach { element ->
+                frameDocument.select("embed7, embed8, embed9, embed, video, source, iframe").forEach { element ->
                     listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
-                        val raw = element.attr(attr)
-                        val candidate = fixUrlNull(raw) ?: return@forEach
+                        val candidate = fixUrlNull(element.attr(attr)) ?: return@forEach
                         if (looksLikeMedia(candidate)) {
                             addDirectMediaLink(candidate, link, callback)
                             loaded = true
-                        } else if (!visited.contains(candidate) && queue.size < 20) {
+                        } else if (visited.size < 20) {
                             queue.add(candidate to link)
                         }
                     }
                 }
             } catch (e: Exception) {
-                Log.d("DZM", "iframe parse failed: ${e.message}")
+                Log.d("DZM", "player parse failed: $link - ${e.message}")
             }
 
             try {
                 if (loadExtractor(link, referer, subtitleCallback, callback)) {
                     loaded = true
-                    Log.d("DZM", "extractor accepted")
+                    Log.d("DZM", "extractor accepted » $link")
                 }
             } catch (e: Exception) {
-                Log.d("DZM", "extractor failed: ${e.message}")
+                Log.d("DZM", "Extractor failed: $link - ${e.message}")
             }
         }
 
