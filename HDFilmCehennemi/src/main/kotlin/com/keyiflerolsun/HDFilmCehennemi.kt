@@ -29,16 +29,31 @@ class HDFilmCehennemi : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(request.data + page).document
-        val home = document.select("div.poster-container, div.poster").distinctBy { it.selectFirst("a")?.attr("href") }.mapNotNull { it.toSearchResult() }
+        // HDFilmCehennemi'nin ilk sayfası /page/1/ değil, kategori URL'sinin kendisidir.
+        val pageUrl = if (page == 1) {
+            request.data.removeSuffix("page/")
+        } else {
+            request.data + page
+        }
+        val document = app.get(pageUrl).document
+
+        val home = document.select("div.poster-container, div.poster")
+            .mapNotNull { it.toSearchResult() }
+            .distinctBy { it.url }
+
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = selectFirst("h2.title, h3.title, .title")?.text()?.trim()?.takeIf { it.isNotBlank() } ?: return null
         val href = fixUrlNull(selectFirst("a[href]")?.attr("href")) ?: return null
+        val title = selectFirst("h2.title, h3.title, .title")?.text()?.trim()
+            ?.takeIf { it.isNotBlank() } ?: return null
         val image = selectFirst("img")
-        val posterUrl = fixUrlNull(image?.attr("data-src")?.takeIf { it.isNotBlank() } ?: image?.attr("src"))
+        val posterUrl = fixUrlNull(
+            image?.attr("data-src")?.takeIf { it.isNotBlank() }
+                ?: image?.attr("data-lazy-src")?.takeIf { it.isNotBlank() }
+                ?: image?.attr("src")
+        )
         val isSeries = text().contains("Yabancı Dizi", ignoreCase = true)
         return if (isSeries) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
