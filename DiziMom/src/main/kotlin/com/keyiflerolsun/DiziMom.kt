@@ -21,6 +21,7 @@ import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -164,7 +165,7 @@ class DiziMom : MainAPI() {
             if (!fixed.isNullOrBlank()) candidates.add(fixed)
         }
 
-        // DiziMom currently exposes players as iframe or custom embed tags such as embed7.
+        // DiziMom uses iframe elements and custom tags such as embed7 with a src attribute.
         root.select("iframe, video, source, embed, [src], [data-src], [data-lazy-src], [data-url], [data-embed], [file], a[href]").forEach { element ->
             listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file", "href").forEach { attr ->
                 if (element.hasAttr(attr)) add(element.attr(attr))
@@ -213,7 +214,7 @@ class DiziMom : MainAPI() {
                     }
                 }
             } catch (_: Exception) {
-                // Some player hosts reject direct HTML requests; extractor fallback below may still work.
+                // Continue to extractor fallback.
             }
 
             try {
