@@ -69,7 +69,7 @@ class HDFilmCehennemi : MainAPI() {
         val year = document.selectFirst("div.mb-0.lh-lg div:nth-child(4) a")?.text()?.trim()?.toIntOrNull()
         val tvType = if (document.select("nav#seasonsTabs").isNullOrEmpty()) TvType.Movie else TvType.TvSeries
         val description = document.selectFirst("article.text-white > p")?.text()?.trim()
-        val rating = document.selectFirst("div.rating-votes div.rate span")?.text()?.toRatingInt()
+        val ratingText = document.selectFirst("div.rating-votes div.rate span")?.text()
         val actors = document.select("div.mb-0.lh-lg div:last-child a.chip").map { Actor(it.text(), it.select("img").attr("src")) }
         val recommendations = document.select("div.swiper-wrapper div.poster.poster-pop").mapNotNull {
             val recName = it.selectFirst("h2.title")?.text() ?: return@mapNotNull null
@@ -85,16 +85,20 @@ class HDFilmCehennemi : MainAPI() {
                 val name = it.select("h3").text().trim()
                 val episode = Regex("Sezon\\s?([0-9]+).").find(name)?.groupValues?.getOrNull(1)?.toIntOrNull()
                 val season = it.parents()[1].attr("id").substringAfter("-").toIntOrNull()
-                Episode(href, name, season, episode)
+                newEpisode(href) {
+                    this.name = name
+                    this.season = season
+                    this.episode = episode
+                }
             }
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.rating = rating
+                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.score = Score.from10(ratingText)
                 addActors(actors); this.recommendations = recommendations; addTrailer(trailer)
             }
         } else {
             val trailer = document.selectFirst("nav.nav.card-nav.nav-slider a[data-bs-toggle=\"modal\"]")?.attr("data-trailer")?.let { "https://www.youtube.com/embed/$it" }
             newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.rating = rating
+                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.score = Score.from10(ratingText)
                 addActors(actors); this.recommendations = recommendations; addTrailer(trailer)
             }
         }
@@ -170,21 +174,33 @@ class HDFilmCehennemi : MainAPI() {
         val videoUrl = extractVideoUrl(decodedScript) ?: return
         val subData = decodedScript.substringAfter("tracks: [", "").substringBefore("]")
 
-        callback.invoke(ExtractorLink(source, source, videoUrl, "$mainUrl/", Qualities.Unknown.value, true))
+        callback.invoke(
+            newExtractorLink(source, source, videoUrl, ExtractorLinkType.M3U8) {
+                referer = "$mainUrl/"
+                quality = Qualities.Unknown.value
+            }
+        )
         tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions" }?.map {
             subtitleCallback.invoke(SubtitleFile(it.label.toString(), fixUrl(it.file.toString())))
         }
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        app.get(data).document.select("nav.nav.card-nav.nav-slider a.nav-link").map { Pair(it.attr("href"), it.text()) }.apmap { (url, source) ->
+        app.get(data).document.select("nav.nav.card-nav.nav-slider a.nav-link").map { Pair(it.attr("href"), it.text()) }.forEach { (url, source) ->
             safeApiCall {
                 app.get(url).document.select("div.card-video > iframe").attr("data-src").let { iframeUrl ->
                     if (iframeUrl.startsWith(mainUrl)) {
                         invokeLocalSource(source, iframeUrl, subtitleCallback, callback)
                     } else {
                         loadExtractor(iframeUrl, "$mainUrl/", subtitleCallback) { link ->
-                            callback.invoke(ExtractorLink(source, source, link.url, link.referer, link.quality, link.type, link.headers, link.extractorData))
+                            callback.invoke(
+                                newExtractorLink(source, source, link.url, link.type) {
+                                    referer = link.referer
+                                    quality = link.quality
+                                    headers = link.headers
+                                    extractorData = link.extractorData
+                                }
+                            )
                         }
                     }
                 }
