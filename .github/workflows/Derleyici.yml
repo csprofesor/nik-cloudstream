@@ -47,13 +47,13 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/src
           sed -i 's#https://dizigom101.com#https://www.dizigom.love#g' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
-          sed -i 's#https://www.dizimom.bid#https://www.dizimom.surf#g' DiziMom/src/main/kotlin/com/keyiflerolsun/DiziMom.kt
+          sed -i 's#https://www.dizimom.bid#https://www.dizimom.work#g; s#https://www.dizimom.surf#https://www.dizimom.work#g' DiziMom/src/main/kotlin/com/keyiflerolsun/DiziMom.kt
           sed -i 's#https://dizipal1214.com#https://dizipalt.com#g' DiziPal/src/main/kotlin/com/keyiflerolsun/DiziPal.kt
           sed -i 's#https://www.setfilmizle.uk#https://setfilmizle.ltd#g; s#https://setfilmizle.uk#https://setfilmizle.ltd#g' SetFilmIzle/src/main/kotlin/com/keyiflerolsun/SetFilmIzle.kt
           sed -i 's#dizigom1.co#www.dizigom.love#g; s/tvTypes = listOf("Movie")/tvTypes = listOf("TvSeries")/' DiziGom/build.gradle.kts
           sed -i 's#www.dizibox.de#www.dizibox.live#g' DiziBox/build.gradle.kts
           sed -i 's#dizikorea.vip#dizikorea3.com#g' DiziKorea/build.gradle.kts
-          sed -i 's#www.dizimom.tv#www.dizimom.surf#g' DiziMom/build.gradle.kts
+          sed -i 's#www.dizimom.tv#www.dizimom.work#g; s#www.dizimom.surf#www.dizimom.work#g' DiziMom/build.gradle.kts
           sed -i 's#dizipal683.com#dizipalt.com#g' DiziPal/build.gradle.kts
           sed -i 's#dizilla.club#dizilla.now#g; s#dizilla40.com#dizilla.now#g' Dizilla/build.gradle.kts
           sed -i 's#https://dizilla40.com#https://dizilla.now#g; s#https://dizilla.to#https://dizilla.now#g' Dizilla/src/main/kotlin/com/keyiflerolsun/Dizilla.kt
