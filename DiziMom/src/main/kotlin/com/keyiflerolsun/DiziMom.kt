@@ -2,7 +2,6 @@
 
 package com.keyiflerolsun
 
-import android.util.Log
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -17,13 +16,14 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
-import com.lagradost.cloudstream3.newExtractorLink
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
 class DiziMom : MainAPI() {
@@ -119,7 +119,7 @@ class DiziMom : MainAPI() {
         }
     }
 
-    private fun normalizeMediaUrl(value: String): String? {
+    private fun normalizeUrl(value: String): String? {
         var url = value.trim().replace("\\/", "/").replace("&amp;", "&")
             .trim('"', '\'', '`', '”', '“', '’', '‘')
         if (url.startsWith("//")) url = "https:$url"
@@ -129,20 +129,24 @@ class DiziMom : MainAPI() {
 
     private fun mediaUrlsFromHtml(html: String): List<String> {
         val regex = Regex("""https?://[^\s\"'<>]+?\.(?:m3u8|mp4)(?:\?[^\s\"'<>]*)?""", RegexOption.IGNORE_CASE)
-        return regex.findAll(html).mapNotNull { normalizeMediaUrl(it.value) }.distinct().toList()
+        return regex.findAll(html).mapNotNull { normalizeUrl(it.value) }.distinct().toList()
     }
 
-    private fun looksLikeMedia(url: String): Boolean =
-        Regex("""\.(m3u8|mp4)(?:$|\?)""", RegexOption.IGNORE_CASE).containsMatchIn(url)
+    private fun isM3u8(url: String): Boolean = url.contains(".m3u8", ignoreCase = true)
 
-    private suspend fun addDirectMediaLink(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
-        val normalized = normalizeMediaUrl(url) ?: return
-        val type = if (normalized.contains(".m3u8", ignoreCase = true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-        callback(newExtractorLink("DiziMom", "DiziMom", normalized, type) {
-            this.referer = referer
-            this.quality = 0
-        })
-        Log.d("DZM", "direct media found")
+    private fun addMedia(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
+        val media = normalizeUrl(url) ?: return
+        callback(
+            newExtractorLink(
+                source = "DiziMom",
+                name = "DiziMom",
+                url = media,
+                type = if (isM3u8(media)) ExtractorLinkType.M3U8 else INFER_TYPE
+            ) {
+                this.referer = referer
+                this.quality = Qualities.Unknown.value
+            }
+        )
     }
 
     override suspend fun loadLinks(
@@ -151,82 +155,71 @@ class DiziMom : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("DZM", "loadLinks: $data")
-        val headers = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
-        )
-        val rootDocument = app.get(data, headers = headers, referer = mainUrl).document
-        val links = linkedSetOf<String>()
-        val visited = mutableSetOf<String>()
+        val ua = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
+        val root = app.get(data, headers = ua, referer = mainUrl).document
+        val candidates = linkedSetOf<String>()
 
-        fun addCandidate(value: String?) {
-            val url = value?.trim()?.takeIf { it.isNotEmpty() } ?: return
-            fixUrlNull(url)?.let { links.add(it) }
+        fun add(value: String?) {
+            val fixed = normalizeUrl(value ?: "") ?: fixUrlNull(value ?: "")
+            if (!fixed.isNullOrBlank()) candidates.add(fixed)
         }
 
-        mediaUrlsFromHtml(rootDocument.outerHtml()).forEach { links.add(it) }
-
-        // Custom player tags such as embed7/embed8 are caught through their attributes.
-        rootDocument.select("[src], [data-src], [data-lazy-src], [data-url], [data-embed], [file]").forEach { element ->
-            listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
-                addCandidate(element.attr(attr))
+        // DiziMom currently exposes players as iframe or custom embed tags such as embed7.
+        root.select("iframe, video, source, embed, [src], [data-src], [data-lazy-src], [data-url], [data-embed], [file], a[href]").forEach { element ->
+            listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file", "href").forEach { attr ->
+                if (element.hasAttr(attr)) add(element.attr(attr))
             }
         }
 
-        rootDocument.select("a[data-embed], a[data-src], a[data-url], div.sources a, .sources a").forEach { element ->
-            addCandidate(element.attr("href"))
-            addCandidate(element.attr("data-embed"))
-            addCandidate(element.attr("data-src"))
-            addCandidate(element.attr("data-url"))
-        }
+        root.select("div.sources a, .sources a").forEach { add(it.attr("href")) }
+        mediaUrlsFromHtml(root.outerHtml()).forEach { candidates.add(it) }
 
         var loaded = false
         val queue = mutableListOf<Pair<String, String>>()
-        links.forEach { queue.add(it to data) }
-        var processed = 0
+        candidates.forEach { queue.add(it to data) }
+        val visited = mutableSetOf<String>()
+        var count = 0
 
-        while (queue.isNotEmpty() && processed < 20) {
+        while (queue.isNotEmpty() && count < 20) {
             val current = queue.removeAt(0)
-            val link = current.first
+            val url = current.first
             val referer = current.second
-            if (!visited.add(link)) continue
-            processed++
+            if (!visited.add(url)) continue
+            count++
 
-            if (looksLikeMedia(link)) {
-                addDirectMediaLink(link, referer, callback)
+            if (isM3u8(url) || url.contains(".mp4", ignoreCase = true)) {
+                addMedia(url, referer, callback)
                 loaded = true
                 continue
             }
 
             try {
-                val frameDocument = app.get(link, headers = headers, referer = referer).document
-                mediaUrlsFromHtml(frameDocument.outerHtml()).forEach {
-                    addDirectMediaLink(it, link, callback)
+                val player = app.get(url, headers = ua, referer = referer)
+                val html = player.text
+                mediaUrlsFromHtml(html).forEach {
+                    addMedia(it, url, callback)
                     loaded = true
                 }
-
-                frameDocument.select("[src], [data-src], [data-lazy-src], [data-url], [data-embed], [file]").forEach { element ->
+                player.document.select("iframe, video, source, embed, [src], [data-src], [data-lazy-src], [data-url], [data-embed], [file]").forEach { element ->
                     listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
-                        val candidate = fixUrlNull(element.attr(attr)) ?: return@forEach
-                        if (looksLikeMedia(candidate)) {
-                            addDirectMediaLink(candidate, link, callback)
+                        if (!element.hasAttr(attr)) return@forEach
+                        val next = normalizeUrl(element.attr(attr)) ?: fixUrlNull(element.attr(attr)) ?: return@forEach
+                        if (isM3u8(next) || next.contains(".mp4", ignoreCase = true)) {
+                            addMedia(next, url, callback)
                             loaded = true
-                        } else if (!visited.contains(candidate) && queue.size < 20) {
-                            queue.add(candidate to link)
+                        } else if (!visited.contains(next) && queue.size < 20) {
+                            queue.add(next to url)
                         }
                     }
                 }
-            } catch (e: Exception) {
-                Log.d("DZM", "player parse failed: ${e.message}")
+            } catch (_: Exception) {
+                // Some player hosts reject direct HTML requests; extractor fallback below may still work.
             }
 
             try {
-                if (loadExtractor(link, referer, subtitleCallback, callback)) {
-                    loaded = true
-                    Log.d("DZM", "extractor accepted")
-                }
-            } catch (e: Exception) {
-                Log.d("DZM", "extractor failed: ${e.message}")
+                if (loadExtractor(url, referer, subtitleCallback, callback)) loaded = true
+            } catch (_: Exception) {
+                // Continue with the next provider.
             }
         }
 
