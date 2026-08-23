@@ -65,15 +65,6 @@ jobs:
           cd $GITHUB_WORKSPACE/src
           sed -i 's/private fun iframe2AesLink/private suspend fun iframe2AesLink/' TurkAnime/src/main/kotlin/com/keyiflerolsun/TurkAnime.kt
 
-      - name: Güncellenen Kaynakları Kaydet
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          git config user.email "actions@github.com"
-          git config user.name "GitHub Actions"
-          git add DiziGom/src DiziGom/build.gradle.kts DiziMom/src DiziMom/build.gradle.kts DiziPal/src DiziPal/build.gradle.kts DiziKorea/src DiziKorea/build.gradle.kts DiziBox/build.gradle.kts DiziMag/src DiziMag/build.gradle.kts Dizilla/build.gradle.kts Dizilla/src SetFilmIzle/src SetFilmIzle/build.gradle.kts TurkAnime/src
-          git commit -m "Update provider domains and Kotlin compatibility [skip ci]" || true
-          git push origin HEAD:master || true
-
       - name: Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
