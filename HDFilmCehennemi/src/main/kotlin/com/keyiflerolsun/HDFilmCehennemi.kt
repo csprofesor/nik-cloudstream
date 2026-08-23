@@ -181,9 +181,7 @@ class HDFilmCehennemi : MainAPI() {
                     invokeLocalSource(source, iframeUrl, subtitleCallback, callback)
                 } else {
                     loadExtractor(iframeUrl, "$mainUrl/", subtitleCallback) { link ->
-                        callback.invoke(newExtractorLink(source, source, link.url, link.type) {
-                            referer = link.referer; quality = link.quality; headers = link.headers; extractorData = link.extractorData
-                        })
+                        callback.invoke(link)
                     }
                 }
             } catch (_: Exception) { }
