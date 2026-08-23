@@ -31,23 +31,37 @@ class HDFilmCehennemi : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val pageUrl = if (page == 1) request.data.removeSuffix("page/") else request.data + page
         val document = app.get(pageUrl).document
-        val home = document.select("div.card-body div.row div.col-6.col-sm-3.poster-container, div.poster-container, div.poster")
-            .mapNotNull { it.toSearchResult() }.distinctBy { it.url }
+        val cards = document.select("div.poster-container, div.poster, article.poster, a[href]:has(img)")
+        val home = cards.mapNotNull { it.toSearchResult() }.distinctBy { it.url }
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val anchor = selectFirst("a[href]") ?: return null
+        val anchor = if (tagName() == "a") this else selectFirst("a[href]") ?: return null
         val href = fixUrlNull(anchor.attr("href")) ?: return null
-        val title = (selectFirst("div.poster-title h2, h2.title, h3.title, .title")?.text() ?: anchor.text())
-            .replace(" izle", "").trim().takeIf { it.isNotBlank() } ?: return null
-        val image = selectFirst("img")
-        val poster = fixUrlNull(image?.attr("data-src")?.takeIf { it.isNotBlank() } ?: image?.attr("data-lazy-src")?.takeIf { it.isNotBlank() } ?: image?.attr("src"))
+        val title = (
+            selectFirst("div.poster-title h2, h2.title, h3.title, .title")?.text()
+                ?: anchor.selectFirst("h2, h3, .title")?.text()
+                ?: anchor.text()
+        ).replace(" izle", "").trim().takeIf { it.isNotBlank() } ?: return null
+        val image = selectFirst("img") ?: anchor.selectFirst("img")
+        val poster = fixUrlNull(
+            image?.attr("data-src")?.takeIf { it.isNotBlank() }
+                ?: image?.attr("data-lazy-src")?.takeIf { it.isNotBlank() }
+                ?: image?.attr("data-original")?.takeIf { it.isNotBlank() }
+                ?: image?.attr("src")
+        )
         val score = selectFirst("span.bg-warning, span.rating, .rating")?.text()?.trim()
         return if (href.contains("/dizi/", true) || text().contains("Yabancı Dizi", true)) {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster; this.score = Score.from10(score) }
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                posterUrl = poster
+                this.score = Score.from10(score)
+            }
         } else {
-            newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster; this.score = Score.from10(score) }
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                posterUrl = poster
+                this.score = Score.from10(score)
+            }
         }
     }
 
