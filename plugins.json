@@ -195,7 +195,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Dizilla.cs3",
         "status": 1,
-        "version": 26,
+        "version": 27,
         "name": "Dizilla",
         "internalName": "Dizilla",
         "authors": [
@@ -203,7 +203,7 @@
             "nikyokki"
         ],
         "description": "Dizilla t\u00fcm yabanc\u0131 dizileri \u00fccretsiz olarak T\u00fcrk\u00e7e Dublaj ve altyaz\u0131l\u0131 se\u00e7enekleri ile 1080P kalite izleyebilece\u011finiz yeni nesil yabanc\u0131 dizi izleme siteniz.",
-        "fileSize": 35835,
+        "fileSize": 33058,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -211,7 +211,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=dizilla40.com&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-4897358c628657b9bcefdc09a3c08e67e96ffc6e00c03235b4a565d44adb7b12"
+        "fileHash": "sha256-1fc7121dd4a77fba7b10f7b1b6babc2eccfe957a1805be36900a2f489079cc06"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMag.cs3",
