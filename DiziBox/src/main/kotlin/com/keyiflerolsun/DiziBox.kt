@@ -21,12 +21,11 @@ class DiziBox : MainAPI() {
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = false
-    override val supportedTypes       = setOf(TvType.TvSeries)
-
-    // ! CloudFlare bypass
     override var sequentialMainPage = true
     override var sequentialMainPageDelay       = 50L
     override var sequentialMainPageScrollDelay = 50L
+    override val hasQuickSearch       = false
+    override val supportedTypes       = setOf(TvType.TvSeries)
 
     // ! CloudFlare v2
     private val cloudflareKiller by lazy { CloudflareKiller() }
@@ -34,10 +33,11 @@ class DiziBox : MainAPI() {
 
     class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
-            val response = chain.proceed(chain.request())
-            val doc = Jsoup.parse(response.peekBody(10 * 1024).string())
+            val request  = chain.request()
+            val response = chain.proceed(request)
+            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
 
-            if (response.code == 503 || doc.selectFirst("meta[name='cloudflare']") != null) {
+            if (doc.text().contains("Güvenlik taramasından geçiriliyorsunuz. Lütfen bekleyiniz..")) {
                 return cloudflareKiller.intercept(chain)
             }
 
@@ -74,10 +74,10 @@ class DiziBox : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = request.data.replace("SAYFA", "$page")
+        val url      = request.data.replace("SAYFA", "$page")
         val document = app.get(
             url,
-            cookies = mapOf("isTrustedUser" to "true", "dbxu" to "1744009162326"),
+            cookies     = mapOf("isTrustedUser" to "true", "dbxu" to "1744009162326"),
             interceptor = interceptor
         ).document
         if (request.name == "Yeni Eklenen Bölümler" || request.name == "Popüler Dizilerden Son Bölümler") {
@@ -135,7 +135,6 @@ class DiziBox : MainAPI() {
             cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"),
             interceptor = interceptor
         ).document
-
         val title = document.selectFirst("div.tv-overview h1 a")?.text()?.trim() ?: return null
         val poster = fixUrlNull(document.selectFirst("div.tv-overview figure img")?.attr("src"))
         val description = document.selectFirst("div.tv-story p")?.text()?.trim()
@@ -144,7 +143,6 @@ class DiziBox : MainAPI() {
         val rating = document.selectFirst("span.label-imdb b")?.text()?.trim()
         val actors = document.select("a[href*='/oyuncu/']").map { Actor(it.text()) }
         val trailer = document.selectFirst("div.tv-overview iframe")?.attr("src")
-
         val episodeList = mutableListOf<Episode>()
         document.select("div#seasons-list a").forEach {
             val epUrl = fixUrlNull(it.attr("href")) ?: return@forEach
@@ -165,7 +163,6 @@ class DiziBox : MainAPI() {
                 })
             }
         }
-
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodeList) {
             this.posterUrl = poster
             this.plot = description
@@ -179,15 +176,9 @@ class DiziBox : MainAPI() {
 
     private suspend fun iframeDecode(data:String, iframe:String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         @Suppress("NAME_SHADOWING") var iframe = iframe
-
         if (iframe.contains("/player/king/king.php")) {
             iframe = iframe.replace("king.php?v=", "king.php?wmode=opaque&v=")
-            val subDoc = app.get(
-                iframe,
-                referer = data,
-                cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"),
-                interceptor = interceptor
-            ).document
+            val subDoc = app.get(iframe, referer = data, cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"), interceptor = interceptor).document
             val subFrame = subDoc.selectFirst("div#Player iframe")?.attr("src") ?: return false
             val iDoc = app.get(subFrame, referer="${mainUrl}/").text
             val cryptData = Regex("""CryptoJS\.AES\.decrypt\("(.*)","""").find(iDoc)?.groupValues?.get(1) ?: return false
@@ -201,12 +192,7 @@ class DiziBox : MainAPI() {
             })
         } else if (iframe.contains("/player/moly/moly.php")) {
             iframe = iframe.replace("moly.php?h=", "moly.php?wmode=opaque&h=")
-            var subDoc = app.get(
-                iframe,
-                referer = data,
-                cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"),
-                interceptor = interceptor
-            ).document
+            var subDoc = app.get(iframe, referer = data, cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"), interceptor = interceptor).document
             val atobData = Regex("""unescape\("(.*)"\)""").find(subDoc.html())?.groupValues?.get(1)
             if (atobData != null) {
                 val decodedAtob = atobData.decodeUri()
@@ -217,12 +203,7 @@ class DiziBox : MainAPI() {
             loadExtractor(subFrame, "${mainUrl}/", subtitleCallback, callback)
         } else if (iframe.contains("/player/haydi.php")) {
             iframe = iframe.replace("haydi.php?v=", "haydi.php?wmode=opaque&v=")
-            var subDoc = app.get(
-                iframe,
-                referer = data,
-                cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"),
-                interceptor = interceptor
-            ).document
+            var subDoc = app.get(iframe, referer = data, cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"), interceptor = interceptor).document
             val atobData = Regex("""unescape\("(.*)"\)""").find(subDoc.html())?.groupValues?.get(1)
             if (atobData != null) {
                 val decodedAtob = atobData.decodeUri()
@@ -237,22 +218,14 @@ class DiziBox : MainAPI() {
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("DZBX", "data » $data")
-        val document = app.get(
-            data,
-            cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"),
-            interceptor = interceptor
-        ).document
-        var iframe = document.selectFirst("div#video-area iframe")?.attr("src") ?: return false
+        val document = app.get(data, cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"), interceptor = interceptor).document
+        var iframe = document.selectFirst("div#video-area iframe")?.attr("src")?: return false
         Log.d("DZBX", "iframe » $iframe")
         iframeDecode(data, iframe, subtitleCallback, callback)
         document.select("div.video-toolbar option[value]").forEach {
             val altLink = it.attr("value")
-            val subDoc = app.get(
-                altLink,
-                cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"),
-                interceptor = interceptor
-            ).document
-            iframe = subDoc.selectFirst("div#video-area iframe")?.attr("src") ?: return false
+            val subDoc = app.get(altLink, cookies = mapOf("LockUser" to "true", "isTrustedUser" to "true", "dbxu" to "1744009162326"), interceptor = interceptor).document
+            iframe = subDoc.selectFirst("div#video-area iframe")?.attr("src")?: return false
             Log.d("DZBX", "iframe » $iframe")
             iframeDecode(data, iframe, subtitleCallback, callback)
         }
