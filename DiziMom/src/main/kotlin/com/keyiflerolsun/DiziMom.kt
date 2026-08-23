@@ -165,7 +165,6 @@ class DiziMom : MainAPI() {
             if (!fixed.isNullOrBlank()) candidates.add(fixed)
         }
 
-        // DiziMom uses iframe elements and custom tags such as embed7 with a src attribute.
         root.select("iframe, video, source, embed, [src], [data-src], [data-lazy-src], [data-url], [data-embed], [file], a[href]").forEach { element ->
             listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file", "href").forEach { attr ->
                 if (element.hasAttr(attr)) add(element.attr(attr))
@@ -218,7 +217,8 @@ class DiziMom : MainAPI() {
             }
 
             try {
-                if (loadExtractor(url, referer, subtitleCallback, callback)) loaded = true
+                loadExtractor(url, referer, subtitleCallback, callback)
+                loaded = true
             } catch (_: Exception) {
                 // Continue with the next provider.
             }
