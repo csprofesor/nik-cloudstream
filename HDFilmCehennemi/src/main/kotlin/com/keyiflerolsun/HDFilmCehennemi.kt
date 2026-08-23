@@ -11,6 +11,7 @@ import org.jsoup.nodes.Element
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
+@Suppress("DEPRECATION")
 class HDFilmCehennemi : MainAPI() {
     override var mainUrl = "https://www.hdfilmcehennemi.nl"
     override var name = "HDFilmCehennemi"
