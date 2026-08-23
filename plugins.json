@@ -496,7 +496,7 @@
             "nikyokki"
         ],
         "description": "T\u00fcrkiye'nin en h\u0131zl\u0131 hd film izleme sitesi",
-        "fileSize": 30258,
+        "fileSize": 29777,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -505,7 +505,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.com&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-183d184ca08a71e24133ded1774c938cff20be51cdfdde0f0f190460ab31d4bf"
+        "fileHash": "sha256-9b5fd06f45e7e30c4c0a5797dc1557792108c864cb71456396db0c75726d79bd"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3",
