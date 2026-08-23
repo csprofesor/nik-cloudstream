@@ -1,7 +1,6 @@
 package com.keyiflerolsun
 
 import android.util.Log
-import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 
@@ -28,7 +27,7 @@ open class PeaceMakerst : ExtractorApi() {
                 data = mapOf("hash" to hash, "r" to extRef, "s" to ""),
                 referer = extRef,
                 headers = mapOf(
-                    "Accept" to "application/json, text/javascript, */*; q=0.01",
+                    "Accept" to "text/plain, application/json, text/javascript, */*; q=0.01",
                     "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                     "Origin" to mainUrl,
                     "X-Requested-With" to "XMLHttpRequest",
@@ -40,121 +39,88 @@ open class PeaceMakerst : ExtractorApi() {
         }
 
         val body = response.text
-        if (body.isBlank()) throw ErrorLoadingException("PeaceMakerst boş yanıt döndürdü")
+            .trim()
+            .removePrefix("\uFEFF")
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
 
-        val teve2Id = Regex("teve2\\.com\\.tr(?:\\\\/|/)embed(?:\\\\/|/)([^\\\"'\\s]+)")
-            .find(body)?.groupValues?.getOrNull(1)
-
-        if (!teve2Id.isNullOrBlank()) {
-            val teve2 = try {
-                app.get(
-                    "https://www.teve2.com.tr/action/media/$teve2Id",
-                    referer = "https://www.teve2.com.tr/embed/$teve2Id",
-                    headers = mapOf("User-Agent" to USER_AGENT)
-                ).parsed<Teve2ApiResponse>()
-            } catch (_: Exception) {
-                null
-            }
-
-            val link = teve2?.media?.link?.let {
-                normalizeUrl((it.serviceUrl ?: "") + "//" + (it.securePath ?: ""))
-            }
-            if (!link.isNullOrBlank()) {
-                emit(link, extRef, callback)
-                return
-            }
+        if (body.isBlank()) {
+            throw ErrorLoadingException("PeaceMakerst boş yanıt döndürdü")
         }
 
-        val parsed = try {
-            body.trim().removePrefix("\uFEFF").let { json ->
-                response.parsed<PeaceResponse>()
-            }
-        } catch (_: Exception) {
-            null
-        }
-
+        // Bu servis zaman zaman geçersiz/eksik JSON döndürüyor.
+        // Bu nedenle response.parsed() kullanmıyoruz; ham gövdeden gerçek medya URL'lerini çıkarıyoruz.
         val candidates = LinkedHashSet<String>()
 
-        parsed?.videoSources
-            ?.asSequence()
-            ?.mapNotNull { normalizeUrl(it.file) }
-            ?.forEach(candidates::add)
+        val quotedUrlRegex = Regex(
+            "(?:\\\"(?:file|url|source|src|link|hls|stream|video)\\\"|(?:file|url|source|src|link|hls|stream|video))\\s*[:=]\\s*\\\"([^\\\"]+)\\\"",
+            RegexOption.IGNORE_CASE
+        )
 
-        parsed?.sourceList
-            ?.values
-            ?.asSequence()
-            ?.mapNotNull { normalizeUrl(it) }
-            ?.forEach(candidates::add)
-
-        Regex("(?:\\\"file\\\"|\\\"url\\\"|\\\"source\\\")\\s*:\\s*\\\"([^\\\"]+)\\\"")
-            .findAll(body)
+        quotedUrlRegex.findAll(body)
             .mapNotNull { normalizeUrl(it.groupValues[1]) }
             .forEach(candidates::add)
 
+        // JSON düzgün değilse bile doğrudan m3u8/mp4 URL'sini yakala.
+        Regex(
+            "https?://[^\\s\\\"'<>\\\\]+(?:\\.m3u8(?:\\?[^\\s\\\"'<>\\\\]*)?|\\.mp4(?:\\?[^\\s\\\"'<>\\\\]*)?)",
+            RegexOption.IGNORE_CASE
+        ).findAll(body)
+            .mapNotNull { normalizeUrl(it.value) }
+            .forEach(candidates::add)
+
+        // Teve2 embed'i varsa JSON parse etmeden embed URL'sini kaynak olarak döndür.
+        Regex(
+            "https?://(?:www\\.)?teve2\\.com\\.tr/(?:embed|video)/[^\\s\\\"'<>]+",
+            RegexOption.IGNORE_CASE
+        ).findAll(body)
+            .mapNotNull { normalizeUrl(it.value) }
+            .forEach(candidates::add)
+
         if (candidates.isEmpty()) {
-            throw ErrorLoadingException("PeaceMakerst video kaynağı bulunamadı")
+            Log.d("CloudStream_$name", "No media URL found. Response prefix=${body.take(500)}")
+            throw ErrorLoadingException("PeaceMakerst yanıtından video adresi çıkarılamadı")
         }
 
-        var lastError: Throwable? = null
         for (candidate in candidates) {
-            try {
-                emit(candidate, extRef, callback)
-                return
-            } catch (e: Exception) {
-                lastError = e
-            }
+            emit(candidate, extRef, callback)
         }
-
-        throw ErrorLoadingException("PeaceMakerst video kaynağı açılamadı: ${lastError?.message ?: "bilinmeyen hata"}")
     }
 
     private fun normalizeUrl(value: String?): String? {
-        var result = value?.trim()?.replace("\\/", "/")?.replace("&amp;", "&") ?: return null
-        result = result.trim('"', '\'', '`', '”', '“', '’', '‘')
+        var result = value?.trim() ?: return null
+        result = result
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+            .trim('"', '\'', '`', '”', '“', '’', '‘', ',', ';')
+
         if (result.startsWith("//")) result = "https:$result"
-        return result.takeIf { it.startsWith("http://") || it.startsWith("https://") }
+
+        return result.takeIf {
+            it.startsWith("http://") || it.startsWith("https://")
+        }
     }
 
-    private suspend fun emit(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
-        callback.invoke(
-            newExtractorLink(
-                source = name,
-                name = name,
-                url = url,
-                type = INFER_TYPE
-            ) {
-                this.referer = referer
-                this.quality = when {
-                    url.contains("1080", true) -> Qualities.P1080.value
-                    url.contains("720", true) -> Qualities.P720.value
-                    url.contains("480", true) -> Qualities.P480.value
-                    else -> Qualities.Unknown.value
-                }
+    private suspend fun emit(
+        url: String,
+        referer: String,
+        callback: (SubtitleFile) -> Unit = {},
+        linkCallback: ((ExtractorLink) -> Unit)? = null
+    ) {
+        val target = newExtractorLink(
+            source = name,
+            name = name,
+            url = url,
+            type = INFER_TYPE
+        ) {
+            this.referer = referer
+            this.quality = when {
+                url.contains("1080", true) -> Qualities.P1080.value
+                url.contains("720", true) -> Qualities.P720.value
+                url.contains("480", true) -> Qualities.P480.value
+                else -> Qualities.Unknown.value
             }
-        )
-    }
-
-    data class PeaceResponse(
-        @JsonProperty("videoImage") val videoImage: String? = null,
-        @JsonProperty("videoSources") val videoSources: List<VideoSource> = emptyList(),
-        @JsonProperty("sIndex") val sIndex: String? = null,
-        @JsonProperty("sourceList") val sourceList: Map<String, String> = emptyMap()
-    )
-
-    data class VideoSource(
-        @JsonProperty("file") val file: String? = null,
-        @JsonProperty("label") val label: String? = null,
-        @JsonProperty("type") val type: String? = null
-    )
-
-    data class Teve2ApiResponse(@JsonProperty("Media") val media: Teve2Media? = null)
-    data class Teve2Media(@JsonProperty("Link") val link: Teve2Link? = null)
-    data class Teve2Link(
-        @JsonProperty("ServiceUrl") val serviceUrl: String? = null,
-        @JsonProperty("SecurePath") val securePath: String? = null
-    )
-
-    private companion object {
-        const val USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+        }
+        linkCallback?.invoke(target)
     }
 }
