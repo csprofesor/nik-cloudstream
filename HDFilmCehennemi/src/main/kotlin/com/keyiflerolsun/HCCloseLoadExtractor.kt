@@ -54,8 +54,8 @@ open class HCCloseLoadExtractor : ExtractorApi() {
         // The current HDFilmCehennemi player expects this hash request before
         // the returned HLS playlist is accepted by the video server.
         runCatching {
-            val hash = Regex("""hash:\\s*\"([^\"]+)\"""").find(unpacked)?.groupValues?.get(1)
-            val ajaxPath = Regex("""url:\\s*\"([^\"]+)\"""").find(unpacked)?.groupValues?.get(1)
+            val hash = Regex("""hash:\s*\"([^\"]+)\"""").find(unpacked)?.groupValues?.get(1)
+            val ajaxPath = Regex("""url:\s*\"([^\"]+)\"""").find(unpacked)?.groupValues?.get(1)
             if (!hash.isNullOrBlank() && !ajaxPath.isNullOrBlank()) {
                 val ajaxUrl = if (ajaxPath.startsWith("http")) ajaxPath
                 else hostUrl + "/" + ajaxPath.trimStart('/')
@@ -71,9 +71,9 @@ open class HCCloseLoadExtractor : ExtractorApi() {
         Log.d("Kekik_${this.name}", "playlist -> $playlistUrl")
         callback.invoke(
             newExtractorLink(name, name, playlistUrl, ExtractorLinkType.M3U8) {
-                referer = url
-                headers = videoHeaders
-                quality = Qualities.Unknown.value
+                this.referer = url
+                this.headers = videoHeaders
+                this.quality = Qualities.Unknown.value
             }
         )
     }
@@ -97,7 +97,7 @@ open class HCCloseLoadExtractor : ExtractorApi() {
             buildString {
                 decoded.forEachIndexed { index, byte ->
                     val mixed = ((byte.toInt() and 0xFF) - (399756995L % (index + 5)) + 256) % 256
-                    append(mixed.toChar())
+                    append(mixed.toInt().toChar())
                 }
             }.takeIf { it.startsWith("https://") && (it.contains(".m3u8") || it.contains("/hls/") || it.contains(".mp4")) }
         } catch (_: Exception) {
