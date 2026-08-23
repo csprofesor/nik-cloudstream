@@ -494,7 +494,7 @@
             "gsrepo"
         ],
         "description": "T\u00fcrkiye'nin h\u0131zl\u0131 hd film izleme sitesi",
-        "fileSize": 30648,
+        "fileSize": 30763,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -503,7 +503,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.nl&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-111f3b5374b98ff10cf05251b74d409cf13cc5d3a78f5f1887c7304cd1744d04"
+        "fileHash": "sha256-ee6a80ea0370a711eef05674e502389fc674b580b5c11db5a94bd812383a94dd"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3",
