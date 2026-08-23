@@ -8,6 +8,8 @@ import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import org.jsoup.nodes.Element
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 class HDFilmCehennemi : MainAPI() {
     override var mainUrl = "https://www.hdfilmcehennemi.nl"
@@ -97,11 +99,77 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
+    private fun rot13(value: String): String = value.map { c ->
+        when {
+            c in 'a'..'z' -> ((c.code - 'a'.code + 13) % 26 + 'a'.code).toChar()
+            c in 'A'..'Z' -> ((c.code - 'A'.code + 13) % 26 + 'A'.code).toChar()
+            else -> c
+        }
+    }.joinToString("")
+
+    private fun characterUnmix(value: String): String = buildString {
+        value.forEachIndexed { index, c ->
+            val mixed = (c.code - (399756995L % (index + 5)) + 256) % 256
+            append(mixed.toInt().toChar())
+        }
+    }
+
+    private fun decodeVariant1(value: String): String {
+        val decoded = Base64.getDecoder().decode(rot13(value))
+        return characterUnmix(String(decoded, StandardCharsets.ISO_8859_1))
+    }
+
+    private fun decodeVariant2(value: String): String {
+        val decoded = Base64.getDecoder().decode(value)
+        return characterUnmix(rot13(String(decoded, StandardCharsets.ISO_8859_1)))
+    }
+
+    private fun decodeVariant3(value: String): String {
+        var decoded = String(Base64.getDecoder().decode(value), StandardCharsets.ISO_8859_1)
+        decoded = decoded.reversed()
+        decoded = rot13(decoded)
+        return characterUnmix(decoded)
+    }
+
+    private fun isValidVideoUrl(url: String?): Boolean {
+        if (url.isNullOrBlank() || !url.startsWith("https://")) return false
+        return url.contains(".m3u8") || url.contains("/hls/") || url.contains(".mp4")
+    }
+
+    private fun decodeVideoUrl(parts: List<String>): String? {
+        val value = parts.joinToString("")
+        val reversed = value.reversed()
+
+        try { decodeVariant3(value).takeIf { isValidVideoUrl(it) }?.let { return it } } catch (_: Exception) {}
+        try { decodeVariant1(reversed).takeIf { isValidVideoUrl(it) }?.let { return it } } catch (_: Exception) {}
+        try { decodeVariant2(reversed).takeIf { isValidVideoUrl(it) }?.let { return it } } catch (_: Exception) {}
+        return null
+    }
+
+    private fun extractVideoUrl(decoded: String): String? {
+        val partsMatch = Regex("dc_\\w+\\(\\[([^]]+)]\\)").find(decoded)
+        if (partsMatch != null) {
+            val parts = Regex("\\\"([^\\\"]+)\\\"").findAll(partsMatch.groupValues[1]).map { it.groupValues[1] }.toList()
+            decodeVideoUrl(parts)?.let { return it }
+        }
+
+        val fileLink = Regex("file_link=\\\"([^\\\"]+)\\\"").find(decoded)?.groupValues?.getOrNull(1)
+        if (!fileLink.isNullOrBlank()) {
+            try {
+                val oldUrl = base64Decode(fileLink)
+                if (isValidVideoUrl(oldUrl)) return oldUrl
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
         val script = app.get(url, referer = "$mainUrl/").document.select("script").find { it.data().contains("sources:") }?.data() ?: return
-        val videoData = getAndUnpack(script).substringAfter("file_link=\"").substringBefore("\";")
-        val subData = script.substringAfter("tracks: [").substringBefore("]")
-        callback.invoke(ExtractorLink(source, source, base64Decode(videoData), "$mainUrl/", Qualities.Unknown.value, true))
+        val decodedScript = try { getAndUnpack(script) } catch (_: Exception) { script }
+        val videoUrl = extractVideoUrl(decodedScript) ?: return
+        val subData = decodedScript.substringAfter("tracks: [", "").substringBefore("]")
+
+        callback.invoke(ExtractorLink(source, source, videoUrl, "$mainUrl/", Qualities.Unknown.value, true))
         tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions" }?.map {
             subtitleCallback.invoke(SubtitleFile(it.label.toString(), fixUrl(it.file.toString())))
         }
