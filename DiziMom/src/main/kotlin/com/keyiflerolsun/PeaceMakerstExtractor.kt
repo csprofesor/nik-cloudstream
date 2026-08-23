@@ -51,7 +51,7 @@ open class PeaceMakerst : ExtractorApi() {
                     "https://www.teve2.com.tr/action/media/$teve2Id",
                     referer = "https://www.teve2.com.tr/embed/$teve2Id",
                     headers = mapOf("User-Agent" to USER_AGENT)
-                ).parsedSafe<Teve2ApiResponse>()
+                ).parsed<Teve2ApiResponse>()
             } catch (_: Exception) {
                 null
             }
@@ -65,14 +65,24 @@ open class PeaceMakerst : ExtractorApi() {
             }
         }
 
-        val parsed = body.trim().removePrefix("\uFEFF").parsedSafe<PeaceResponse>()
+        val parsed = try {
+            body.trim().removePrefix("\uFEFF").let { json ->
+                response.parsed<PeaceResponse>()
+            }
+        } catch (_: Exception) {
+            null
+        }
+
         val candidates = LinkedHashSet<String>()
 
-        parsed?.videoSources?.asSequence()
+        parsed?.videoSources
+            ?.asSequence()
             ?.mapNotNull { normalizeUrl(it.file) }
             ?.forEach(candidates::add)
 
-        parsed?.sourceList?.values?.asSequence()
+        parsed?.sourceList
+            ?.values
+            ?.asSequence()
             ?.mapNotNull { normalizeUrl(it) }
             ?.forEach(candidates::add)
 
@@ -105,7 +115,7 @@ open class PeaceMakerst : ExtractorApi() {
         return result.takeIf { it.startsWith("http://") || it.startsWith("https://") }
     }
 
-    private fun emit(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
+    private suspend fun emit(url: String, referer: String, callback: (ExtractorLink) -> Unit) {
         callback.invoke(
             newExtractorLink(
                 source = name,
