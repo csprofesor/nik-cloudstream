@@ -1,4 +1,4 @@
-version = 28
+version = 29
 
 cloudstream {
     authors     = listOf("gsrepo")
@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1
     tvTypes = listOf("TvSeries")
-    iconUrl = "https://www.google.com/s2/favicons?domain=www.dizimom.surf&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=www.dizimom.work&sz=%size%"
 }
