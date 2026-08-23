@@ -216,7 +216,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMag.cs3",
         "status": 1,
-        "version": 19,
+        "version": 20,
         "name": "DiziMag",
         "internalName": "DiziMag",
         "authors": [
@@ -231,7 +231,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=dizimag.com.tr&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-493293263fb01bbfd342551a118fed0e14ea24a7233b32b72dce5207175287dc"
+        "fileHash": "sha256-f1d99babd07f319c26fea4f5235bd4afb830eaeacb2a2ea94227918ca449d61d"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3",
