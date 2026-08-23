@@ -33,6 +33,7 @@ import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import okhttp3.Interceptor
 import okhttp3.Response
 import org.jsoup.Jsoup
@@ -46,7 +47,6 @@ class HDFilmCehennemi : MainAPI() {
     override var lang = "tr"
     override val hasQuickSearch = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
-
     override var sequentialMainPage = true
     override var sequentialMainPageDelay = 200L
     override var sequentialMainPageScrollDelay = 200L
@@ -56,8 +56,7 @@ class HDFilmCehennemi : MainAPI() {
 
     class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
-            val request = chain.request()
-            val response = chain.proceed(request)
+            val response = chain.proceed(chain.request())
             val doc = Jsoup.parse(response.peekBody(1024 * 1024).string())
             if (doc.select("title").text() == "Just a moment..." || doc.select("title").text() == "Bir dakika lütfen...") {
                 return cloudflareKiller.intercept(chain)
@@ -73,12 +72,22 @@ class HDFilmCehennemi : MainAPI() {
         "${mainUrl}/load/page/sayfano/categories/tavsiye-filmler-izle2/" to "Tavsiye Filmler",
         "${mainUrl}/load/page/sayfano/imdb7/" to "IMDB 7+ Filmler",
         "${mainUrl}/load/page/sayfano/mostCommented/" to "En Çok Yorumlananlar",
-        "${mainUrl}/load/page/sayfano/mostLiked/" to "En Çok Beğenilenler"
+        "${mainUrl}/load/page/sayfano/mostLiked/" to "En Çok Beğenilenler",
+        "${mainUrl}/load/page/sayfano/genres/aile-filmleri-izleyin-6/" to "Aile Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/aksiyon-filmleri-izleyin-5/" to "Aksiyon Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/animasyon-filmlerini-izleyin-5/" to "Animasyon Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/belgesel-filmlerini-izle-1/" to "Belgesel Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/bilim-kurgu-filmlerini-izleyin-3/" to "Bilim Kurgu Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/komedi-filmlerini-izleyin-1/" to "Komedi Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/korku-filmlerini-izle-4/" to "Korku Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/romantik-filmleri-izle-2/" to "Romantik Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/suc-filmleri-izle-3/" to "Suç Filmleri",
+        "${mainUrl}/load/page/sayfano/genres/tarih-filmleri-izle-4/" to "Tarih Filmleri"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        val mapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         val url = request.data.replace("sayfano", page.toString())
         val headers = mapOf(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
@@ -87,9 +96,8 @@ class HDFilmCehennemi : MainAPI() {
         )
         val doc = app.get(url, headers = headers, referer = mainUrl, interceptor = interceptor)
         if (doc.toString().contains("Sayfa Bulunamadı")) return newHomePageResponse(request.name, emptyList())
-        val aa: HDFC = objectMapper.readValue(doc.toString())
-        val document = Jsoup.parse(aa.html)
-        return newHomePageResponse(request.name, document.select("a").mapNotNull { it.toSearchResult() })
+        val aa: HDFC = mapper.readValue(doc.toString())
+        return newHomePageResponse(request.name, Jsoup.parse(aa.html).select("a").mapNotNull { it.toSearchResult() })
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
@@ -107,8 +115,8 @@ class HDFilmCehennemi : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val response = app.get("${mainUrl}/search?q=${query}", headers = mapOf("X-Requested-With" to "fetch")).parsedSafe<Results>() ?: return emptyList()
-        return response.results.mapNotNull { resultHtml ->
-            val document = Jsoup.parse(resultHtml)
+        return response.results.mapNotNull { html ->
+            val document = Jsoup.parse(html)
             val title = document.selectFirst("h4.title")?.text() ?: return@mapNotNull null
             val href = fixUrlNull(document.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
             val posterUrl = fixUrlNull(document.selectFirst("img")?.attr("src")) ?: fixUrlNull(document.selectFirst("img")?.attr("data-src"))
@@ -126,7 +134,12 @@ class HDFilmCehennemi : MainAPI() {
         val description = document.selectFirst("article.post-info-content > p")?.text()?.trim()
         val rating = document.selectFirst("div.post-info-imdb-rating span")?.text()?.substringBefore("(")?.trim()
         val actors = document.select("div.post-info-cast a").map { Actor(it.selectFirst("strong")!!.text(), it.select("img").attr("data-src")) }
-
+        val recommendations = document.select("div.section-slider-container div.slider-slide").mapNotNull {
+            val n = it.selectFirst("a")?.attr("title") ?: return@mapNotNull null
+            val h = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
+            val p = fixUrlNull(it.selectFirst("img")?.attr("data-src")) ?: fixUrlNull(it.selectFirst("img")?.attr("src"))
+            newTvSeriesSearchResponse(n, h, TvType.TvSeries) { this.posterUrl = p }
+        }
         return if (tvType == TvType.TvSeries) {
             val episodes = document.select("div.seasons-tab-content a").mapNotNull {
                 val epName = it.selectFirst("h4")?.text()?.trim() ?: return@mapNotNull null
@@ -136,13 +149,78 @@ class HDFilmCehennemi : MainAPI() {
                 newEpisode(epHref) { name = epName; season = epSeason; episode = epEpisode }
             }
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.score = Score.from10(rating); addActors(actors)
+                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.score = Score.from10(rating); this.recommendations = recommendations; addActors(actors)
             }
         } else {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
-                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.score = Score.from10(rating); addActors(actors)
+                this.posterUrl = poster; this.year = year; this.plot = description; this.tags = tags; this.score = Score.from10(rating); this.recommendations = recommendations; addActors(actors)
             }
         }
+    }
+
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        Log.d("HDCH", "loadLinks data=$data")
+        val document = app.get(data, interceptor = interceptor).document
+        val buttons = document.select("div.alternative-links button.alternative-link")
+        var found = false
+
+        buttons.forEach { button ->
+            val videoID = button.attr("data-video").trim()
+            if (videoID.isEmpty()) return@forEach
+
+            val apiUrl = "${mainUrl}/video/$videoID/"
+            val apiGet = app.get(
+                apiUrl,
+                interceptor = interceptor,
+                headers = mapOf("Accept" to "*/*", "X-Requested-With" to "fetch"),
+                referer = data
+            ).text
+
+            Log.d("HDCH", "videoID=$videoID responseLength=${apiGet.length}")
+            val candidates = linkedSetOf<String>()
+
+            Regex("""data-src\\?=\\?[\"']([^\"']+)""").findAll(apiGet).forEach { candidates += it.groupValues[1] }
+            Regex("""<iframe[^>]+(?:src|data-src)=[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE).findAll(apiGet).forEach { candidates += it.groupValues[1] }
+            Regex("""(?:https?:)?//[^\"'<>\\s]+""").findAll(apiGet).forEach { candidates += it.value }
+
+            Jsoup.parse(apiGet).select("iframe[src], iframe[data-src], video[src], source[src]").forEach { el ->
+                el.attr("src").takeIf { it.isNotBlank() }?.let { candidates += it }
+                el.attr("data-src").takeIf { it.isNotBlank() }?.let { candidates += it }
+            }
+
+            candidates.map { it.replace("\\\\", "").replace("&amp;", "&").trim() }
+                .filter { it.isNotBlank() }
+                .forEach { raw ->
+                    val link = when {
+                        raw.startsWith("//") -> "https:$raw"
+                        raw.startsWith("/") -> mainUrl + raw
+                        else -> raw
+                    }
+                    Log.d("HDCH", "candidate=$link")
+                    found = true
+                    if (link.contains(".m3u8", ignoreCase = true)) {
+                        callback(newExtractorLink(this.name, "HDFilmCehennemi", link, type = com.lagradost.cloudstream3.utils.ExtractorLinkType.M3U8) {
+                            referer = data
+                            quality = com.lagradost.cloudstream3.utils.Qualities.Unknown.value
+                        })
+                    } else if (link.contains(".mp4", ignoreCase = true)) {
+                        callback(newExtractorLink(this.name, "HDFilmCehennemi", link) {
+                            referer = data
+                            quality = com.lagradost.cloudstream3.utils.Qualities.Unknown.value
+                        })
+                    } else {
+                        loadExtractor(link, data, subtitleCallback, callback)
+                    }
+                }
+        }
+
+        Log.d("HDCH", "linksFound=$found buttons=${buttons.size}")
+        return found
     }
 
     private fun dcHello(base64Input: String): String {
@@ -162,8 +240,8 @@ class HDFilmCehennemi : MainAPI() {
         val rot13Bytes = decodedBytes.map { byte ->
             val c = byte.toInt()
             when (c) {
-                in 'a'.code..'z'.code -> ('a'.code + (c - 'a'.code + 13) % 26).toByte()
-                in 'A'.code..'Z'.code -> ('A'.code + (c - 'A'.code + 13) % 26).toByte()
+                in 'a'.code..'z'.code -> (((c - 'a'.code + 13) % 26) + 'a'.code).toByte()
+                in 'A'.code..'Z'.code -> (((c - 'A'.code + 13) % 26) + 'A'.code).toByte()
                 else -> byte
             }
         }.toByteArray()
@@ -174,42 +252,6 @@ class HDFilmCehennemi : MainAPI() {
             unmixedBytes[i] = floorMod(charCode - (399756995 % (i + 5)), 256).toByte()
         }
         return String(unmixedBytes, Charsets.ISO_8859_1)
-    }
-
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("HDCH", "data » $data")
-        val document = app.get(data, interceptor = interceptor).document
-        var found = false
-
-        document.select("div.alternative-links").forEach { element ->
-            val langCode = element.attr("data-lang").uppercase()
-            element.select("button.alternative-link").forEach { button ->
-                val source = button.text().replace("(HDrip Xbet)", "").trim() + " $langCode"
-                val videoID = button.attr("data-video").trim()
-                if (videoID.isEmpty()) return@forEach
-
-                val apiGet = app.get(
-                    "${mainUrl}/video/$videoID/",
-                    interceptor = interceptor,
-                    headers = mapOf("Content-Type" to "application/json", "X-Requested-With" to "fetch"),
-                    referer = data
-                ).text
-
-                val candidates = linkedSetOf<String>()
-                Regex("""(?:data-src|data-video|src|href)=[\\\"']([^\\\"']+)[\\\"']""").findAll(apiGet).forEach { match -> candidates.add(match.groupValues[1].replace("\\", "")) }
-                Regex("""https?://[^\\\"'\\s<>]+""").findAll(apiGet).forEach { match -> candidates.add(match.value) }
-
-                candidates.mapNotNull { candidate ->
-                    val iframe = candidate.replace("{rapidrame_id}", "").trim()
-                    if (iframe.startsWith("//")) "https:$iframe" else iframe
-                }.filter { it.startsWith("http") }.forEach { iframe ->
-                    Log.d("HDCH", "$source » $videoID » $iframe")
-                    loadExtractor(iframe, data, subtitleCallback, callback)
-                    found = true
-                }
-            }
-        }
-        return found
     }
 
     private data class SubSource(
