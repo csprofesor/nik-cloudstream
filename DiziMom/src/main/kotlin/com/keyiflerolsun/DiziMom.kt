@@ -1,4 +1,4 @@
-// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+// ! DiziMom provider - gsrepo
 
 package com.keyiflerolsun
 
@@ -17,10 +17,12 @@ import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
+import com.lagradost.cloudstream3.newExtractorLink
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
@@ -117,39 +119,149 @@ class DiziMom : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("DZM", "data » $data")
-        val headers = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
-        val document = app.get(data, headers = headers, referer = "${mainUrl}/").document
-        val links = linkedSetOf<String>()
+    private fun normalizeMediaUrl(value: String): String? {
+        var url = value
+            .trim()
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+            .replace("&quot;", "")
+            .trim('"', '\'', '`', '”', '“', '’', '‘')
 
-        document.select("iframe").forEach { iframe ->
-            listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed").forEach { attr ->
-                val value = iframe.attr(attr).trim()
-                if (value.isNotEmpty()) fixUrlNull(value)?.let { links.add(it) }
+        if (url.startsWith("//")) url = "https:$url"
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return null
+        return url
+    }
+
+    private fun mediaUrlsFromHtml(html: String): List<String> {
+        val regex = Regex(
+            """https?:\\?/\\?/[^\\s\"'<>]+?(?:\\.m3u8|\\.mp4)(?:\\?[^\\s\"'<>]*)?""",
+            RegexOption.IGNORE_CASE
+        )
+        return regex.findAll(html)
+            .mapNotNull { normalizeMediaUrl(it.value) }
+            .distinct()
+            .toList()
+    }
+
+    private fun looksLikeMedia(url: String): Boolean =
+        Regex("""\.(m3u8|mp4)(?:$|\?)""", RegexOption.IGNORE_CASE).containsMatchIn(url)
+
+    private suspend fun addDirectMediaLink(
+        url: String,
+        referer: String,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        val normalized = normalizeMediaUrl(url) ?: return
+        val type = if (normalized.contains(".m3u8", ignoreCase = true)) {
+            ExtractorLinkType.M3U8
+        } else {
+            ExtractorLinkType.VIDEO
+        }
+
+        callback(
+            newExtractorLink(
+                source = "DiziMom",
+                name = "DiziMom",
+                url = normalized,
+                type = type
+            ) {
+                this.referer = referer
+                this.quality = 0
+            }
+        )
+        Log.d("DZM", "direct media » $normalized")
+    }
+
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        Log.d("DZM", "data » $data")
+
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36"
+        )
+
+        val rootDocument = app.get(data, headers = headers, referer = mainUrl).document
+        val links = linkedSetOf<String>()
+        val visited = mutableSetOf<String>()
+
+        fun addCandidate(value: String?) {
+            val url = value?.trim()?.takeIf { it.isNotEmpty() } ?: return
+            fixUrlNull(url)?.let { links.add(it) }
+        }
+
+        // First collect real media URLs that are present directly in the episode HTML.
+        mediaUrlsFromHtml(rootDocument.outerHtml()).forEach { links.add(it) }
+
+        rootDocument.select("iframe, embed, video, source").forEach { element ->
+            listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
+                addCandidate(element.attr(attr))
             }
         }
-        document.select("video source, video, source").forEach { element ->
-            listOf("src", "data-src", "data-url").forEach { attr ->
-                val value = element.attr(attr).trim()
-                if (value.isNotEmpty()) fixUrlNull(value)?.let { links.add(it) }
-            }
+
+        rootDocument.select("a[data-embed], a[data-src], a[data-url], div.sources a, .sources a").forEach { element ->
+            addCandidate(element.attr("href"))
+            addCandidate(element.attr("data-embed"))
+            addCandidate(element.attr("data-src"))
+            addCandidate(element.attr("data-url"))
         }
-        document.select("div.sources a, .sources a, a[data-embed], a[data-src]").forEach { element ->
-            val href = element.attr("href").trim()
-            if (href.isNotEmpty()) fixUrlNull(href)?.let { links.add(it) }
-        }
-        if (links.isEmpty()) return false
+
         var loaded = false
-        for (link in links) {
-            try {
-                Log.d("DZM", "source » $link")
-                loadExtractor(link, data, subtitleCallback, callback)
+        val queue = ArrayDeque<Pair<String, String>>()
+        links.forEach { queue.add(it to data) }
+
+        // Some DiziMom pages use an iframe player. Open the iframe itself and
+        // inspect its HTML for the actual m3u8/mp4 before falling back to CS extractors.
+        var depth = 0
+        while (queue.isNotEmpty() && depth < 20) {
+            val (link, referer) = queue.removeFirst()
+            if (!visited.add(link)) continue
+            depth++
+
+            if (looksLikeMedia(link)) {
+                addDirectMediaLink(link, referer, callback)
                 loaded = true
+                continue
+            }
+
+            try {
+                val frameDocument = app.get(link, headers = headers, referer = referer).document
+                val frameHtml = frameDocument.outerHtml()
+
+                mediaUrlsFromHtml(frameHtml).forEach {
+                    addDirectMediaLink(it, link, callback)
+                    loaded = true
+                }
+
+                frameDocument.select("video, source, iframe, embed").forEach { element ->
+                    listOf("src", "data-src", "data-lazy-src", "data-url", "data-embed", "file").forEach { attr ->
+                        val candidate = fixUrlNull(element.attr(attr)) ?: return@forEach
+                        if (looksLikeMedia(candidate)) {
+                            addDirectMediaLink(candidate, link, callback)
+                            loaded = true
+                        } else if (visited.size < 20) {
+                            queue.add(candidate to link)
+                        }
+                    }
+                }
             } catch (e: Exception) {
-                Log.d("DZM", "Extractor başarısız: $link - ${e.message}")
+                Log.d("DZM", "iframe parse failed: $link - ${e.message}")
+            }
+
+            // Let CloudStream's normal extractor system handle supported players too.
+            try {
+                if (loadExtractor(link, referer, subtitleCallback, callback)) {
+                    loaded = true
+                    Log.d("DZM", "extractor accepted » $link")
+                }
+            } catch (e: Exception) {
+                Log.d("DZM", "Extractor failed: $link - ${e.message}")
             }
         }
+
         return loaded
     }
 }
