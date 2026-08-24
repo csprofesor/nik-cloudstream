@@ -52,10 +52,8 @@ class DiziGom : MainAPI() {
 
     private suspend fun getArchive(): List<SearchResponse> {
         archiveCache?.let { return it }
-
         return archiveMutex.withLock {
             archiveCache?.let { return@withLock it }
-
             val document = runCatching {
                 app.get("$mainUrl/dizi-izle/", referer = "$mainUrl/").document
             }.getOrNull() ?: return@withLock emptyList()
@@ -73,12 +71,37 @@ class DiziGom : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val wantedGenre = normalizeGenre(request.name)
         val archive = getArchive()
-
         val results = archive.filter { result ->
             genreCache[result.url].orEmpty().any { normalizeGenre(it) == wantedGenre }
         }
-
         return newHomePageResponse(request.name, results)
+    }
+
+    /** Find the smallest useful card containing this exact series link. */
+    private fun Element.findSeriesCard(href: String): Element? {
+        return generateSequence(this as Element?) { it.parent() }
+            .take(10)
+            .firstOrNull { element ->
+                element.select("a[href='${href.replace("'", "\\'")}']").isNotEmpty() &&
+                    element.selectFirst("img") != null
+            }
+    }
+
+    private fun Element.extractPoster(): String? {
+        val image = selectFirst("img") ?: return null
+        val raw = listOf(
+            image.attr("data-src"),
+            image.attr("data-lazy-src"),
+            image.attr("data-original"),
+            image.attr("data-image"),
+            image.attr("data-fallback-src"),
+            image.attr("src")
+        ).firstOrNull { it.isNotBlank() }
+            ?: image.attr("style").takeIf { it.contains("url(", true) }
+                ?.substringAfter("url(", "")?.substringBefore(")")
+                ?.trim(' ', '\'', '"')
+
+        return fixUrlNull(raw.orEmpty())
     }
 
     private fun Element.toArchiveResult(): SearchResponse? {
@@ -86,34 +109,31 @@ class DiziGom : MainAPI() {
         val title = text().trim().ifBlank { attr("title").trim() }
         if (title.isBlank()) return null
 
-        // The current archive puts IMDb / Yapım Yılı / Oyuncular / Tür in the
-        // same card as the /diziler/... link. Walk up until that card is found.
-        val card = generateSequence(this as Element?) { it.parent() }
-            .take(12)
-            .firstOrNull { element ->
-                element.selectFirst("img") != null &&
-                    Regex("IMDb|Yapım Yılı|Oyuncular|Tür\\s*:", RegexOption.IGNORE_CASE)
-                        .containsMatchIn(element.text())
-            } ?: parent()
-
+        // Do not select the first image from a large page container. The old
+        // implementation could climb to a wrapper containing several series,
+        // making every result inherit the same poster. We now stop at the
+        // closest ancestor that contains this exact series link and an image.
+        val card = findSeriesCard(href) ?: parent()
         val cardText = card?.text().orEmpty()
-        val image = card?.selectFirst("img") ?: selectFirst("img")
+
+        // Prefer an image inside the link itself, then the closest card image.
         val poster = fixUrlNull(
-            image?.attr("data-src").orEmpty().ifBlank {
-                image?.attr("data-lazy-src").orEmpty().ifBlank {
-                    image?.attr("src").orEmpty()
-                }
-            }
-        )
+            selectFirst("img")?.let { image ->
+                listOf(
+                    image.attr("data-src"),
+                    image.attr("data-lazy-src"),
+                    image.attr("data-original"),
+                    image.attr("data-image"),
+                    image.attr("src")
+                ).firstOrNull { it.isNotBlank() }
+            }.orEmpty()
+        ) ?: card?.extractPoster()
 
         val rating = Regex(
             "(?:IMDb|IMDB)\\s*:?\\s*([0-9]+(?:[.,][0-9]+)?)",
             RegexOption.IGNORE_CASE
         ).find(cardText)?.groupValues?.getOrNull(1)
 
-        // Jsoup's Element.text() collapses HTML whitespace, so the previous
-        // newline-based parser never saw the genres. Parse the visible text
-        // between 'Tür :' and the next card metadata instead.
         val typeText = Regex(
             "Tür\\s*:\\s*(.*?)(?=\\s+(?:Favorilere Ekle|Yapım Yılı|Oyuncular|IMDb)\\b|$)",
             RegexOption.IGNORE_CASE
@@ -158,17 +178,18 @@ class DiziGom : MainAPI() {
                 val title = link.text().trim().ifBlank { link.attr("title").trim() }
                 if (title.isBlank()) return@mapNotNull null
 
-                val card = generateSequence(link as Element?) { it.parent() }
-                    .take(8)
-                    .firstOrNull { it.selectFirst("img") != null }
-                val image = card?.selectFirst("img")
+                val card = link.findSeriesCard(href)
                 val poster = fixUrlNull(
-                    image?.attr("data-src").orEmpty().ifBlank {
-                        image?.attr("data-lazy-src").orEmpty().ifBlank {
-                            image?.attr("src").orEmpty()
-                        }
-                    }
-                )
+                    link.selectFirst("img")?.let { image ->
+                        listOf(
+                            image.attr("data-src"),
+                            image.attr("data-lazy-src"),
+                            image.attr("data-original"),
+                            image.attr("data-image"),
+                            image.attr("src")
+                        ).firstOrNull { it.isNotBlank() }
+                    }.orEmpty()
+                ) ?: card?.extractPoster()
 
                 newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                     posterUrl = poster
@@ -190,16 +211,13 @@ class DiziGom : MainAPI() {
         )
         val description = document.selectFirst("div.serieDescription p")?.text()?.trim()
         val year = document.selectFirst("div.airDateYear a")?.text()?.trim()?.toIntOrNull()
-        val tags = document.select("div.genreList a")
-            .map { it.text().trim() }
-            .filter { it.isNotEmpty() }
+        val tags = document.select("div.genreList a").map { it.text().trim() }.filter { it.isNotEmpty() }
         val rating = document.selectFirst("div.score")?.text()?.trim()
         val duration = document.select("div.serieMetaInformation div.totalSession")
             .lastOrNull()?.text()?.substringBefore(" ")?.toIntOrNull()
         val actors = document.select("div.owl-stage a").mapNotNull { a ->
             val actor = a.text().trim()
-            if (actor.isBlank()) null
-            else Actor(actor, fixUrlNull(a.selectFirst("img")?.attr("src")))
+            if (actor.isBlank()) null else Actor(actor, fixUrlNull(a.selectFirst("img")?.attr("src")))
         }
         val episodes = document.select("div.bolumust").mapNotNull { e ->
             val href = fixUrlNull(e.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
