@@ -22,7 +22,6 @@ import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
 import com.lagradost.cloudstream3.newHomePageResponse
-import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -42,6 +41,7 @@ class DiziGom : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
+    // DiziGom'un güncel sitedeki tür menüsü.
     override val mainPage = mainPageOf(
         "${mainUrl}/tur/aile/" to "Aile",
         "${mainUrl}/tur/aksiyon/" to "Aksiyon",
@@ -58,59 +58,67 @@ class DiziGom : MainAPI() {
         "${mainUrl}/tur/romantik/" to "Romantik",
         "${mainUrl}/tur/savas/" to "Savaş",
         "${mainUrl}/tur/suc/" to "Suç",
-        "${mainUrl}/tur/tarih/" to "Tarih",
+        "${mainUrl}/tur/tarih/" to "Tarih"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val search = "/wp-admin/admin-ajax.php"
-        val document = app.get("${request.data}/#p=$page").document
-        val tax = document.selectFirst("form.dizigom_advenced_search input")?.attr("name")
-        val value = document.selectFirst("form.dizigom_advenced_search input")?.attr("value")
-        if (page > 1) {
-            val pagedoc = app.post(
-                mainUrl + search, cookies = mapOf(
-                    "X-Requested-With" to "XMLHttpRequest",
-                    "Referer" to request.data
-                ),
-                data = mapOf(
-                    "action" to "dizigom_search_action",
-                    "formData" to "$tax=$value",
-                    "paged" to "$page",
-                    "_wpnonce" to "18a90a7287"
-                )
-            ).document
-            val home = pagedoc.select("div.episode-box").mapNotNull { it.toMainPageResult() }
-            return newHomePageResponse(request.name, home)
-        } else {
-            val home = document.select("div.episode-box").mapNotNull { it.toMainPageResult() }
-            return newHomePageResponse(request.name, home)
+        val document = app.get("${request.data}/#p=$page", referer = "$mainUrl/").document
+
+        if (page == 1) {
+            return newHomePageResponse(
+                request.name,
+                document.select("div.episode-box").mapNotNull { it.toMainPageResult() }
+            )
         }
 
+        val taxInput = document.selectFirst("form.dizigom_advenced_search input")
+        val tax = taxInput?.attr("name") ?: ""
+        val value = taxInput?.attr("value") ?: ""
 
+        val pagedoc = app.post(
+            "$mainUrl/wp-admin/admin-ajax.php",
+            referer = request.data,
+            headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+            data = mapOf(
+                "action" to "dizigom_search_action",
+                "formData" to "$tax=$value",
+                "paged" to page.toString(),
+                // Site halen bu nonce'u kullanıyor; değiştiğinde istek başarısız olsa bile
+                // ilk sayfadaki içerik çalışmaya devam eder.
+                "_wpnonce" to "18a90a7287"
+            )
+        ).document
+
+        return newHomePageResponse(
+            request.name,
+            pagedoc.select("div.episode-box").mapNotNull { it.toMainPageResult() }
+        )
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val title = this.selectFirst("div.serie-name a")?.text() ?: return null
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
-        val score = this.selectFirst("div.episode-date")?.text()?.replace("IMDb:", "")?.trim()
+        val title = selectFirst("div.serie-name a")?.text()?.trim() ?: return null
+        val href = fixUrlNull(selectFirst("a")?.attr("href")) ?: return null
+        val posterUrl = fixUrlNull(selectFirst("img")?.let { it.attr("data-src").ifBlank { it.attr("src") } })
+        val score = selectFirst("div.episode-date")?.text()
+            ?.substringAfter("IMDb:", "")?.trim()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
-            this.score     = Score.from10(score)
+            this.score = Score.from10(score)
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/?s=${query}").document
-
+        val document = app.get("$mainUrl/?s=${query.trim().replace(" ", "+")}").document
         return document.select("div.single-item").mapNotNull { it.toSearchResult() }
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("div.categorytitle a")?.text() ?: return null
-        val href = fixUrlNull(this.selectFirst("div.categorytitle a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
+        val link = selectFirst("div.categorytitle a") ?: return null
+        val title = link.text().trim()
+        val href = fixUrlNull(link.attr("href")) ?: return null
+        val image = selectFirst("img")
+        val posterUrl = fixUrlNull(image?.attr("data-src").orEmpty().ifBlank { image?.attr("src").orEmpty() })
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             this.posterUrl = posterUrl
@@ -120,61 +128,49 @@ class DiziGom : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
-
+        val document = app.get(url, referer = "$mainUrl/").document
         val title = document.selectFirst("div.serieTitle h1")?.text()?.trim() ?: return null
+
         val poster = fixUrlNull(
             document.selectFirst("div.seriePoster")?.attr("style")
-                ?.substringAfter("background-image:url(")?.substringBefore(")")
+                ?.substringAfter("background-image:url(")
+                ?.substringBefore(")")
+                ?.trim(' ', '\'', '"')
         )
-        Log.d("DZG", "Poster: $poster")
         val description = document.selectFirst("div.serieDescription p")?.text()?.trim()
         val year = document.selectFirst("div.airDateYear a")?.text()?.trim()?.toIntOrNull()
-        val tags = document.select("div.genreList a").map { it.text() }
+        val tags = document.select("div.genreList a").map { it.text().trim() }.filter { it.isNotEmpty() }
         val rating = document.selectFirst("div.score")?.text()?.trim()
-        val duration = document.select("div.serieMetaInformation").select("div.totalSession")
-            .last()?.text()?.split(" ")?.first()?.trim()?.toIntOrNull()
-        val actors = document.select("div.owl-stage a")
-            .map { Actor(it.text(), it.selectFirst("img")?.attr("href")) }
-        //val trailer         = Regex("""embed\/(.*)\?rel""").find(document.html())?.groupValues?.get(1)?.let { "https://www.youtube.com/embed/$it" }
-
-        val episodeses = mutableListOf<Episode>()
-
-        document.select("div.bolumust").forEach {
-            val epHref = it.selectFirst("a")?.attr("href") ?: ""
-            val epName = it.selectFirst("div.bolum-ismi")?.text()
-            val epSeason =
-                it.selectFirst("div.baslik")?.text()?.split(" ")?.first()?.replace(".", "")
-                    ?.toIntOrNull()
-            val epEp = it.selectFirst("div.baslik")?.text()?.split(" ")?.get(2)?.replace(".", "")
-                ?.toIntOrNull()
-            episodeses.add(
-                newEpisode(epHref) {
-                    this.name = epName
-                    this.season = epSeason
-                    this.episode = epEp
-                }
-            )
+        val duration = document.select("div.serieMetaInformation div.totalSession")
+            .lastOrNull()?.text()?.substringBefore(" ")?.toIntOrNull()
+        val actors = document.select("div.owl-stage a").mapNotNull { actor ->
+            val actorName = actor.text().trim()
+            if (actorName.isBlank()) null else Actor(actorName, fixUrlNull(actor.selectFirst("img")?.attr("src")))
         }
 
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodeses) {
-            this.posterUrl = poster
+        val episodes = document.select("div.bolumust").mapNotNull { element ->
+            val epHref = fixUrlNull(element.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
+            val epName = element.selectFirst("div.bolum-ismi")?.text()?.trim()
+            val parts = element.selectFirst("div.baslik")?.text()?.trim()?.split(" ") ?: emptyList()
+            val season = parts.getOrNull(0)?.replace(".", "")?.toIntOrNull()
+            val episode = parts.getOrNull(2)?.replace(".", "")?.toIntOrNull()
+
+            newEpisode(epHref) {
+                name = epName
+                this.season = season
+                this.episode = episode
+            }
+        }
+
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+            posterUrl = poster
             this.year = year
-            this.plot = description
+            plot = description
             this.tags = tags
             this.duration = duration
-            this.score = Score.from10(rating)
+            score = Score.from10(rating)
             addActors(actors)
         }
-
-    }
-
-    private fun Element.toRecommendationResult(): SearchResponse? {
-        val title = this.selectFirst("a img")?.attr("alt") ?: return null
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("a img")?.attr("data-src"))
-
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun loadLinks(
@@ -183,60 +179,114 @@ class DiziGom : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        Log.d("DZG", "data » ${data}")
-        val document = app.get(data, referer = "$mainUrl/").document
-        Log.d("Docum", document.toString())
-        val embed = document.selectFirst("div#content")?.selectFirst("script")?.data()
-        val contentJson: Gof = objectMapper.readValue(embed!!)
-        Log.d("DZG", "iframe » ${contentJson.contentUrl}")
-        val iframeDocument = app.get(
-            contentJson.contentUrl.replace("https://", "https://play."),
-            referer = "$mainUrl/"
-        ).document
-        val script =
-            iframeDocument.select("script").find { it.data().contains("eval(function(p,a,c,k,e") }
-                ?.data()
-                ?: ""
-        val unpack = JsUnpacker(script).unpack()
-        val sourceJ = unpack?.substringAfter("sources:[")?.substringBefore("]")?.replace("\\/", "/")
-        Log.d("DZG", "sourceJ » ${sourceJ}")
+        val mapper = ObjectMapper()
+            .registerModule(KotlinModule.Builder().build())
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-        val source: Go = objectMapper.readValue(sourceJ!!)
-        callback.invoke(
-            newExtractorLink(
-                source = this.name,
-                name = this.name,
-                url = source.file,
-                ExtractorLinkType.M3U8
-            ) {
-                this.referer = "$mainUrl/"
-                this.quality = getQualityFromName(source.label)
+        Log.d("DiziGom", "Episode: $data")
+
+        val episodeDocument = app.get(data, referer = "$mainUrl/").document
+        val scripts = episodeDocument.select("script")
+
+        // Eski yapıda JSON-LD içindeki contentUrl kullanılıyordu. Script seçimini
+        // sabit sıraya bağlamak yerine gerçekten contentUrl içeren script'i buluyoruz.
+        val contentScript = scripts.firstOrNull { it.data().contains("contentUrl") }
+            ?: episodeDocument.selectFirst("div#content script")
+
+        val contentUrl = contentScript?.data()?.let { script ->
+            runCatching { mapper.readValue<Gof>(script).contentUrl }.getOrNull()
+                ?: Regex("""[\"']contentUrl[\"']\s*:\s*[\"']([^\"']+)[\"']""")
+                    .find(script)?.groupValues?.getOrNull(1)
+        }?.takeIf { it.isNotBlank() }
+
+        if (contentUrl == null) {
+            Log.e("DiziGom", "contentUrl bulunamadı")
+            return false
+        }
+
+        // Önce sitenin verdiği URL'yi aynen deniyoruz. Eski sürümde kullanılan
+        // zorunlu play. dönüşümü yalnızca ilk deneme kaynak vermediğinde uygulanıyor.
+        val playerUrls = buildList {
+            add(contentUrl)
+            if (contentUrl.startsWith("https://") && !contentUrl.contains("://play.")) {
+                add(contentUrl.replaceFirst("https://", "https://play."))
             }
-        )
+        }.distinct()
 
-        return true
+        for (playerUrl in playerUrls) {
+            val playerDocument = runCatching {
+                app.get(playerUrl, referer = "$mainUrl/").document
+            }.getOrNull() ?: continue
+
+            val packedScript = playerDocument.select("script")
+                .firstOrNull { it.data().contains("eval(function(p,a,c,k,e") }
+                ?.data()
+
+            val unpacked = packedScript?.let { JsUnpacker(it).unpack() } ?: ""
+            val sourceText = unpacked
+                .substringAfter("sources:", "")
+                .substringAfter("sources =", "")
+                .substringBefore("]", "")
+                .replace("\\/", "/")
+                .trim()
+
+            if (sourceText.isBlank()) continue
+
+            val source = parseSource(mapper, sourceText) ?: continue
+            if (source.file.isBlank()) continue
+
+            callback(
+                newExtractorLink(
+                    source = name,
+                    name = "DiziGom ${source.label.ifBlank { "Otomatik" }}",
+                    url = source.file,
+                    type = ExtractorLinkType.M3U8
+                ) {
+                    referer = playerUrl
+                    quality = getQualityFromName(source.label)
+                }
+            )
+            return true
+        }
+
+        Log.e("DiziGom", "Video kaynağı bulunamadı: $data")
+        return false
+    }
+
+    private fun parseSource(mapper: ObjectMapper, raw: String): Go? {
+        // Önce mevcut JSON biçimini dene.
+        runCatching { mapper.readValue<Go>(raw) }.getOrNull()?.let { return it }
+        runCatching { mapper.readValue<List<Go>>("[$raw]").firstOrNull() }.getOrNull()?.let { return it }
+
+        // Player bazen JS nesnesi döndürüyor: {file:"...",label:"1080p"}
+        val file = Regex("""[\"']?file[\"']?\s*:\s*[\"']([^\"']+)[\"']""")
+            .find(raw)?.groupValues?.getOrNull(1) ?: return null
+        val label = Regex("""[\"']?label[\"']?\s*:\s*[\"']([^\"']*)[\"']""")
+            .find(raw)?.groupValues?.getOrNull(1).orEmpty()
+        val type = Regex("""[\"']?type[\"']?\s*:\s*[\"']([^\"']*)[\"']""")
+            .find(raw)?.groupValues?.getOrNull(1).orEmpty()
+
+        return Go(file = file, label = label, type = type)
     }
 
     data class Go(
         @JsonProperty("file") val file: String,
-        @JsonProperty("label") val label: String,
-        @JsonProperty("type") val type: String
+        @JsonProperty("label") val label: String = "",
+        @JsonProperty("type") val type: String = ""
     )
 
     data class Gof(
-        @JsonProperty("@context") val context: String,
-        @JsonProperty("@type") val type: String,
-        @JsonProperty("position") val position: String,
-        @JsonProperty("name") val name: String,
-        @JsonProperty("description") val description: String,
-        @JsonProperty("thumbnailUrl") val thumbnailUrl: String,
-        @JsonProperty("uploadDate") val uploadDate: String,
-        @JsonProperty("duration") val duration: String,
-        @JsonProperty("contentUrl") val contentUrl: String,
-        @JsonProperty("timeRequired") val timeRequired: String,
-        @JsonProperty("embedUrl") val embedUrl: String,
-        @JsonProperty("interactionCount") val interactionCount: String,
+        @JsonProperty("@context") val context: String = "",
+        @JsonProperty("@type") val type: String = "",
+        @JsonProperty("position") val position: String = "",
+        @JsonProperty("name") val name: String = "",
+        @JsonProperty("description") val description: String = "",
+        @JsonProperty("thumbnailUrl") val thumbnailUrl: String = "",
+        @JsonProperty("uploadDate") val uploadDate: String = "",
+        @JsonProperty("duration") val duration: String = "",
+        @JsonProperty("contentUrl") val contentUrl: String = "",
+        @JsonProperty("timeRequired") val timeRequired: String = "",
+        @JsonProperty("embedUrl") val embedUrl: String = "",
+        @JsonProperty("interactionCount") val interactionCount: String = ""
     )
 }
