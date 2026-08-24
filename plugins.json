@@ -192,7 +192,7 @@
             "csprofesor"
         ],
         "description": "T\u00fcrk\u00e7e altyaz\u0131l\u0131 yabanc\u0131 dizi izle, T\u00fcm yabanc\u0131, kore, netflix dizilerin yeni ve eski sezonlar\u0131n\u0131 orijinal dilinde dizigom1 alt yaz\u0131l\u0131 film izleyebilir, sadece t\u00fcrk\u00e7e altyaz\u0131l\u0131 en iyi yabanc\u0131 diziler ve filmler hakk\u0131nda yorum yapabilirsiniz.",
-        "fileSize": 17512,
+        "fileSize": 17927,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -200,7 +200,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-b31cc65be9f382663728bb301ffc2812c4e23710e7e8e62db32b3dcb6fce8956"
+        "fileHash": "sha256-f95522a59448d06710df5e4f11693eb19cb556b46e6a3feb40ada989c8ff8ae9"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
@@ -307,14 +307,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3",
         "status": 1,
-        "version": 83,
+        "version": 82,
         "name": "DiziPalOriginal",
         "internalName": "DiziPalOriginal",
         "authors": [
             "csprofesor"
         ],
         "description": "en yeni dizileri g\u00fcvenli ve h\u0131zl\u0131 \u015fekilde sunar.",
-        "fileSize": 25022,
+        "fileSize": 25013,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -323,7 +323,7 @@
         ],
         "iconUrl": "https://chessplyimages.cfd/uploads/site/favicon-32x32.png",
         "apiVersion": 1,
-        "fileHash": "sha256-5e115f7e80b2939cca918a0c5ada50496b6fab25075ba5683b1403b6d40c9a30"
+        "fileHash": "sha256-e86a2e7eebcf5068a23aa9a7dd03fd77775eb74bccfda9339158fce68216c9e3"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziYou.cs3",
