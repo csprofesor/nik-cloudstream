@@ -34,69 +34,80 @@ class DiziGom : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    // DiziGom'un kendi filtre sistemi ?tur=... kullanıyor.
-    // Kategorileri bu URL'lere doğrudan bağlamak, tüm katalogu indirip
-    // uygulama tarafında filtrelemekten daha doğru ve çok daha hızlıdır.
+    // DiziGom categories use /tur/{slug}/. This is the site's current
+    // category structure and avoids the old ?tur=... filtering.
     override val mainPage = mainPageOf(
-        "$mainUrl/dizi-izle/?tur=Aile" to "Aile",
-        "$mainUrl/dizi-izle/?tur=Aksiyon" to "Aksiyon",
-        "$mainUrl/dizi-izle/?tur=Animasyon" to "Animasyon",
-        "$mainUrl/dizi-izle/?tur=Belgesel" to "Belgesel",
-        "$mainUrl/dizi-izle/?tur=Bilim%20Kurgu" to "Bilim Kurgu",
-        "$mainUrl/dizi-izle/?tur=Dram" to "Dram",
-        "$mainUrl/dizi-izle/?tur=Fantastik" to "Fantastik",
-        "$mainUrl/dizi-izle/?tur=Gerilim" to "Gerilim",
-        "$mainUrl/dizi-izle/?tur=Komedi" to "Komedi",
-        "$mainUrl/dizi-izle/?tur=Korku" to "Korku",
-        "$mainUrl/dizi-izle/?tur=Macera" to "Macera",
-        "$mainUrl/dizi-izle/?tur=Polisiye" to "Polisiye",
-        "$mainUrl/dizi-izle/?tur=Romantik" to "Romantik",
-        "$mainUrl/dizi-izle/?tur=Savaş" to "Savaş",
-        "$mainUrl/dizi-izle/?tur=Suç" to "Suç",
-        "$mainUrl/dizi-izle/?tur=Tarih" to "Tarih"
+        "$mainUrl/tur/aile/" to "Aile",
+        "$mainUrl/tur/aksiyon/" to "Aksiyon",
+        "$mainUrl/tur/animasyon/" to "Animasyon",
+        "$mainUrl/tur/belgesel/" to "Belgesel",
+        "$mainUrl/tur/bilim-kurgu/" to "Bilim Kurgu",
+        "$mainUrl/tur/dram/" to "Dram",
+        "$mainUrl/tur/fantastik/" to "Fantastik",
+        "$mainUrl/tur/gerilim/" to "Gerilim",
+        "$mainUrl/tur/komedi/" to "Komedi",
+        "$mainUrl/tur/korku/" to "Korku",
+        "$mainUrl/tur/macera/" to "Macera",
+        "$mainUrl/tur/polisiye/" to "Polisiye",
+        "$mainUrl/tur/romantik/" to "Romantik",
+        "$mainUrl/tur/savas/" to "Savaş",
+        "$mainUrl/tur/suc/" to "Suç",
+        "$mainUrl/tur/tarih/" to "Tarih"
     )
 
-    private fun pageUrl(base: String, page: Int): String {
-        if (page <= 1) return base
-        val queryIndex = base.indexOf('?')
-        return if (queryIndex >= 0) {
-            base.substring(0, queryIndex).trimEnd('/') + "/page/$page/" + base.substring(queryIndex)
-        } else {
-            base.trimEnd('/') + "/page/$page/"
-        }
-    }
-
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = pageUrl(request.data, page)
-        val document = app.get(url, referer = "$mainUrl/").document
+        val document = app.get("${request.data}#p=$page", referer = "$mainUrl/").document
 
-        // Filtre sonucu zaten site tarafından hazırlanıyor; burada tekrar
-        // tür adına göre filtreleme yapmıyoruz. Böylece her kategori kendi
-        // gerçek içerik listesini eksiksiz gösterebilir.
-        val results = document
-            .select("div.single-item, article, .item, .post")
-            .mapNotNull { it.toResult() }
+        if (page > 1) {
+            val form = document.selectFirst("form.dizigom_advenced_search")
+            val tax = form?.selectFirst("input[name]")?.attr("name")
+            val value = form?.selectFirst("input[name]")?.attr("value")
+            val nonce = form?.selectFirst("input[name=_wpnonce]")?.attr("value")
+                ?: document.selectFirst("input[name=_wpnonce]")?.attr("value")
+
+            if (!tax.isNullOrBlank() && !value.isNullOrBlank() && !nonce.isNullOrBlank()) {
+                val pagedoc = app.post(
+                    "$mainUrl/wp-admin/admin-ajax.php",
+                    cookies = mapOf(
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "Referer" to request.data
+                    ),
+                    data = mapOf(
+                        "action" to "dizigom_search_action",
+                        "formData" to "$tax=$value",
+                        "paged" to page.toString(),
+                        "_wpnonce" to nonce
+                    )
+                ).document
+
+                val home = pagedoc
+                    .select("div.episode-box")
+                    .mapNotNull { it.toMainPageResult() }
+                    .distinctBy { it.url }
+
+                return newHomePageResponse(request.name, home)
+            }
+        }
+
+        val home = document
+            .select("div.episode-box")
+            .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
 
-        return newHomePageResponse(request.name, results)
+        return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toResult(): SearchResponse? {
-        val link = selectFirst(
-            "a[href*='/diziler/'], a[href*='/dizi/'], div.categorytitle a, div.serie-name a"
-        ) ?: return null
-        val title = link.text().trim()
-            .ifBlank { link.attr("title").trim() }
-            .ifBlank { return null }
-        val href = fixUrlNull(link.attr("href")) ?: return null
-        val img = selectFirst("img")
+    private fun Element.toMainPageResult(): SearchResponse? {
+        val title = selectFirst("div.serie-name a")?.text()?.trim()
+            ?.ifBlank { null } ?: return null
+        val href = fixUrlNull(selectFirst("a")?.attr("href")) ?: return null
         val poster = fixUrlNull(
-            img?.attr("data-src").orEmpty().ifBlank { img?.attr("src").orEmpty() }
+            selectFirst("img")?.attr("data-src")
+                ?.ifBlank { selectFirst("img")?.attr("src").orEmpty() }
         )
-        val rating = Regex(
-            "(?:IMDb|IMDB)\\s*:\\s*([0-9]+(?:[.,][0-9]+)?)",
-            RegexOption.IGNORE_CASE
-        ).find(text())?.groupValues?.getOrNull(1)
+        val rating = selectFirst("div.episode-date")?.text()
+            ?.replace("IMDb:", "", ignoreCase = true)
+            ?.trim()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             posterUrl = poster
@@ -109,22 +120,24 @@ class DiziGom : MainAPI() {
             "$mainUrl/?s=${query.trim().replace(" ", "+")}"
         ).document
 
-        return document.select("div.single-item, article, .item, .post")
-            .mapNotNull { element ->
-                val link = element.selectFirst(
-                    "div.categorytitle a, a[href*='/diziler/'], a[href*='/dizi/']"
-                ) ?: return@mapNotNull null
-                val title = link.text().trim()
-                val href = fixUrlNull(link.attr("href")) ?: return@mapNotNull null
-                val img = element.selectFirst("img")
-                val poster = fixUrlNull(
-                    img?.attr("data-src").orEmpty().ifBlank { img?.attr("src").orEmpty() }
-                )
-                newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                    posterUrl = poster
-                }
-            }
+        return document.select("div.single-item")
+            .mapNotNull { it.toSearchResult() }
             .distinctBy { it.url }
+    }
+
+    private fun Element.toSearchResult(): SearchResponse? {
+        val link = selectFirst("div.categorytitle a") ?: return null
+        val title = link.text().trim()
+        if (title.isBlank()) return null
+        val href = fixUrlNull(link.attr("href")) ?: return null
+        val poster = fixUrlNull(
+            selectFirst("img")?.attr("data-src")
+                ?.ifBlank { selectFirst("img")?.attr("src").orEmpty() }
+        )
+
+        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+            posterUrl = poster
+        }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
