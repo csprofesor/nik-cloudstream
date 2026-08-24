@@ -22,6 +22,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 class DiziGom : MainAPI() {
@@ -34,81 +35,77 @@ class DiziGom : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    // Keep the same category names shown in the user's CloudStream TV layout.
-    // The site itself currently exposes these genres in its Dizi archive.
-    override val mainPage = mainPageOf(
-        "$mainUrl/dizi-izle/" to "Aile",
-        "$mainUrl/dizi-izle/" to "Aksiyon",
-        "$mainUrl/dizi-izle/" to "Animasyon",
-        "$mainUrl/dizi-izle/" to "Belgesel",
-        "$mainUrl/dizi-izle/" to "Bilim Kurgu",
-        "$mainUrl/dizi-izle/" to "Dram",
-        "$mainUrl/dizi-izle/" to "Fantastik",
-        "$mainUrl/dizi-izle/" to "Gerilim",
-        "$mainUrl/dizi-izle/" to "Komedi",
-        "$mainUrl/dizi-izle/" to "Korku",
-        "$mainUrl/dizi-izle/" to "Macera",
-        "$mainUrl/dizi-izle/" to "Polisiye",
-        "$mainUrl/dizi-izle/" to "Romantik",
-        "$mainUrl/dizi-izle/" to "Savaş",
-        "$mainUrl/dizi-izle/" to "Suç",
-        "$mainUrl/dizi-izle/" to "Tarih"
+    private val genres = listOf(
+        "Aile", "Aksiyon", "Animasyon", "Belgesel", "Bilim Kurgu", "Dram",
+        "Fantastik", "Gerilim", "Komedi", "Korku", "Macera", "Polisiye",
+        "Romantik", "Savaş", "Suç", "Tarih"
     )
 
-    private fun pageUrl(page: Int): String =
-        if (page <= 1) "$mainUrl/dizi-izle/"
-        else "$mainUrl/dizi-izle/page/$page/"
+    override val mainPage = mainPageOf(
+        *genres.map { "$mainUrl/dizi-izle/" to it }.toTypedArray()
+    )
+
+    private var archiveCache: List<SearchResponse>? = null
+
+    /**
+     * The archive is fetched once and then filtered locally for every genre.
+     * This prevents CloudStream from making a separate network request for
+     * every home-page row, which was causing the 120-second timeout.
+     */
+    private suspend fun getArchive(): List<SearchResponse> {
+        archiveCache?.let { return it }
+
+        val document = runCatching {
+            app.get("$mainUrl/dizi-izle/", referer = "$mainUrl/").document
+        }.getOrNull() ?: return emptyList()
+
+        val results = document
+            .select("a[href*='/diziler/']")
+            .mapNotNull { it.toArchiveResult() }
+            .distinctBy { it.url }
+
+        archiveCache = results
+        return results
+    }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val wantedGenre = request.name.trim()
+        val wantedGenre = normalizeGenre(request.name)
+        val archive = getArchive()
 
-        // Do not depend on one obsolete CSS class. The current archive exposes
-        // the actual series URLs as /diziler/... links, so cards are rebuilt
-        // from those links and their nearest metadata container.
-        val pagesToRead = if (page == 1) listOf(1, 2, 3) else listOf(page)
-        val results = mutableListOf<SearchResponse>()
-
-        for (pageNumber in pagesToRead) {
-            val document = runCatching {
-                app.get(pageUrl(pageNumber), referer = "$mainUrl/").document
-            }.getOrNull() ?: continue
-
-            results += extractResults(document, wantedGenre)
-                .filter { result -> results.none { it.url == result.url } }
-
-            // Three pages are enough to make sparse categories visible while
-            // avoiding hundreds of requests when CloudStream opens the home.
-            if (page == 1 && results.size >= 12) break
+        val results = if (wantedGenre.isBlank()) {
+            archive
+        } else {
+            archive.filter { result ->
+                val genresInResult = result.url.substringAfter("|GENRES|", "")
+                genresInResult
+                    .split("|")
+                    .map(::normalizeGenre)
+                    .contains(wantedGenre)
+            }
         }
 
-        return newHomePageResponse(request.name, results.distinctBy { it.url })
+        return newHomePageResponse(
+            request.name,
+            results.map { result ->
+                result.copy(url = result.url.substringBefore("|GENRES|"))
+            }
+        )
     }
 
-    private fun extractResults(document: org.jsoup.nodes.Document, genre: String): List<SearchResponse> {
-        return document
-            .select("a[href*='/diziler/']")
-            .mapNotNull { link -> link.toMainPageResult(genre) }
-            .distinctBy { it.url }
-    }
-
-    private fun Element.toMainPageResult(genre: String): SearchResponse? {
+    private fun Element.toArchiveResult(): SearchResponse? {
         val href = fixUrlNull(attr("href")) ?: return null
         val title = text().trim().ifBlank { attr("title").trim() }
         if (title.isBlank()) return null
 
-        // Walk up the DOM until we find the card containing the metadata.
-        // This works with both the old episode-box markup and the newer archive markup.
         val card = generateSequence(this as Element?) { it.parent() }
             .take(10)
             .firstOrNull { element ->
-                val text = element.text()
                 element.selectFirst("img") != null &&
-                    (text.contains("IMDb", true) || text.contains("Tür", true))
+                    (element.text().contains("IMDb", true) ||
+                        element.text().contains("Tür", true))
             } ?: parent()
 
         val cardText = card?.text().orEmpty()
-        if (genre.isNotBlank() && !cardHasGenre(card, cardText, genre)) return null
-
         val image = card?.selectFirst("img") ?: selectFirst("img")
         val poster = fixUrlNull(
             image?.attr("data-src").orEmpty().ifBlank {
@@ -123,30 +120,35 @@ class DiziGom : MainAPI() {
             RegexOption.IGNORE_CASE
         ).find(cardText)?.groupValues?.getOrNull(1)
 
-        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            posterUrl = poster
-            score = Score.from10(rating)
-        }
-    }
+        val genresFromLinks = card?.select("a")
+            .orEmpty()
+            .map { it.text().trim() }
+            .filter { genre -> genres.any { normalizeGenre(it) == normalizeGenre(genre) } }
+            .distinct()
 
-    private fun cardHasGenre(card: Element?, cardText: String, wanted: String): Boolean {
-        val normalizedWanted = normalizeGenre(wanted)
-
-        val genreLinks = card?.select("a").orEmpty()
-            .map { normalizeGenre(it.text()) }
-            .filter { it.isNotBlank() }
-
-        if (genreLinks.any { it == normalizedWanted }) return true
-
-        // Current archive cards also expose genres in a plain "Tür : ..." line.
         val typeText = Regex(
             "Tür\\s*:\\s*(.+?)(?:$|\\n)",
             RegexOption.IGNORE_CASE
         ).find(cardText)?.groupValues?.getOrNull(1).orEmpty()
 
-        return typeText.split(",", "|", "/")
-            .map { normalizeGenre(it) }
-            .any { it == normalizedWanted }
+        val genresFromText = typeText
+            .split(",", "|", "/")
+            .map { it.trim() }
+            .filter { genre -> genres.any { normalizeGenre(it) == normalizeGenre(genre) } }
+
+        val detectedGenres = (genresFromLinks + genresFromText)
+            .distinctBy(::normalizeGenre)
+
+        val internalUrl = if (detectedGenres.isEmpty()) {
+            href
+        } else {
+            "$href|GENRES|${detectedGenres.joinToString("|")}"
+        }
+
+        return newTvSeriesSearchResponse(title, internalUrl, TvType.TvSeries) {
+            posterUrl = poster
+            score = Score.from10(rating)
+        }
     }
 
     private fun normalizeGenre(value: String): String = value
@@ -163,7 +165,8 @@ class DiziGom : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get(
-            "$mainUrl/?s=${query.trim().replace(" ", "+")}"
+            "$mainUrl/?s=${query.trim().replace(" ", "+")}",
+            referer = "$mainUrl/"
         ).document
 
         return document
@@ -172,6 +175,7 @@ class DiziGom : MainAPI() {
                 val href = fixUrlNull(link.attr("href")) ?: return@mapNotNull null
                 val title = link.text().trim().ifBlank { link.attr("title").trim() }
                 if (title.isBlank()) return@mapNotNull null
+
                 val card = generateSequence(link as Element?) { it.parent() }
                     .take(8)
                     .firstOrNull { it.selectFirst("img") != null }
@@ -183,6 +187,7 @@ class DiziGom : MainAPI() {
                         }
                     }
                 )
+
                 newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                     posterUrl = poster
                 }
@@ -193,7 +198,8 @@ class DiziGom : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url, referer = "$mainUrl/").document
+        val cleanUrl = url.substringBefore("|GENRES|")
+        val document = app.get(cleanUrl, referer = "$mainUrl/").document
         val title = document.selectFirst("div.serieTitle h1")?.text()?.trim() ?: return null
         val poster = fixUrlNull(
             document.selectFirst("div.seriePoster")?.attr("style")
@@ -224,7 +230,7 @@ class DiziGom : MainAPI() {
             }
         }
 
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
+        return newTvSeriesLoadResponse(title, cleanUrl, TvType.TvSeries, episodes) {
             posterUrl = poster
             this.year = year
             plot = description
@@ -275,9 +281,9 @@ class DiziGom : MainAPI() {
                 .map { it.groupValues[1] }
                 .mapNotNull { fixUrlNull(it) }
                 .distinct()
-                .forEach { url ->
+                .forEach { videoUrl ->
                     matched = runCatching {
-                        loadExtractor(url, "$mainUrl/", subtitleCallback, callback)
+                        loadExtractor(videoUrl, "$mainUrl/", subtitleCallback, callback)
                     }.getOrDefault(false) || matched
                 }
         }
