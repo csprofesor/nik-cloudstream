@@ -20,7 +20,7 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Sync common plugin directories from Feroxx
+      - name: Sync plugins from Feroxx
         shell: bash
         run: |
           set -euo pipefail
@@ -34,12 +34,28 @@ jobs:
 
           root = Path.cwd()
           source = Path('/tmp/feroxx')
+
+          # Repository-specific files and plugins that must not be copied.
           excluded = {
               '.git', '.github', 'gradle', '__Temel', 'CanliTV', 'OxAx',
               'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
               'KONTROL.py', 'LICENSE', 'README.md', 'MiBox.md',
               '_config.yml', 'repo.json', 'settings.gradle.kts',
               'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
+          }
+
+          # Feroxx plugins that were missing from this repository.
+          # Ddizi is intentionally not listed: this repo already has DDizi.
+          required_missing = {
+              'AltiYuzAltmisAltiFilmIzle',
+              'AsyaAnimeleri',
+              'DiziPalOriginal',
+              'FilmBip',
+              'RareFilmm',
+              'TLCtr',
+              'TRanimaci',
+              'TRasyalog',
+              'Watch2Movies',
           }
 
           source_plugins = {
@@ -51,18 +67,24 @@ jobs:
               if p.is_dir() and p.name not in excluded and (p / 'build.gradle.kts').exists()
           }
 
-          common = sorted(source_plugins & target_plugins)
-          print(f'Syncing {len(common)} common plugins')
-          for name in common:
+          # Update every common plugin and add the previously missing providers.
+          to_sync = sorted((source_plugins & target_plugins) | (source_plugins & required_missing))
+          print(f'Syncing {len(to_sync)} plugins')
+          for name in to_sync:
               src = source / name
               dst = root / name
-              shutil.rmtree(dst)
+              if dst.exists():
+                  shutil.rmtree(dst)
               shutil.copytree(src, dst)
 
-          # Keep this repository's ownership metadata while taking Feroxx's plugin code.
+          # Keep this repository's ownership metadata while taking Feroxx's current plugin code.
           for gradle in root.glob('*/build.gradle.kts'):
               text = gradle.read_text(encoding='utf-8')
-              text = re.sub(r'authors\s*=\s*listOf\([^\n]*\)', 'authors = listOf("csprofesor")', text)
+              text = re.sub(
+                  r'authors\s*=\s*listOf\([^\n]*\)',
+                  'authors = listOf("csprofesor")',
+                  text,
+              )
               gradle.write_text(text, encoding='utf-8')
           PY
 
