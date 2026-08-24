@@ -3,8 +3,6 @@ name: Sync Feroxx Plugins
 on:
   push:
     branches: [master]
-    paths-ignore:
-      - '.github/workflows/SyncFeroxx.yml'
   workflow_dispatch:
 
 permissions:
