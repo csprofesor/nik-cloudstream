@@ -22,3 +22,5 @@ android {
         buildConfig = true
     }
 }
+
+// Sync trigger: keep Feroxx provider synchronization active.
