@@ -22,6 +22,8 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.jsoup.nodes.Element
 
 class DiziGom : MainAPI() {
@@ -45,36 +47,35 @@ class DiziGom : MainAPI() {
     )
 
     private var archiveCache: List<SearchResponse>? = null
+    private val archiveMutex = Mutex()
     private val genreCache = mutableMapOf<String, Set<String>>()
 
     private suspend fun getArchive(): List<SearchResponse> {
         archiveCache?.let { return it }
 
-        val document = runCatching {
-            app.get("$mainUrl/dizi-izle/", referer = "$mainUrl/").document
-        }.getOrNull() ?: return emptyList()
+        return archiveMutex.withLock {
+            archiveCache?.let { return@withLock it }
 
-        val results = document
-            .select("a[href*='/diziler/']")
-            .mapNotNull { it.toArchiveResult() }
-            .distinctBy { it.url }
+            val document = runCatching {
+                app.get("$mainUrl/dizi-izle/", referer = "$mainUrl/").document
+            }.getOrNull() ?: return@withLock emptyList()
 
-        archiveCache = results
-        return results
+            val results = document
+                .select("a[href*='/diziler/']")
+                .mapNotNull { it.toArchiveResult() }
+                .distinctBy { it.url }
+
+            archiveCache = results
+            results
+        }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val wantedGenre = normalizeGenre(request.name)
         val archive = getArchive()
 
-        val results = if (wantedGenre.isBlank()) {
-            archive
-        } else {
-            archive.filter { result ->
-                genreCache[result.url]
-                    .orEmpty()
-                    .any { normalizeGenre(it) == wantedGenre }
-            }
+        val results = archive.filter { result ->
+            genreCache[result.url].orEmpty().any { normalizeGenre(it) == wantedGenre }
         }
 
         return newHomePageResponse(request.name, results)
@@ -85,12 +86,14 @@ class DiziGom : MainAPI() {
         val title = text().trim().ifBlank { attr("title").trim() }
         if (title.isBlank()) return null
 
+        // The current archive puts IMDb / Yapım Yılı / Oyuncular / Tür in the
+        // same card as the /diziler/... link. Walk up until that card is found.
         val card = generateSequence(this as Element?) { it.parent() }
-            .take(10)
+            .take(12)
             .firstOrNull { element ->
                 element.selectFirst("img") != null &&
-                    (element.text().contains("IMDb", true) ||
-                        element.text().contains("Tür", true))
+                    Regex("IMDb|Yapım Yılı|Oyuncular|Tür\\s*:", RegexOption.IGNORE_CASE)
+                        .containsMatchIn(element.text())
             } ?: parent()
 
         val cardText = card?.text().orEmpty()
@@ -108,23 +111,18 @@ class DiziGom : MainAPI() {
             RegexOption.IGNORE_CASE
         ).find(cardText)?.groupValues?.getOrNull(1)
 
-        val genresFromLinks = card?.select("a")
-            .orEmpty()
-            .map { it.text().trim() }
-            .filter { genre -> genres.any { normalizeGenre(it) == normalizeGenre(genre) } }
-            .distinct()
-
+        // Jsoup's Element.text() collapses HTML whitespace, so the previous
+        // newline-based parser never saw the genres. Parse the visible text
+        // between 'Tür :' and the next card metadata instead.
         val typeText = Regex(
-            "Tür\\s*:\\s*(.+?)(?:$|\\n)",
+            "Tür\\s*:\\s*(.*?)(?=\\s+(?:Favorilere Ekle|Yapım Yılı|Oyuncular|IMDb)\\b|$)",
             RegexOption.IGNORE_CASE
         ).find(cardText)?.groupValues?.getOrNull(1).orEmpty()
 
-        val genresFromText = typeText
+        val detectedGenres = typeText
             .split(",", "|", "/")
             .map { it.trim() }
-            .filter { genre -> genres.any { normalizeGenre(it) == normalizeGenre(genre) } }
-
-        val detectedGenres = (genresFromLinks + genresFromText)
+            .filter { value -> genres.any { normalizeGenre(it) == normalizeGenre(value) } }
             .distinctBy(::normalizeGenre)
 
         genreCache[href] = detectedGenres.toSet()
