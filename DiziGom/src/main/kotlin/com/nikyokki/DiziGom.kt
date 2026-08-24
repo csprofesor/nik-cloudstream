@@ -36,48 +36,65 @@ class DiziGom : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "$mainUrl/tur/aile/" to "Aile",
-        "$mainUrl/tur/aksiyon/" to "Aksiyon",
-        "$mainUrl/tur/animasyon/" to "Animasyon",
-        "$mainUrl/tur/belgesel/" to "Belgesel",
-        "$mainUrl/tur/bilim-kurgu/" to "Bilim Kurgu",
-        "$mainUrl/tur/dram/" to "Dram",
-        "$mainUrl/tur/fantastik/" to "Fantastik",
-        "$mainUrl/tur/gerilim/" to "Gerilim",
-        "$mainUrl/tur/komedi/" to "Komedi",
-        "$mainUrl/tur/korku/" to "Korku",
-        "$mainUrl/tur/macera/" to "Macera",
-        "$mainUrl/tur/polisiye/" to "Polisiye",
-        "$mainUrl/tur/romantik/" to "Romantik",
-        "$mainUrl/tur/savas/" to "Savaş",
-        "$mainUrl/tur/suc/" to "Suç",
-        "$mainUrl/tur/tarih/" to "Tarih"
+        "$mainUrl/dizi-izle/" to "Aile",
+        "$mainUrl/dizi-izle/" to "Aksiyon",
+        "$mainUrl/dizi-izle/" to "Animasyon",
+        "$mainUrl/dizi-izle/" to "Belgesel",
+        "$mainUrl/dizi-izle/" to "Bilim Kurgu",
+        "$mainUrl/dizi-izle/" to "Dram",
+        "$mainUrl/dizi-izle/" to "Fantastik",
+        "$mainUrl/dizi-izle/" to "Gerilim",
+        "$mainUrl/dizi-izle/" to "Komedi",
+        "$mainUrl/dizi-izle/" to "Korku",
+        "$mainUrl/dizi-izle/" to "Macera",
+        "$mainUrl/dizi-izle/" to "Polisiye",
+        "$mainUrl/dizi-izle/" to "Romantik",
+        "$mainUrl/dizi-izle/" to "Savaş",
+        "$mainUrl/dizi-izle/" to "Suç",
+        "$mainUrl/dizi-izle/" to "Tarih"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(request.data, referer = "$mainUrl/").document
-        return newHomePageResponse(
-            request.name,
-            document.select("div.episode-box").mapNotNull { it.toResult() }
-        )
+        val document = app.get(
+            if (page == 1) "$mainUrl/dizi-izle/" else "$mainUrl/dizi-izle/page/$page/",
+            referer = "$mainUrl/"
+        ).document
+
+        val wantedGenre = request.name.trim()
+        val results = document.select("div.single-item, article, .item, .post").mapNotNull { it.toResult() }
+            .distinctBy { it.url }
+            .filter { result ->
+                if (wantedGenre.isBlank()) true
+                else {
+                    val container = document.select("a[href='${result.url}']").firstOrNull()?.parent()?.parent()?.text().orEmpty()
+                    container.contains(wantedGenre, ignoreCase = true) ||
+                        result.name.contains(wantedGenre, ignoreCase = true)
+                }
+            }
+
+        return newHomePageResponse(request.name, results)
     }
 
     private fun Element.toResult(): SearchResponse? {
-        val title = selectFirst("div.serie-name a")?.text()?.trim() ?: return null
-        val href = fixUrlNull(selectFirst("a")?.attr("href")) ?: return null
+        val link = selectFirst("a[href*='/diziler/'], a[href*='/dizi/'], div.categorytitle a, div.serie-name a") ?: return null
+        val title = link.text().trim().ifBlank { link.attr("title").trim() }.ifBlank { return null }
+        val href = fixUrlNull(link.attr("href")) ?: return null
         val img = selectFirst("img")
         val poster = fixUrlNull(img?.attr("data-src").orEmpty().ifBlank { img?.attr("src").orEmpty() })
-        val score = selectFirst("div.episode-date")?.text()?.substringAfter("IMDb:", "")?.trim()
+        val text = text()
+        val rating = Regex("(?:IMDb|IMDB)\\s*:\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE)
+            .find(text)?.groupValues?.getOrNull(1)
+
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             posterUrl = poster
-            this.score = Score.from10(score)
+            score = Score.from10(rating)
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("$mainUrl/?s=${query.trim().replace(" ", "+")}").document
         return document.select("div.single-item").mapNotNull { element ->
-            val link = element.selectFirst("div.categorytitle a") ?: return@mapNotNull null
+            val link = element.selectFirst("div.categorytitle a, a[href*='/diziler/']") ?: return@mapNotNull null
             val title = link.text().trim()
             val href = fixUrlNull(link.attr("href")) ?: return@mapNotNull null
             val img = element.selectFirst("img")
@@ -91,27 +108,21 @@ class DiziGom : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, referer = "$mainUrl/").document
         val title = document.selectFirst("div.serieTitle h1")?.text()?.trim() ?: return null
-        val poster = fixUrlNull(
-            document.selectFirst("div.seriePoster")?.attr("style")
-                ?.substringAfter("background-image:url(")
-                ?.substringBefore(")")
-                ?.trim(' ', '\'', '"')
-        )
+        val poster = fixUrlNull(document.selectFirst("div.seriePoster")?.attr("style")?.substringAfter("background-image:url(")?.substringBefore(")")?.trim(' ', '\'', '"'))
         val description = document.selectFirst("div.serieDescription p")?.text()?.trim()
         val year = document.selectFirst("div.airDateYear a")?.text()?.trim()?.toIntOrNull()
         val tags = document.select("div.genreList a").map { it.text().trim() }.filter { it.isNotEmpty() }
         val rating = document.selectFirst("div.score")?.text()?.trim()
-        val duration = document.select("div.serieMetaInformation div.totalSession")
-            .lastOrNull()?.text()?.substringBefore(" ")?.toIntOrNull()
-        val actors = document.select("div.owl-stage a").mapNotNull {
-            val actor = it.text().trim()
-            if (actor.isBlank()) null else Actor(actor, fixUrlNull(it.selectFirst("img")?.attr("src")))
+        val duration = document.select("div.serieMetaInformation div.totalSession").lastOrNull()?.text()?.substringBefore(" ")?.toIntOrNull()
+        val actors = document.select("div.owl-stage a").mapNotNull { a ->
+            val actor = a.text().trim()
+            if (actor.isBlank()) null else Actor(actor, fixUrlNull(a.selectFirst("img")?.attr("src")))
         }
-        val episodes = document.select("div.bolumust").mapNotNull {
-            val href = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val parts = it.selectFirst("div.baslik")?.text()?.trim()?.split(" ") ?: emptyList()
+        val episodes = document.select("div.bolumust").mapNotNull { e ->
+            val href = fixUrlNull(e.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
+            val parts = e.selectFirst("div.baslik")?.text()?.trim()?.split(" ") ?: emptyList()
             newEpisode(href) {
-                name = it.selectFirst("div.bolum-ismi")?.text()?.trim()
+                name = e.selectFirst("div.bolum-ismi")?.text()?.trim()
                 season = parts.getOrNull(0)?.replace(".", "")?.toIntOrNull()
                 episode = parts.getOrNull(2)?.replace(".", "")?.toIntOrNull()
             }
@@ -127,84 +138,29 @@ class DiziGom : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         val document = app.get(data, referer = "$mainUrl/").document
         Log.d("DiziGom", "Episode: $data")
-
-        // Güncel DiziGom bölüm sayfalarında oynatıcı doğrudan iframe olarak geliyor.
-        // Önce iframe'i alıp CloudStream'in güncel extractor sistemine bırakıyoruz.
         val iframeUrls = document.select("iframe[src], iframe[data-src], div#content iframe, .player iframe")
-            .mapNotNull { element ->
-                val raw = element.attr("src").ifBlank { element.attr("data-src") }
-                fixUrlNull(raw)
-            }
-            .filter { it.isNotBlank() }
-            .distinct()
-
-        Log.d("DiziGom", "Iframe sources: $iframeUrls")
-
+            .mapNotNull { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }
+            .filter { it.isNotBlank() }.distinct()
         var matched = false
         for (iframe in iframeUrls) {
-            if (iframe.contains(".m3u8", ignoreCase = true)) {
-                callback(
-                    newExtractorLink(
-                        source = name,
-                        name = "$name HLS",
-                        url = iframe,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        referer = "$mainUrl/"
-                    }
-                )
+            if (iframe.contains(".m3u8", true)) {
+                callback(newExtractorLink(name, "$name HLS", iframe, ExtractorLinkType.M3U8) { referer = "$mainUrl/" })
                 matched = true
-                continue
-            }
-
-            if (iframe.contains(".mp4", ignoreCase = true)) {
-                callback(
-                    newExtractorLink(
-                        source = name,
-                        name = "$name MP4",
-                        url = iframe,
-                        type = ExtractorLinkType.VIDEO
-                    ) {
-                        referer = "$mainUrl/"
-                    }
-                )
+            } else if (iframe.contains(".mp4", true)) {
+                callback(newExtractorLink(name, "$name MP4", iframe, ExtractorLinkType.VIDEO) { referer = "$mainUrl/" })
                 matched = true
-                continue
+            } else {
+                matched = runCatching { loadExtractor(iframe, "$mainUrl/", subtitleCallback, callback) }.getOrDefault(false) || matched
             }
-
-            val loaded = runCatching {
-                loadExtractor(iframe, "$mainUrl/", subtitleCallback, callback)
-            }.getOrDefault(false)
-            matched = matched || loaded
         }
-
-        // Bazı eski bölümlerde iframe yerine JSON-LD contentUrl bulunabiliyor.
         if (!matched) {
-            val html = document.html()
-            val urls = Regex("""[\"']contentUrl[\"']\s*:\s*[\"']([^\"']+)[\"']""")
-                .findAll(html)
-                .map { it.groupValues[1] }
-                .mapNotNull { fixUrlNull(it) }
-                .distinct()
-                .toList()
-
-            for (url in urls) {
-                val loaded = runCatching {
-                    loadExtractor(url, "$mainUrl/", subtitleCallback, callback)
-                }.getOrDefault(false)
-                matched = matched || loaded
+            Regex("""[\"']contentUrl[\"']\s*:\s*[\"']([^\"']+)[\"']""").findAll(document.html()).map { it.groupValues[1] }.mapNotNull { fixUrlNull(it) }.distinct().forEach { url ->
+                matched = runCatching { loadExtractor(url, "$mainUrl/", subtitleCallback, callback) }.getOrDefault(false) || matched
             }
         }
-
-        Log.d("DiziGom", "Extractor matched: $matched")
         return matched
     }
 }
