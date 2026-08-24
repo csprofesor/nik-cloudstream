@@ -22,7 +22,6 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 
 class DiziGom : MainAPI() {
@@ -46,12 +45,8 @@ class DiziGom : MainAPI() {
     )
 
     private var archiveCache: List<SearchResponse>? = null
+    private val genreCache = mutableMapOf<String, Set<String>>()
 
-    /**
-     * The archive is fetched once and then filtered locally for every genre.
-     * This prevents CloudStream from making a separate network request for
-     * every home-page row, which was causing the 120-second timeout.
-     */
     private suspend fun getArchive(): List<SearchResponse> {
         archiveCache?.let { return it }
 
@@ -76,20 +71,13 @@ class DiziGom : MainAPI() {
             archive
         } else {
             archive.filter { result ->
-                val genresInResult = result.url.substringAfter("|GENRES|", "")
-                genresInResult
-                    .split("|")
-                    .map(::normalizeGenre)
-                    .contains(wantedGenre)
+                genreCache[result.url]
+                    .orEmpty()
+                    .any { normalizeGenre(it) == wantedGenre }
             }
         }
 
-        return newHomePageResponse(
-            request.name,
-            results.map { result ->
-                result.copy(url = result.url.substringBefore("|GENRES|"))
-            }
-        )
+        return newHomePageResponse(request.name, results)
     }
 
     private fun Element.toArchiveResult(): SearchResponse? {
@@ -139,13 +127,9 @@ class DiziGom : MainAPI() {
         val detectedGenres = (genresFromLinks + genresFromText)
             .distinctBy(::normalizeGenre)
 
-        val internalUrl = if (detectedGenres.isEmpty()) {
-            href
-        } else {
-            "$href|GENRES|${detectedGenres.joinToString("|")}"
-        }
+        genreCache[href] = detectedGenres.toSet()
 
-        return newTvSeriesSearchResponse(title, internalUrl, TvType.TvSeries) {
+        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             posterUrl = poster
             score = Score.from10(rating)
         }
@@ -198,8 +182,7 @@ class DiziGom : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val cleanUrl = url.substringBefore("|GENRES|")
-        val document = app.get(cleanUrl, referer = "$mainUrl/").document
+        val document = app.get(url, referer = "$mainUrl/").document
         val title = document.selectFirst("div.serieTitle h1")?.text()?.trim() ?: return null
         val poster = fixUrlNull(
             document.selectFirst("div.seriePoster")?.attr("style")
@@ -230,7 +213,7 @@ class DiziGom : MainAPI() {
             }
         }
 
-        return newTvSeriesLoadResponse(title, cleanUrl, TvType.TvSeries, episodes) {
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             posterUrl = poster
             this.year = year
             plot = description
