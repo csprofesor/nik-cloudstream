@@ -1,0 +1,81 @@
+name: Sync Feroxx Plugins
+
+on:
+  push:
+    branches: [master]
+    paths-ignore:
+      - '.github/workflows/SyncFeroxx.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: !contains(github.event.head_commit.message, '[feroxx-sync]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Sync common plugin directories from Feroxx
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/feroxx
+          git clone --depth 1 --branch master https://github.com/feroxx/Kekik-cloudstream.git /tmp/feroxx
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          root = Path.cwd()
+          source = Path('/tmp/feroxx')
+          excluded = {
+              '.git', '.github', 'gradle', '__Temel', 'CanliTV', 'OxAx',
+              'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
+              'KONTROL.py', 'LICENSE', 'README.md', 'MiBox.md',
+              '_config.yml', 'repo.json', 'settings.gradle.kts',
+              'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
+          }
+
+          source_plugins = {
+              p.name for p in source.iterdir()
+              if p.is_dir() and p.name not in excluded and (p / 'build.gradle.kts').exists()
+          }
+          target_plugins = {
+              p.name for p in root.iterdir()
+              if p.is_dir() and p.name not in excluded and (p / 'build.gradle.kts').exists()
+          }
+
+          common = sorted(source_plugins & target_plugins)
+          print(f'Syncing {len(common)} common plugins')
+          for name in common:
+              src = source / name
+              dst = root / name
+              shutil.rmtree(dst)
+              shutil.copytree(src, dst)
+
+          # Keep this repository's ownership metadata while taking Feroxx's plugin code.
+          for gradle in root.glob('*/build.gradle.kts'):
+              text = gradle.read_text(encoding='utf-8')
+              import re
+              text = re.sub(r'authors\s*=\s*listOf\([^\n]*\)', 'authors = listOf("csprofesor")', text)
+              gradle.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Commit synchronized plugins
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "csprofesor"
+          git config user.email "199635364+csprofesor@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No plugin changes.'
+            exit 0
+          fi
+          git commit -m "Sync plugins from Feroxx [feroxx-sync]"
+          git push
