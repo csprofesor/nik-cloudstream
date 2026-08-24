@@ -44,11 +44,12 @@ class DiziGom : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        *genres.map { "${mainUrl}/dizi-izle/" to it }.toTypedArray()
+        *genres.map { "$mainUrl/dizi-izle/" to it }.toTypedArray()
     )
 
     private val archiveMutex = Mutex()
     private var archiveCache: List<SearchResponse>? = null
+    private val genreCache = mutableMapOf<String, Set<String>>()
 
     private suspend fun getArchive(): List<SearchResponse> {
         archiveCache?.let { return it }
@@ -58,9 +59,8 @@ class DiziGom : MainAPI() {
 
             val allResults = mutableListOf<SearchResponse>()
 
-            // DiziGom currently exposes 27 archive pages. We deliberately stop
-            // when a page contains no real series cards so this keeps working
-            // when the number of pages changes.
+            // DiziGom currently exposes 27 archive pages. Stop automatically
+            // when a future page contains no real series cards.
             for (page in 1..100) {
                 val url = if (page == 1) {
                     "$mainUrl/dizi-izle/"
@@ -91,11 +91,11 @@ class DiziGom : MainAPI() {
         val archive = getArchive()
 
         val filtered = archive.filter { result ->
-            result.tags.orEmpty().any { normalizeGenre(it) == wantedGenre }
+            genreCache[result.url].orEmpty().any { normalizeGenre(it) == wantedGenre }
         }
 
         // Keep CloudStream pagination useful instead of dumping the whole
-        // 265-item archive into one row.
+        // archive into one row.
         val pageSize = 20
         val pageResults = filtered
             .drop((page - 1).coerceAtLeast(0) * pageSize)
@@ -114,8 +114,8 @@ class DiziGom : MainAPI() {
                     .distinct()
 
                 // A real card contains exactly one series URL and an image.
-                // This prevents the site's large alphabet/sidebar containers
-                // from supplying a poster belonging to another series.
+                // This prevents the site's alphabet/sidebar containers from
+                // supplying a poster belonging to another series.
                 seriesLinks.size == 1 && element.selectFirst("img") != null
             }
     }
@@ -176,14 +176,15 @@ class DiziGom : MainAPI() {
             }
             .distinctBy(::normalizeGenre)
 
-        // Prefer the poster inside this exact card. If the clicked link itself
-        // contains an image, that is even safer than the ancestor card.
+        genreCache[href] = detectedGenres.toSet()
+
+        // Prefer the poster inside this exact link. Otherwise use the image
+        // inside the exact single-series card.
         val poster = extractPoster() ?: card.extractPoster()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             posterUrl = poster
             score = Score.from10(rating)
-            tags = detectedGenres
         }
     }
 
@@ -215,9 +216,8 @@ class DiziGom : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     private fun Element.extractBackgroundUrl(): String? {
-        val style = attr("style")
         return Regex("url\\((?:\\\"|')?([^\\\"')]+)", RegexOption.IGNORE_CASE)
-            .find(style)
+            .find(attr("style"))
             ?.groupValues
             ?.getOrNull(1)
             ?.let { fixUrlNull(it) }
@@ -240,7 +240,7 @@ class DiziGom : MainAPI() {
         ) ?: return null
 
         val poster = document.selectFirst("div.seriePoster")?.extractBackgroundUrl()
-            ?: document.selectFirst("div.seriePoster img")?.let { it.extractPoster() }
+            ?: document.selectFirst("div.seriePoster img")?.extractPoster()
             ?: document.selectFirst("meta[property='og:image']")?.attr("content")?.let { fixUrlNull(it) }
             ?: document.selectFirst("article img")?.extractPoster()
 
@@ -273,7 +273,7 @@ class DiziGom : MainAPI() {
                 if (actor.isBlank()) return@mapNotNull null
                 Actor(
                     actor,
-                    actorLink.selectFirst("img")?.let { it.extractPoster() }
+                    actorLink.selectFirst("img")?.extractPoster()
                 )
             }
             .distinctBy { it.name }
@@ -310,7 +310,7 @@ class DiziGom : MainAPI() {
                 if (season == null || episode == null) return@mapNotNull null
 
                 newEpisode(href) {
-                    this.name = label
+                    name = label
                         .replace(Regex("^İzledim\\s*", RegexOption.IGNORE_CASE), "")
                         .trim()
                     this.season = season
