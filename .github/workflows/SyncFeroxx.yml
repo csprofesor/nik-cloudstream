@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   sync:
-    if: !contains(github.event.head_commit.message, '[feroxx-sync]')
+    if: ${{ !contains(github.event.head_commit.message, '[feroxx-sync]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout target repository
@@ -30,6 +30,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import shutil
+          import re
 
           root = Path.cwd()
           source = Path('/tmp/feroxx')
@@ -61,7 +62,6 @@ jobs:
           # Keep this repository's ownership metadata while taking Feroxx's plugin code.
           for gradle in root.glob('*/build.gradle.kts'):
               text = gradle.read_text(encoding='utf-8')
-              import re
               text = re.sub(r'authors\s*=\s*listOf\([^\n]*\)', 'authors = listOf("csprofesor")', text)
               gradle.write_text(text, encoding='utf-8')
           PY
