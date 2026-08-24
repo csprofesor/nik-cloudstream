@@ -192,7 +192,7 @@
             "csprofesor"
         ],
         "description": "T\u00fcrk\u00e7e altyaz\u0131l\u0131 yabanc\u0131 dizi izle, T\u00fcm yabanc\u0131, kore, netflix dizilerin yeni ve eski sezonlar\u0131n\u0131 orijinal dilinde dizigom1 alt yaz\u0131l\u0131 film izleyebilir, sadece t\u00fcrk\u00e7e altyaz\u0131l\u0131 en iyi yabanc\u0131 diziler ve filmler hakk\u0131nda yorum yapabilirsiniz.",
-        "fileSize": 21792,
+        "fileSize": 23578,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -200,7 +200,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-9b4c2af1902e09a243df9acc553e3597a4707b62b7a5038854fd05d2c3b1e9f3"
+        "fileHash": "sha256-bb61c68b055ceecfb6813f3f4c75b718837e0dd9f7ef60e93530f8282aafd9b1"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
