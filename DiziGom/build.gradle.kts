@@ -16,3 +16,5 @@ cloudstream {
     tvTypes = listOf("TvSeries")
     iconUrl = "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%"
 }
+
+// Trigger a fresh build for the current DiziGom implementation.
