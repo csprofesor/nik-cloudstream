@@ -33,7 +33,6 @@ jobs:
           root = Path.cwd()
           source = Path('/tmp/feroxx')
 
-          # Repository-specific files and plugins that must not be copied.
           excluded = {
               '.git', '.github', 'gradle', '__Temel', 'CanliTV', 'OxAx',
               'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
@@ -42,13 +41,12 @@ jobs:
               'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
           }
 
-          # Feroxx plugins that were missing from this repository.
+          # Feroxx plugins verified as missing from this repository.
           # Ddizi is intentionally not listed: this repo already has DDizi.
           required_missing = {
               'AltiYuzAltmisAltiFilmIzle',
               'AsyaAnimeleri',
               'DiziPalOriginal',
-              'FilmBip',
               'RareFilmm',
               'TLCtr',
               'TRanimaci',
@@ -65,7 +63,7 @@ jobs:
               if p.is_dir() and p.name not in excluded and (p / 'build.gradle.kts').exists()
           }
 
-          # Update every common plugin and add the previously missing providers.
+          # Update every common plugin and add the verified missing providers.
           to_sync = sorted((source_plugins & target_plugins) | (source_plugins & required_missing))
           print(f'Syncing {len(to_sync)} plugins')
           for name in to_sync:
