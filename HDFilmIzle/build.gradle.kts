@@ -1,7 +1,7 @@
 version = 7
 
 cloudstream {
-    authors     = listOf("nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "HDFilmizle ile Full HD izle, 1080p kalitede Yerli ve Yabancı filmlerle Türkçe dublaj veya Altyazı olarak kesintisiz film izlemenin tadını çıkarın."
 

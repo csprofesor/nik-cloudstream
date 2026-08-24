@@ -26,6 +26,7 @@ class RecTV : MainAPI() {
     private val appVersion = "141"
     private val clientId   = "rectv-android"
 
+    // ---- HMAC imzalama ----
     private fun sha256Hex(data: String): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(data.toByteArray(Charsets.UTF_8))
         return digest.joinToString("") { "%02x".format(it) }
@@ -56,7 +57,7 @@ class RecTV : MainAPI() {
         val bodyHash  = sha256Hex(body)
         val message   = "$method\n$path\n$ts\n$nonce\n$bodyHash"
         val signature = hmacSha256Hex(hmacKey, message)
-
+        
         val headers = mutableMapOf(
             "User-Agent"     to "googleusercontent",
             "Referer"        to "https://twitter.com/",
@@ -67,7 +68,10 @@ class RecTV : MainAPI() {
             "X-Client-Id"    to clientId
         )
 
-        getNonce()?.let { headers["Authorization"] = "Bearer $it" }
+        getNonce()?.let {
+            headers["Authorization"] = "Bearer $it"
+        }
+
         return headers
     }
 
@@ -90,6 +94,7 @@ class RecTV : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         @Suppress("NAME_SHADOWING") val page = page - 1
+
         val url      = request.data.replace("SAYFA", "$page")
         val uri      = java.net.URI(url)
         val path     = uri.rawPath
@@ -102,7 +107,9 @@ class RecTV : MainAPI() {
             if (item.label != "CANLI" && item.label != "Canlı") {
                 newMovieSearchResponse(item.title, toDict, TvType.Movie) { this.posterUrl = item.image }
             } else {
-                newLiveSearchResponse(item.title, toDict, TvType.Live) { this.posterUrl = item.image }
+                newLiveSearchResponse(item.title, toDict, TvType.Live) {
+                    this.posterUrl = item.image
+                }
             }
         }
 
@@ -114,6 +121,7 @@ class RecTV : MainAPI() {
         val headers = signedHeaders("GET", path)
         val home    = app.get("${mainUrl}${path}", headers = headers)
         val veriler = AppUtils.tryParseJson<RecSearch>(home.text)
+
         val sonuclar = mutableListOf<SearchResponse>()
 
         veriler?.channels?.let { channels ->
@@ -143,13 +151,15 @@ class RecTV : MainAPI() {
             val headers  = signedHeaders("GET", path)
             val diziReq  = app.get("${mainUrl}${path}", headers = headers)
             val sezonlar = AppUtils.tryParseJson<List<RecDizi>>(diziReq.text) ?: return null
+
             val episodes = mutableMapOf<DubStatus, MutableList<Episode>>()
+
             val numberRegex = Regex("\\d+")
 
             for (sezon in sezonlar) {
                 val seasonDubStatus = if (sezon.title.contains("altyazı", ignoreCase = true)) DubStatus.Subbed
-                else if (sezon.title.contains("dublaj", ignoreCase = true)) DubStatus.Dubbed
-                else DubStatus.None
+                                      else if (sezon.title.contains("dublaj", ignoreCase = true)) DubStatus.Dubbed
+                                      else DubStatus.None
                 for (bolum in sezon.episodes) {
                     episodes.getOrPut(seasonDubStatus) { mutableListOf() }.add(newEpisode(bolum.sources.first().url) {
                         this.name        = bolum.title
@@ -189,21 +199,37 @@ class RecTV : MainAPI() {
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         if (data.startsWith("http")) {
             Log.d("RCTV", "data » $data")
-            callback.invoke(newExtractorLink(source = this.name, name = this.name, url = data, type = INFER_TYPE) {
-                headers = mapOf("Referer" to "https://twitter.com/")
-                quality = Qualities.Unknown.value
-            })
+            callback.invoke(
+                newExtractorLink(
+                    source  = this.name,
+                    name    = this.name,
+                    url     = data,
+                    type    = INFER_TYPE
+                ) {
+                    headers = mapOf("Referer" to "https://twitter.com/")
+                    quality = Qualities.Unknown.value
+                }
+            )
             return true
         }
 
         val veri = AppUtils.tryParseJson<RecItem>(data) ?: return false
+
         for (source in veri.sources) {
-            callback.invoke(newExtractorLink(source = this.name, name = "${this.name} - ${source.type}", url = source.url,
-                type = if (source.type == "mp4") ExtractorLinkType.VIDEO else ExtractorLinkType.M3U8) {
-                referer = "https://twitter.com/"
-                quality = Qualities.Unknown.value
-            })
+            Log.d("RCTV", "source » $source")
+            callback.invoke(
+                newExtractorLink(
+                    source  = this.name,
+                    name    = "${this.name} - ${source.type}",
+                    url     = source.url,
+                    type    = if (source.type == "mp4") ExtractorLinkType.VIDEO else ExtractorLinkType.M3U8
+                ) {
+                    referer = "https://twitter.com/"
+                    quality = Qualities.Unknown.value
+                }
+            )
         }
+
         return true
     }
 

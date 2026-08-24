@@ -1,9 +1,9 @@
-version = 37
+version = 48
 
 cloudstream {
-    authors     = listOf("gsrepo")
+    authors = listOf("csprofesor")
     language    = "tr"
-    description = "Türkiye'nin hızlı hd film izleme sitesi"
+    description = "Türkiye'nin en hızlı hd film izleme sitesi"
 
     /**
      * Status int as the following:
@@ -12,7 +12,7 @@ cloudstream {
      * 2: Slow
      * 3: Beta only
     **/
-    status  = 1
+    status  = 1 // will be 3 if unspecified
     tvTypes = listOf("Movie", "TvSeries")
-    iconUrl = "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.nl&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.com&sz=%size%"
 }

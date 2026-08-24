@@ -1,7 +1,7 @@
 version = 25
 
 cloudstream {
-    authors     = listOf("keyiflerolsun", "nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Hd film izliyerek arkadaşlarınızla ve sevdiklerinizle iyi bir vakit geçirmek istiyorsanız açın bir film eğlenmeye bakın. Bilim kurgu filmleri, aşk drama vahşet aşk romantik sıradışı korku filmlerini izle."
 

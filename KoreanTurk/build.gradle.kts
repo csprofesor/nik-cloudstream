@@ -1,7 +1,7 @@
 version = 6
 
 cloudstream {
-    authors     = listOf("keyiflerolsun")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Güney Kore sevdalılarının vazgeçemediği ve Türkiye'nin en çok ziyaret edilen Güney Kore Portalı; Koreantürk'e hoşgeldiniz!"
 

@@ -1,7 +1,7 @@
-version = 11
+version = 16
 
 cloudstream {
-    authors     = listOf("keyiflerolsun", "nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Kült Filmler özenle en iyi filmleri derler ve iyi bir altyazılı film izleme deneyimi sunmayı amaçlar"
 
@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("Movie", "TvSeries")
-    iconUrl = "https://www.google.com/s2/favicons?domain=kultfilmler.com&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=kultfilmler.net&sz=%size%"
 }

@@ -1,7 +1,7 @@
-version = 18
+version = 25
 
 cloudstream {
-    authors     = listOf("keyiflerolsun", "nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Diziyou en kaliteli Türkçe dublaj ve altyazılı yabancı dizi izleme sitesidir. Güncel ve efsanevi dizileri 1080p Full HD kalitede izlemek için hemen tıkla!"
 
@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("TvSeries")
-    iconUrl = "https://www.google.com/s2/favicons?domain=www.diziyou.co&sz=%size%"
+    iconUrl = "https://cdn.diziyou.one/wp-content/uploads/2020/04/diziyou-favicon.png"
 }

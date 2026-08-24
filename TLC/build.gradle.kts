@@ -1,7 +1,7 @@
 version = 1
 
 cloudstream {
-    authors     = listOf("nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "TLC TV dizi ve programlarını takip etmek için ziyaret edin. TLC TV dizi ve programlarını tek parça ve hd kalitesiyle izleyin."
 

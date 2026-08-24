@@ -1,7 +1,7 @@
 version = 6
 
 cloudstream {
-    authors     = listOf("nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Selcukflix'te her türden en yeni ve en popüler dizi ve filmleri izlemenin keyfini çıkarın. Aksiyondan romantiğe, bilim kurgudan dramaya, geniş kütüphanemizde herkes için bir şey var."
 

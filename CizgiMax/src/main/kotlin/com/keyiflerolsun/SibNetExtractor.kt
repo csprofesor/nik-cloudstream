@@ -21,14 +21,14 @@ open class SibNet : ExtractorApi() {
 
         callback.invoke(
             newExtractorLink(
-                source  = this.name,
-                name    = this.name,
-                url     = m3uLink,
-                type    = INFER_TYPE
+            source = this.name,
+            name = this.name,
+            url = m3uLink ?: throw ErrorLoadingException("m3u link not found"),
+            type = INFER_TYPE
             ) {
-                this.referer = url
-                this.quality = Qualities.Unknown.value
-            }
+            headers = mapOf("Referer" to url) // Referer başlığı eklendi
+            quality = Qualities.Unknown.value // Kalite ayarlandı
+             }
         )
     }
 }

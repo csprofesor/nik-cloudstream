@@ -1,7 +1,7 @@
 version = 1
 
 cloudstream {
-    authors     = listOf("yunus60", "GitLatte", "patr0nq")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Ddizi, dizi izle, dizi seyret, ddizi.im - Güncel ve eski dizileri en iyi görüntü kalitesiyle bulabileceğiniz dizi izleme sitesi."
 

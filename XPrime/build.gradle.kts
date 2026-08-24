@@ -1,7 +1,7 @@
 version = 6
 
 cloudstream {
-    authors     = listOf("nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "XPrime.Tv"
 

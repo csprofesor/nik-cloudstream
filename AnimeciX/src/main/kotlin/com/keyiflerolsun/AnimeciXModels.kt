@@ -4,6 +4,7 @@ package com.keyiflerolsun
 
 import com.fasterxml.jackson.annotation.JsonProperty
 
+
 data class Category(
     @JsonProperty("pagination") val pagination: Pagination,
 )
@@ -42,7 +43,7 @@ data class Anime(
     @JsonProperty("genres") val tags: List<Genre>,
     @JsonProperty("trailer") val trailer: String?,
     @JsonProperty("credits") val actors: List<Credit>,
-    @JsonProperty("season_count") val seasonCount: Int,
+    @JsonProperty("season_count") val seasonCount: Int, //Unrealiable?
     @JsonProperty("seasons") val seasons: List<Season>,
     @JsonProperty("videos") val videos: List<Video>
 )

@@ -1,3 +1,6 @@
+
+// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
+
 package com.keyiflerolsun
 
 import android.util.Log
@@ -7,15 +10,16 @@ import com.lagradost.cloudstream3.APIHolder.capitalize
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 
-class Dzen : ExtractorApi(){
-    override val name            = "Dzen"
+class DzenRu : ExtractorApi(){
+    override val name            = "DzenRu"
     override val mainUrl         = "https://dzen.ru/"
     override val requiresReferer = false
 
     override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
         val document = app.get(
             url     = url,
-            headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+            headers = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.7049.38 Mobile Safari/537.36",
+			"X-Requested-With" to "XMLHttpRequest"),
             referer = this.mainUrl,
         ).document
 

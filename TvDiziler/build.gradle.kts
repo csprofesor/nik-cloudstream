@@ -1,7 +1,7 @@
 version = 6
 
 cloudstream {
-    authors     = listOf("nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Ücretsiz yerli dizi izleme sitesi en popüler dizileri tek parça hd kalitesiyle ve reklamsız bedava olarak buradan tv dizileri izleyin."
 

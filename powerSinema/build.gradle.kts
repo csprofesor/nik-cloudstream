@@ -1,7 +1,7 @@
 version = 3
 
 cloudstream {
-    authors     = listOf("patr0n")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "powerSinema"
 

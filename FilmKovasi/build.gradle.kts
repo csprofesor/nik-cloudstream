@@ -1,7 +1,7 @@
 version = 10
 
 cloudstream {
-    authors     = listOf("gsrepo")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Film Kovası ile en güncel ve sorunsuz Full HD Film izle keyfi."
 

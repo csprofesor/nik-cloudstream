@@ -16,9 +16,9 @@ class AnimeciX : MainAPI() {
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Anime)
 
-    override var sequentialMainPage = true
-    override var sequentialMainPageDelay       = 200L
-    override var sequentialMainPageScrollDelay = 200L
+    override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/-cloudstream/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
+    override var sequentialMainPageDelay       = 200L  // ? 0.20 saniye
+    override var sequentialMainPageScrollDelay = 200L  // ? 0.20 saniye
 
     override val mainPage = mainPageOf(
         "${mainUrl}/secure/last-episodes"                          to "Son Eklenen Bölümler",
@@ -34,7 +34,7 @@ class AnimeciX : MainAPI() {
                     "x-e-h" to "7Y2ozlO+QysR5w9Q6Tupmtvl9jJp7ThFH8SB+Lo7NvZjgjqRSqOgcT2v4ISM9sP10LmnlYI8WQ==.xrlyOBFS5BHjQ2Lk"
                 )
             ).parsedSafe<LastEpisodesResponse>()?.data ?: emptyList()
-
+    
             val home = response.map {
                 val formattedTitle = "S${it.seasonNumber}B${it.episodeNumber} - ${it.titleName}"
                 newAnimeSearchResponse(
@@ -45,7 +45,7 @@ class AnimeciX : MainAPI() {
                     this.posterUrl = fixUrlNull(it.titlePoster)
                 }
             }
-
+    
             newHomePageResponse(request.name, home)
         } else {
             val response = app.get(
@@ -54,7 +54,7 @@ class AnimeciX : MainAPI() {
                     "x-e-h" to "7Y2ozlO+QysR5w9Q6Tupmtvl9jJp7ThFH8SB+Lo7NvZjgjqRSqOgcT2v4ISM9sP10LmnlYI8WQ==.xrlyOBFS5BHjQ2Lk"
                 )
             ).parsedSafe<Category>()
-
+    
             val home = response?.pagination?.data?.map { anime ->
                 newAnimeSearchResponse(
                     anime.title,
@@ -64,7 +64,7 @@ class AnimeciX : MainAPI() {
                     this.posterUrl = fixUrlNull(anime.poster)
                 }
             } ?: listOf()
-
+    
             newHomePageResponse(request.name, home)
         }
     }
@@ -116,6 +116,7 @@ class AnimeciX : MainAPI() {
             }
         }
 
+
         return newTvSeriesLoadResponse(
             response.title.title,
             "${mainUrl}/secure/titles/${response.title.id}?titleId=${response.title.id}",
@@ -126,19 +127,47 @@ class AnimeciX : MainAPI() {
             this.year      = response.title.year
             this.plot      = response.title.description
             this.tags      = response.title.tags.map { it.name }
-            this.score     = Score.from10(response.title.rating)
             addActors(response.title.actors.map { Actor(it.name, fixUrlNull(it.poster)) })
             addTrailer(response.title.trailer)
         }
     }
+override suspend fun loadLinks(
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    Log.d("ACX", "data » $data")
+    val pageUrl = "$mainUrl/$data"
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("ACX", "data » $data")
-        val iframeLink = app.get(data, referer="${mainUrl}/").url
-        Log.d("ACX", "iframeLink » $iframeLink")
+    // Sayfayı çek
+    val response = app.get(pageUrl, referer = "$mainUrl/")
+    var iframeLink = response.url
+    Log.d("ACX", "iframeLink » $iframeLink")
 
-        loadExtractor(iframeLink, "${mainUrl}/", subtitleCallback, callback)
-
-        return true
+    // Eğer iframeLink içinde çift URL varsa düzelt
+    val doubleUrlRegex = Regex("https://animecix.tv/(https://animecix.tv/secure/\\S+)")
+    val match = doubleUrlRegex.find(iframeLink)
+    if (match != null) {
+        iframeLink = match.groupValues[1]
+        Log.d("ACX", "Corrected iframeLink » $iframeLink")
     }
+
+    // Eğer dizi (best-video) ise yönlendirmeyi takip et
+    if (iframeLink.contains("/secure/best-video")) {
+        val redirectResponse = app.get(iframeLink, referer = "$mainUrl/")
+        val redirectedUrl = redirectResponse.url
+        Log.d("ACX", "Redirected final URL » $redirectedUrl")
+
+        if (redirectedUrl.contains("tau-video")) {
+            loadExtractor(redirectedUrl, "$mainUrl/", subtitleCallback, callback)
+        } else {
+            Log.d("ACX", "Redirect failed or unexpected URL: $redirectedUrl")
+        }
+    } else {
+        loadExtractor(iframeLink, "$mainUrl/", subtitleCallback, callback)
+    }
+
+    return true
+}
 }

@@ -1,7 +1,7 @@
-version = 11
+version = 41
 
 cloudstream {
-    authors     = listOf("keyiflerolsun", "nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "En Güncel Kore Dizileri izleme Sitesi"
 
@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("AsianDrama")
-    iconUrl = "https://www.google.com/s2/favicons?domain=https://dizikorea3.com&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=https://dizikorea.vip&sz=%size%"
 }

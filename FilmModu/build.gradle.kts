@@ -1,9 +1,9 @@
-version = 16
+version = 19
 
 cloudstream {
-    authors     = listOf("gsrepo", "keyiflerolsun", "nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
-    description = "Film modun geldiyse yüksek kalitede en yeni filmleri izle, 1080p izleyebileceğiniz reklamsız film sitesi."
+    description = "Film modun geldiyse yüksek kalitede en yeni filmleri izle, 1080p izleyebileceğiniz reklamsiz film sitesi."
 
     /**
      * Status int as the following:
@@ -12,7 +12,7 @@ cloudstream {
      * 2: Slow
      * 3: Beta only
     **/
-    status  = 1
+    status  = 1 // will be 3 if unspecified
     tvTypes = listOf("Movie")
-    iconUrl = "https://www.google.com/s2/favicons?domain=filmmodu.cc&sz=%size%"
+    iconUrl = "https://www.filmmodu.one/icon/favicon.ico"
 }

@@ -1,146 +1,212 @@
-// ! Bu araç @keyiflerolsun tarafından | @KekikAkademi için yazılmıştır.
-
 package com.keyiflerolsun
 
+import android.util.Base64
 import android.util.Log
-import com.lagradost.cloudstream3.*
-import com.lagradost.cloudstream3.utils.*
-import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
-import com.lagradost.nicehttp.NiceResponse
-import java.lang.Math.floorMod
+import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.ExtractorApi
+import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.Qualities
+import com.lagradost.cloudstream3.utils.newExtractorLink
 
-open class CloseLoadExtractor : ExtractorApi() {
-    override val name            = "CloseLoad"
-    override val mainUrl         = "https://closeload.filmmakinesi.de"
+class CloseLoad : ExtractorApi() {
+    override val name = "CloseLoad"
+    override val mainUrl = "https://closeload.filmmakinesi.to"
     override val requiresReferer = true
 
-    override suspend fun getUrl(url: String, referer: String?, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit) {
-        val extRef = referer ?: ""
-        Log.d("Kekik_${this.name}", "url » $url")
-
-        val iSource = app.get(url, referer = extRef)
-        val obfuscatedScript = iSource.document.select("script").find { it.data().contains("eval(function(p,a,c,k,e") }?.data()?.trim()
-        getSubs(iSource, obfuscatedScript,subtitleCallback)
-        getLinks(obfuscatedScript, callback)
-    }
-
-    private fun getSubs(
-        iSource: NiceResponse,
-        obfuscatedScript: String?,
-        subtitleCallback: (SubtitleFile) -> Unit
+    override suspend fun getUrl(
+        url: String,
+        referer: String?,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
     ) {
-        iSource.document.select("track").forEach {
-            subtitleCallback.invoke(
-                SubtitleFile(
-                    lang = it.attr("label"),
-                    url = mainUrl + it.attr("src")
-                )
-            )
-        }
-        val track = obfuscatedScript?.substringAfter("tracks: ")?.substringBefore("]") + "]"
-        if (track.startsWith("[") && track.endsWith("]")) {
-            Log.d("Kekik_${this.name}", "track -> $track")
-            val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-            objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-            val tracks: List<SubSource> = objectMapper.readValue(track)
-            Log.d("Kekik_${this.name}", "tracks -> $tracks")
-            tracks.forEach { it ->
-                subtitleCallback.invoke(
-                    SubtitleFile(
-                        lang = it.label.toString(),
-                        url = mainUrl + it.file.toString()
-                    )
-                )
-            }
-        }
-    }
-
-    private suspend fun getLinks(obfuscatedScript: String?, callback: (ExtractorLink) -> Unit) {
-        val rawScript        = getAndUnpack(obfuscatedScript!!)
-        val helloVarmi = rawScript.contains("dc_hello")
-        var dcRegex = Regex("dc_hello\\(\"([^\"]*)\"\\)", setOf(RegexOption.IGNORE_CASE))
-        if (!helloVarmi) {
-            dcRegex = Regex("""dc_\w+\(\[(.*?)\]\)""", RegexOption.DOT_MATCHES_ALL)
-        }
-        val match = dcRegex.find(rawScript)
-        val groupValues = match!!.groupValues[1]
-
-        val lastUrl = if (helloVarmi) {
-            Log.d("Kekik_${this.name}", "groupValues » $groupValues")
-            val dcUrl = dcHello(groupValues).substringAfter("http")
-            Log.d("Kekik_${this.name}", "dcUrl » $dcUrl")
-            dcUrl
-        } else{
-            val parts = groupValues.split(",")
-                .map { it.trim().removeSurrounding("\"") }
-            Log.d("Kekik_${this.name}", "parts » $parts")
-            val dcUrl = dcNew(parts)
-            Log.d("Kekik_${this.name}", "dcUrl » $dcUrl")
-            dcUrl
-        }
-        callback.invoke(
-            newExtractorLink(
-                source  = this.name,
-                name    = this.name,
-                url     = lastUrl,
-                ExtractorLinkType.M3U8
-            ) {
-                this.referer = mainUrl
-                this.quality = Qualities.Unknown.value
-            }
+        val headers2 = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+            "Referer" to "$mainUrl/",
+            "Origin" to mainUrl
         )
-    }
 
-    fun dcHello(base64Input: String): String {
-        val decodedOnce = base64Decode(base64Input)
-        val reversedString = decodedOnce.reversed()
-        val decodedTwice = base64Decode(reversedString)
-        val link    = if (decodedTwice.contains("+")) {
-            decodedTwice.substringAfterLast("+")
-        } else if (decodedTwice.contains(" ")) {
-            decodedTwice.substringAfterLast(" ")
-        } else if (decodedTwice.contains("|")){
-            decodedTwice.substringAfterLast("|")
-        } else {
-            decodedTwice
-        }
-        return link
-    }
+        try {
+            val response = app.get(url, referer = mainUrl, headers = headers2)
+            val html = response.text 
 
-    fun dcNew(parts: List<String>): String {
-        var value = parts.joinToString("")
-        val decodedBytes = base64DecodeArray(value)
-        var result = String(decodedBytes, Charsets.ISO_8859_1).reversed()
-        val rot13Applied = StringBuilder()
-        for (c in result) {
-            if (c in 'a'..'z') {
-                val newChar = c + 13
-                rot13Applied.append(if (newChar > 'z') newChar - 26 else newChar)
-            } else if (c in 'A'..'Z') {
-                val newChar = c + 13
-                rot13Applied.append(if (newChar > 'Z') newChar - 26 else newChar)
-            } else {
-                rot13Applied.append(c)
+            // 1. JS Deşifre Algoritmasını Dene
+            var realUrl = decryptNative(html)
+
+            // 2. Fallback Mekanizması: Eğer JS şifre çözücü başarısız olursa JSON-LD bloğundaki şifresiz contentUrl'i ara
+            if (realUrl.isNullOrBlank()) {
+                Log.w("Kekik_${this.name}", "Native deşifre başarısız, Fallback JSON-LD aranıyor...")
+                val ldJsonMatch = """"contentUrl"\s*:\s*"([^"]+)"""".toRegex().find(html)
+                realUrl = ldJsonMatch?.groupValues?.get(1)?.replace("\\/", "/")
             }
+
+            if (!realUrl.isNullOrBlank() && realUrl.startsWith("http")) {
+                callback.invoke(
+                    newExtractorLink(
+                        source = this.name,
+                        name = this.name,
+                        url = realUrl,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        quality = Qualities.P1080.value
+                        headers = mapOf(
+                            "Referer" to "$mainUrl/",
+                            "User-Agent" to headers2["User-Agent"]!!
+                        )
+                    }
+                )
+            } else {
+                Log.e("Kekik_${this.name}", "Real URL bulunamadı veya deşifre edilemedi.")
+            }
+
+            processSubtitles(html, subtitleCallback)
+
+        } catch (e: Exception) {
+            Log.e("Kekik_${this.name}", "Hata: ${e.message}")
         }
-        result = rot13Applied.toString()
-        val unmix = StringBuilder()
-        for ((i, char) in result.withIndex()) {
-            var charCode = char.code
-            charCode = (charCode - (399756995 % (i + 5)) + 256) % 256
-            unmix.append(charCode.toChar())
+    }
+
+    private fun decryptNative(html: String): String? {
+        try {
+            // JS script bloğunu bul: dc_ fonksiyon çağrısı içeren
+            val scriptBlockMatch = """<script[^>]*>(.*?dc_[a-zA-Z0-9_]+\(.*?</script>)""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
+            val scriptContent = scriptBlockMatch?.groupValues?.get(1) ?: return null
+
+            // 1. Şifreli diziyi çıkar: dc_xxx([" ... "])
+            val arrayMatch = """\(\[((?:"[^"]+",?\s*)+)\]\)""".toRegex().find(scriptContent)
+            val parts = arrayMatch?.groupValues?.get(1)?.split(",")?.map {
+                it.trim().trim('"').replace("\\/", "/")
+            } ?: return null
+
+            // 2. Fonksiyon gövdesini izole et
+            val funcStartIdx = scriptContent.indexOf("function dc_")
+            val funcEndIdx = scriptContent.indexOf("function d1x()", funcStartIdx)
+                .takeIf { it != -1 } ?: scriptContent.length
+            val functionBody = if (funcStartIdx != -1)
+                scriptContent.substring(funcStartIdx, funcEndIdx)
+            else scriptContent
+
+            // 3. Tüm ROT shift değerlerini sırasıyla çıkar (site çift replace kullanıyor olabilir)
+            val rotShifts = mutableListOf<Int>()
+            val rotPattern = """o\s*-\s*base\s*\+\s*(\d+)""".toRegex()
+            rotPattern.findAll(functionBody).forEach { m ->
+                rotShifts.add(m.groupValues[1].toInt())
+            }
+            // Alternatif: charCodeAt(0) + N formatı
+            if (rotShifts.isEmpty()) {
+                val altPattern = """charCodeAt\(0\)\s*\+\s*(\d+)""".toRegex()
+                altPattern.findAll(functionBody).forEach { m ->
+                    rotShifts.add(m.groupValues[1].toInt())
+                }
+            }
+            Log.d("Kekik_${this.name}", "ROT shifts: $rotShifts")
+
+            // 4. XOR accumulator parametrelerini çıkar
+            // Örnek: var acc = 47; ... acc = (acc + 19) % 256;
+            val xorAccStart = """var\s+acc\s*=\s*(\d+)""".toRegex().find(functionBody)
+                ?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val xorStep = """acc\s*=\s*\(acc\s*\+\s*(\d+)\)\s*%\s*256""".toRegex().find(functionBody)
+                ?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            Log.d("Kekik_${this.name}", "XOR acc_start=$xorAccStart, step=$xorStep")
+
+            // 5. Operasyon sırasını belirle (atob, reverse, rot pozisyonlarına göre)
+            data class Op(val pos: Int, val type: String)
+            val operations = mutableListOf<Op>()
+
+            var idx = functionBody.indexOf("atob(")
+            while (idx >= 0) {
+                operations.add(Op(idx, "atob"))
+                idx = functionBody.indexOf("atob(", idx + 1)
+            }
+            idx = functionBody.indexOf(".reverse()")
+            while (idx >= 0) {
+                operations.add(Op(idx, "reverse"))
+                idx = functionBody.indexOf(".reverse()", idx + 1)
+            }
+            idx = functionBody.indexOf(".replace(")
+            var rotIdx = 0
+            while (idx >= 0) {
+                operations.add(Op(idx, "rot_$rotIdx"))
+                idx = functionBody.indexOf(".replace(", idx + 1)
+                rotIdx++
+            }
+            operations.sortBy { it.pos }
+            Log.d("Kekik_${this.name}", "Operations: ${operations.map { it.type }}")
+
+            // 6. İşlemleri uygula
+            var result = parts.joinToString("")
+            for (op in operations) {
+                when {
+                    op.type == "atob" -> {
+                        var padded = result
+                        while (padded.length % 4 != 0) padded += "="
+                        result = String(Base64.decode(padded, Base64.NO_WRAP), Charsets.ISO_8859_1)
+                    }
+                    op.type == "reverse" -> {
+                        result = result.reversed()
+                    }
+                    op.type.startsWith("rot_") -> {
+                        val shiftIdx = op.type.removePrefix("rot_").toIntOrNull() ?: 0
+                        val shift = if (shiftIdx < rotShifts.size) rotShifts[shiftIdx] else 13
+                        val rot = StringBuilder()
+                        for (c in result) {
+                            when (c) {
+                                in 'a'..'z' -> rot.append(((c.code - 97 + shift) % 26 + 97).toChar())
+                                in 'A'..'Z' -> rot.append(((c.code - 65 + shift) % 26 + 65).toChar())
+                                else -> rot.append(c)
+                            }
+                        }
+                        result = rot.toString()
+                    }
+                }
+            }
+
+            // 7. Son adım: XOR accumulator unmix
+            var acc = xorAccStart
+            val unmix = StringBuilder()
+            for (ch in result) {
+                val b = ch.code
+                acc = (acc + xorStep) % 256
+                val plain = b xor acc
+                acc = (acc + b) % 256
+                unmix.append(plain.toChar())
+            }
+
+            val decoded = unmix.toString()
+            Log.d("Kekik_${this.name}", "Decoded URL: $decoded")
+            return decoded
+
+        } catch (e: Exception) {
+            Log.e("Kekik_Extractor", "Native Çözümleme Hatası: ${e.message}")
+            return null
         }
-        return unmix.toString()
+    }
+
+
+    private fun processSubtitles(html: String, subtitleCallback: (SubtitleFile) -> Unit) {
+        try {
+            // JWPlayer setup içindeki tracks: [...] JSON bloğu
+            val tracksMatch = """tracks\s*:\s*(\[.*?\])""".toRegex(RegexOption.DOT_MATCHES_ALL).find(html)
+            tracksMatch?.groupValues?.get(1)?.let { tracksJson ->
+                
+                val trackPattern = """\{[^}]*\}""".toRegex()
+                val fileRegex = """"file"\s*:\s*"([^"]+)"""".toRegex()
+                val labelRegex = """"label"\s*:\s*"([^"]+)"""".toRegex()
+
+                trackPattern.findAll(tracksJson).forEach { match ->
+                    val block = match.value
+                    val file = fileRegex.find(block)?.groupValues?.get(1)?.replace("\\/", "/")
+                    val label = labelRegex.find(block)?.groupValues?.get(1) ?: "Altyazı"
+
+                    // file null değilse ve http ile başlıyorsa fırlat
+                    if (!file.isNullOrBlank() && file.startsWith("http")) {
+                        subtitleCallback.invoke(SubtitleFile(label, file))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.e("Kekik_${this.name}", "Altyazı Çözümleme Hatası: ${e.message}")
+        }
     }
 }
-
-private data class SubSource(
-    @JsonProperty("file") val file: String? = null,
-    @JsonProperty("label") val label: String? = null,
-    @JsonProperty("language") val language: String? = null,
-    @JsonProperty("kind") val kind: String? = null
-)

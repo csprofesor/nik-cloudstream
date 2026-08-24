@@ -1,7 +1,7 @@
-version = 47
+version = 104
 
 cloudstream {
-    authors     = listOf("keyiflerolsun", "muratcesmecioglu")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "en yeni dizileri güvenli ve hızlı şekilde sunar."
 
@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("TvSeries", "Movie")
-    iconUrl = "https://www.google.com/s2/favicons?domain=https://dizipalt.com&sz=%size%"
+    iconUrl = "https://dizipal1563.com/assets/favicon/favicon-32x32.png?v=3"
 }

@@ -1,7 +1,7 @@
-version = 4
+version = 14
 
 cloudstream {
-    authors     = listOf("keyiflerolsun")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Türk Anime TV - Türkiye'nin Online Anime izleme sitesi."
 

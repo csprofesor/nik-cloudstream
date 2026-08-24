@@ -3,17 +3,11 @@
 package com.keyiflerolsun
 
 import android.util.Log
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import org.jsoup.nodes.Element
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.APIHolder.capitalize
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 
 class JetFilmizle : MainAPI() {
     override var mainUrl              = "https://jetfilmizle.now"
@@ -36,25 +30,48 @@ class JetFilmizle : MainAPI() {
         val baseUrl = request.data
         val urlpage = if (page == 1) baseUrl else "$baseUrl/page/$page"
         val document = app.get(urlpage).document
+
+        // HTML'de her bir içerik "div.film-card" sınıfına sahip bir kart içinde tutuluyor.
         val home = document.select("div.film-card").mapNotNull { it.toSearchResult() }
+
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
+        // 1. URL'yi al: İlk <a> etiketinin href'i direkt olarak içeriğe gidiyor.
         val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
+
+        // 2. Başlığı al: h2, h3 diye tek tek aramak yerine doğrudan ".card-title a" sınıfını hedefliyoruz.
         var title = this.selectFirst(".card-title a")?.text()?.trim() ?: return null
+        // İleride başlıklarda " izle" takısı gelirse diye güvenli bir şekilde temizleyelim.
         title = title.substringBeforeLast(" izle").trim()
+
+        // 3. Afiş URL'sini al: ".film-poster img" içinde src olarak duruyor.
+        // Ancak lazy-loading (sonradan yüklenme) durumlarına karşı önce data-src kontrolü yapmak best-practice'dir.
         val imgElement = this.selectFirst(".film-poster img")
         val posterUrl = fixUrlNull(
-            imgElement?.attr("data-src")?.takeIf { it.isNotBlank() } ?: imgElement?.attr("src")
+            imgElement?.attr("data-src")?.takeIf { it.isNotBlank() }
+                ?: imgElement?.attr("src")
         )
+
+        // 4. Senior Dokunuşu: İçerik film mi dizi mi? URL yapısından dinamik olarak tespit ediyoruz.
+        // Örnek: https://jetfilmizle.net/dizi/ejderhalar-prensi
         val isTvSeries = href.contains("/dizi/", ignoreCase = true)
         val tvType = if (isTvSeries) TvType.TvSeries else TvType.Movie
-        return newMovieSearchResponse(title, href, tvType) { this.posterUrl = posterUrl }
+
+        // Cloudstream'in yapısına uygun olarak sonucu dön.
+        return newMovieSearchResponse(title, href, tvType) {
+            this.posterUrl = posterUrl
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.post("${mainUrl}/arama?q=", referer = "${mainUrl}/", data = mapOf("s" to query)).document
+        val document = app.post(
+            "${mainUrl}/arama?q=",
+            referer = "${mainUrl}/",
+            data    = mapOf("s" to query)
+        ).document
+
         return document.select("div.film-card").mapNotNull { it.toSearchResult() }
     }
 
@@ -62,94 +79,157 @@ class JetFilmizle : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
+
+        // 1. Başlık: Artık h1.film-title içinde.
+        // "ownText()" kullanarak içindeki orijinal adı tutan <span> etiketini dışarıda bırakıyoruz.
         val title = document.selectFirst("h1.film-title")?.ownText()?.trim()
-            ?: document.selectFirst("h1.film-title")?.text()?.substringBefore("(")?.trim() ?: return null
+            ?: document.selectFirst("h1.film-title")?.text()?.substringBefore("(")?.trim()
+            ?: return null
+
+        // 2. Afiş: Artık .film-poster sınıfına sahip.
         val imgElement = document.selectFirst("img.film-poster")
-        val poster = fixUrlNull(imgElement?.attr("data-src")?.takeIf { it.isNotBlank() } ?: imgElement?.attr("src"))
+        val poster = fixUrlNull(
+            imgElement?.attr("data-src")?.takeIf { it.isNotBlank() }
+                ?: imgElement?.attr("src")
+        )
+
+        // 3. Yıl: Yeni HTML'de "Yapım: 2026" gibi net bir div yok.
+        // Ancak Trakt.tv linkinin sonunda (örn: ...-2026) geçiyor. Oradan çekmek çok daha güvenli.
+        // Eğer Trakt linki yoksa, fallback olarak metnin içinden ilk mantıklı yılı (Regex ile) arıyoruz.
         val traktUrl = document.selectFirst("a.trakt")?.attr("href")
         var year = traktUrl?.substringAfterLast("-")?.toIntOrNull()
-        if (year == null) year = Regex("""\b(19|20)\d{2}\b""").find(document.text())?.value?.toIntOrNull()
+        if (year == null) {
+            val textMatch = Regex("""\b(19|20)\d{2}\b""").find(document.text())
+            year = textMatch?.value?.toIntOrNull()
+        }
+
+        // 4. Açıklama: div.description-text içine taşınmış.
         val description = document.selectFirst("div.description-text")?.text()?.trim()
+
+        // DİKKAT: Gönderdiğin HTML parçasında Etiketler, Oyuncular ve Benzer Filmler kısmı yok.
+        // Bu yüzden buradaki seçicileri genelleyerek korudum. Eğer sayfada bu kısımlar da değiştiyse,
+        // o bölümlerin HTML'ini gönderdiğinde burayı da nokta atışı güncelleyebiliriz.
+
         val tags = document.select("div.catss a, div.film-categories a").map { it.text().trim() }
+
         val actors = document.select("div.oyuncu, div.cast-item").mapNotNull {
             val name = it.selectFirst("div.name, span.actor-name")?.text()?.trim() ?: return@mapNotNull null
             val actorImg = it.selectFirst("img")
-            val actorPoster = fixUrlNull(actorImg?.attr("data-src")?.takeIf { src -> src.isNotBlank() } ?: actorImg?.attr("src"))
+            val actorPoster = fixUrlNull(
+                actorImg?.attr("data-src")?.takeIf { src -> src.isNotBlank() }
+                    ?: actorImg?.attr("src")
+            )
             Actor(name, actorPoster)
         }
+
+        // Benzer filmler için bir önceki sorunda yazdığımız getMainPage yapısını buraya da entegre ettim.
         val recommendations = document.select("div#benzers article, div.film-card").mapNotNull {
             var recName = it.selectFirst(".card-title a")?.text()?.trim()
-                ?: it.selectFirst("h2 a, h3 a")?.text()?.trim() ?: return@mapNotNull null
+                ?: it.selectFirst("h2 a, h3 a")?.text()?.trim()
+                ?: return@mapNotNull null
+
             recName = recName.substringBeforeLast(" izle").trim()
+
             val recHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
+
             val recImg = it.selectFirst("img")
-            val recPosterUrl = fixUrlNull(recImg?.attr("data-src")?.takeIf { src -> src.isNotBlank() } ?: recImg?.attr("src"))
-            newMovieSearchResponse(recName, recHref, TvType.Movie) { this.posterUrl = recPosterUrl }
+            val recPosterUrl = fixUrlNull(
+                recImg?.attr("data-src")?.takeIf { src -> src.isNotBlank() }
+                    ?: recImg?.attr("src")
+            )
+
+            newMovieSearchResponse(recName, recHref, TvType.Movie) {
+                this.posterUrl = recPosterUrl
+            }
         }
+
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            this.posterUrl = poster
-            this.year = year
-            this.plot = description
-            this.tags = tags
+            this.posterUrl       = poster
+            this.year            = year
+            this.plot            = description
+            this.tags            = tags
             this.recommendations = recommendations
             addActors(actors)
         }
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("JTF", "data » $data")
-        val document = app.get(data).document
-        val iframes = mutableListOf<String>()
-        val iframeElement = document.selectFirst("div#active-player iframe, div.player-container iframe")
-        val iframeSrc = iframeElement?.attr("data-litespeed-src")?.takeIf { it.isNotBlank() } ?: iframeElement?.attr("src")
-        val mainIframe = fixUrlNull(iframeSrc)
-        if (mainIframe != null) iframes.add(mainIframe)
+        Log.d("JTF", "loadLinks » $data")
 
-        document.select("a.download-btn[href]").forEach { link ->
-            val href = link.attr("href")
-            if (href.contains("pixeldrain.com")) fixUrlNull(href)?.let { iframes.add(it) }
+        val document = app.get(
+            data,
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Referer"    to "$mainUrl/"
+            )
+        ).document
+
+        
+        val filmId = document.selectFirst("input[name=film_id]")?.attr("value")
+        Log.d("JTF", "film_id » $filmId")
+        if (filmId.isNullOrBlank()) {
+            Log.e("JTF", "film_id bulunamadı!")
+            return false
         }
 
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        
+        val playerTypes = listOf("dublaj", "altyazili")
+        val sourceButtons = document.select(".player-source-btn")
+        val maxIndex = sourceButtons.mapNotNull { it.attr("data-source-index").toIntOrNull() }.maxOrNull() ?: 4
 
-        for (iframeUrl in iframes) {
-            if (iframeUrl.contains("d2rs")) {
-                val apiUrl = iframeUrl.replace("/?", "/get_video.php?")
+        for (playerType in playerTypes) {
+            for (sourceIndex in 0..maxIndex) {
                 try {
-                    val responseText = app.get(apiUrl).text
-                    val jsonNode = objectMapper.readTree(responseText)
-                    if (jsonNode.path("success").asBoolean()) {
-                        val masterUrl = jsonNode.path("masterUrl").asText()
-                        val referrerUrl = jsonNode.path("referrerUrl").asText()
-                        callback.invoke(newExtractorLink(source = "D2RS", name = "D2RS", url = masterUrl, type = ExtractorLinkType.M3U8) {
-                            this.quality = Qualities.Unknown.value
-                            this.headers = mapOf("Referer" to referrerUrl)
-                        })
+                    Log.d("JTF", "jetplayer POST » film_id=$filmId source=$sourceIndex type=$playerType")
+
+                    
+                    val responseText = app.post(
+                        "$mainUrl/jetplayer",
+                        headers = mapOf(
+                            "User-Agent"       to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                            "Referer"          to data,
+                            "X-Requested-With" to "XMLHttpRequest",
+                            "Content-Type"     to "application/x-www-form-urlencoded"
+                        ),
+                        data = mapOf(
+                            "film_id"      to filmId,
+                            "source_index" to sourceIndex.toString(),
+                            "player_type"  to playerType
+                        )
+                    ).text
+
+                    Log.d("JTF", "jetplayer response » ${responseText.take(300)}")
+
+                    if (responseText.isBlank()) continue
+
+                    
+                    val responseDoc  = responseText.let { org.jsoup.Jsoup.parse(it) }
+                    val iframeEl     = responseDoc.selectFirst("iframe") ?: continue
+                    var iframeSrc    = iframeEl.attr("src").takeIf { it.isNotBlank() } ?: continue
+
+                    
+                    if (iframeSrc.startsWith("//")) iframeSrc = "https:$iframeSrc"
+
+                    Log.d("JTF", "iframe bulundu » $iframeSrc")
+
+                    val sourceName = when (playerType) {
+                        "dublaj"    -> "Dublaj"
+                        "altyazili" -> "Altyazılı"
+                        else        -> playerType
                     }
+
+                    loadExtractor(iframeSrc, data, subtitleCallback, callback)
+
                 } catch (e: Exception) {
-                    Log.e("JTF", "D2RS JSON Parse veya İstek Hatası: ${e.message}")
+                    Log.e("JTF", "Kaynak yükleme hatası [idx=$sourceIndex type=$playerType]: ${e.message}")
                 }
-            } else if (iframeUrl.contains("jetv.xyz")) {
-                val jetvDoc = app.get(iframeUrl).document
-                val script = jetvDoc.select("script").find { it.data().contains("\"sources\": [") }?.data() ?: ""
-                if (script.isNotBlank()) {
-                    val sourceString = script.substringAfter("\"sources\": [").substringBefore("]").addMarks("file").addMarks("type").addMarks("label").replace("\'", "\"")
-                    try {
-                        val son: Source = objectMapper.readValue(sourceString)
-                        callback.invoke(newExtractorLink(source = "Jetv - ${son.label}", name = "Jetv - ${son.label}", url = son.file, type = ExtractorLinkType.M3U8) {
-                            this.quality = Qualities.Unknown.value
-                        })
-                    } catch (e: Exception) {
-                        Log.e("JTF", "JSON Parse hatası: ${e.message}")
-                    }
-                }
-            } else {
-                loadExtractor(iframeUrl, "$mainUrl/", subtitleCallback, callback)
             }
         }
+
         return true
     }
 
-    private fun String.addMarks(str: String): String = this.replace(Regex("\"?$str\"?"), "\"$str\"")
+	    private fun String.addMarks(str: String): String {
+        return this.replace(Regex("\"?$str\"?"), "\"$str\"")
+    }
 }

@@ -1,7 +1,7 @@
 version = 3
 
 cloudstream {
-    authors     = listOf("nikyokki")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "SineWix | Film - Dizi - Anime İzleme Uygulaması"
 

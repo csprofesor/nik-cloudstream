@@ -33,20 +33,20 @@ open class VideoSeyred : ExtractorApi() {
                 )
             }
         }
-
+        
         for (source in response.sources) {
-            callback.invoke(
-                newExtractorLink(
-                    source  = this.name,
-                    name    = this.name,
-                    url     = source.file,
-                    type    = INFER_TYPE
-                ) {
-                    this.referer = "${mainUrl}/"
-                    this.quality = Qualities.Unknown.value
-                }
-            )
-        }
+        callback.invoke(
+            newExtractorLink(
+                source = this.name,
+                name = this.name,
+                url = source.file,
+                type    = INFER_TYPE
+            ) {
+                headers = mapOf("Referer" to "${mainUrl}/") // Referer ayarlandı
+                quality = Qualities.Unknown.value // Kalite ayarlandı
+            }
+        )
+     }
     }
 
     data class VideoSeyredSource(

@@ -1,11 +1,18 @@
-version = 37
+version = 30
 
 cloudstream {
-    authors     = listOf("gsrepo")
+    authors = listOf("csprofesor")
     language    = "tr"
     description = "Setfilmizle sitemizde, donma yaşamadan Türkçe dublaj ve altyazılı filmleri ile dizileri muhteşem 1080p full HD kalitesinde izleyebilirsiniz."
 
-    status  = 1
+    /**
+     * Status int as the following:
+     * 0: Down
+     * 1: Ok
+     * 2: Slow
+     * 3: Beta only
+    **/
+    status  = 1 // will be 3 if unspecified
     tvTypes = listOf("Movie", "TvSeries")
-    iconUrl = "https://www.google.com/s2/favicons?domain=setfilmizle.ltd&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=www.setfilmizle.uk&sz=%size%"
 }
