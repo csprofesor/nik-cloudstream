@@ -149,8 +149,6 @@ class HDFilmIzle : MainAPI() {
         val document = app.get(data).document
         val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
 
-        // HDFilmIzle player bilgisi script içinde `let parts = [...]` olarak geliyor.
-        // JSON'u doğrudan script'ten çıkarıp Vidrame'in iframe src değerini alıyoruz.
         val partsJson = document.select("script").asSequence()
             .map { it.data() }
             .mapNotNull { script ->
@@ -180,21 +178,31 @@ class HDFilmIzle : MainAPI() {
             }
         } else null
 
-        Log.d("HDF", "VidRame URL » $vidrameUrl")
-        if (!vidrameUrl.isNullOrBlank()) {
-            // Local extractor'ı doğrudan çağırıyoruz; böylece loadExtractor'ın
-            // domain keşfine bağlı kalmadan VidRameExtractor kesin olarak çalışır.
-            VidRameExtractor().getUrl(vidrameUrl, data, subtitleCallback, callback)
+        val playerUrl = vidrameUrl?.let {
+            when {
+                it.contains("?") && !it.contains("ap=") -> "$it&ap=1"
+                !it.contains("?") -> "$it?ap=1"
+                else -> it
+            }
+        }
+
+        Log.d("HDF", "VidRame URL » $playerUrl")
+        if (!playerUrl.isNullOrBlank()) {
+            VidRameExtractor().getUrl(playerUrl, data, subtitleCallback, callback)
             return true
         }
 
-        // Eski/alternatif site yapısı için iframe yedeği.
         val iframe = document.select("iframe").mapNotNull { element ->
             element.attr("data-src").ifBlank { element.attr("src") }
         }.firstOrNull { it.isNotBlank() }
 
         if (!iframe.isNullOrBlank()) {
-            VidRameExtractor().getUrl(iframe, data, subtitleCallback, callback)
+            val fallbackUrl = when {
+                iframe.contains("?") && !iframe.contains("ap=") -> "$iframe&ap=1"
+                !iframe.contains("?") -> "$iframe?ap=1"
+                else -> iframe
+            }
+            VidRameExtractor().getUrl(fallbackUrl, data, subtitleCallback, callback)
             return true
         }
 
