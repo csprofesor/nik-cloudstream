@@ -178,17 +178,13 @@ class HDFilmIzle : MainAPI() {
             }
         } else null
 
-        val playerUrl = vidrameUrl?.let {
-            when {
-                it.contains("?") && !it.contains("ap=") -> "$it&ap=1"
-                !it.contains("?") -> "$it?ap=1"
-                else -> it
-            }
+        val playableVidrameUrl = vidrameUrl?.let {
+            if (it.contains("?")) "$it&ap=1" else "$it?ap=1"
         }
 
-        Log.d("HDF", "VidRame URL » $playerUrl")
-        if (!playerUrl.isNullOrBlank()) {
-            VidRameExtractor().getUrl(playerUrl, data, subtitleCallback, callback)
+        Log.d("HDF", "VidRame URL » $playableVidrameUrl")
+        if (!playableVidrameUrl.isNullOrBlank()) {
+            VidRameExtractor().getUrl(playableVidrameUrl, data, subtitleCallback, callback)
             return true
         }
 
@@ -197,12 +193,8 @@ class HDFilmIzle : MainAPI() {
         }.firstOrNull { it.isNotBlank() }
 
         if (!iframe.isNullOrBlank()) {
-            val fallbackUrl = when {
-                iframe.contains("?") && !iframe.contains("ap=") -> "$iframe&ap=1"
-                !iframe.contains("?") -> "$iframe?ap=1"
-                else -> iframe
-            }
-            VidRameExtractor().getUrl(fallbackUrl, data, subtitleCallback, callback)
+            val playableIframe = if (iframe.contains("?")) "$iframe&ap=1" else "$iframe?ap=1"
+            VidRameExtractor().getUrl(playableIframe, data, subtitleCallback, callback)
             return true
         }
 
