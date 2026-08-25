@@ -148,35 +148,63 @@ class HDFilmIzle : MainAPI() {
     ): Boolean {
         Log.d("HDF", "data » $data")
         val document = app.get(data).document
+        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
 
-        // Yeni sitede VidRame player iframe olarak sayfaya ekleniyor.
-        // URL'nin içinde "vidrame" geçmesini şart koşmuyoruz.
+        // Yeni HDFilmIzle sitesinde player bilgisi sayfanın script'i içindeki
+        // `let parts = [...]` değişkeninde tutuluyor. Vidrame iframe'i HTML DOM'unda
+        // doğrudan bulunmadığı için önce bu veriyi parse ediyoruz.
+        val vidrameUrl = document.select("script").asSequence()
+            .mapNotNull { script ->
+                val scriptText = script.data()
+                val json = scriptText.substringAfter("let parts = ", "")
+                    .substringBeforeLast(";", "")
+                    .trim()
+                if (!json.startsWith("[")) return@mapNotNull null
+
+                try {
+                    val parts: List<PlayerPart> = objectMapper.readValue(json)
+                    parts.firstOrNull { it.name.equals("Vidrame", ignoreCase = true) }
+                        ?.data
+                        ?.let { html ->
+                            Regex("""<iframe[^>]+src=\\?\"([^\" ]+)""", RegexOption.IGNORE_CASE)
+                                .find(html)
+                                ?.groupValues?.getOrNull(1)
+                                ?.replace("\\/", "/")
+                        }
+                } catch (e: Exception) {
+                    Log.d("HDF", "Player script parse error: ${e.message}")
+                    null
+                }
+            }
+            .firstOrNull { it.isNotBlank() }
+            ?: ""
+
+        Log.d("HDF", "VidRame URL » $vidrameUrl")
+        if (vidrameUrl.isNotBlank()) {
+            loadExtractor(vidrameUrl, data, subtitleCallback, callback)
+            return true
+        }
+
+        // Eski/alternatif site yapısı için iframe yedeği.
         val iframe = document.select("iframe").mapNotNull { element ->
             element.attr("data-src").ifBlank { element.attr("src") }
         }.firstOrNull { it.isNotBlank() } ?: ""
 
-        Log.d("HDF", "iframe » $iframe")
         if (iframe.isNotBlank()) {
             loadExtractor(iframe, data, subtitleCallback, callback)
-            return true
-        }
-
-        // Bazı sürümlerde player URL'si düğmenin data alanında bulunabiliyor.
-        val playerUrl = document.select("a,button,div").firstOrNull {
-            it.text().trim().equals("Vidrame", ignoreCase = true)
-        }?.let { element ->
-            sequenceOf("href", "data-src", "data-url", "data-player", "data-embed", "data-iframe")
-                .map { element.attr(it) }
-                .firstOrNull { it.isNotBlank() }
-        } ?: ""
-
-        Log.d("HDF", "VidRame/player » $playerUrl")
-        if (playerUrl.isNotBlank()) {
-            loadExtractor(playerUrl, data, subtitleCallback, callback)
         }
 
         return true
     }
+
+    private data class PlayerPart(
+        @JsonProperty("id") val id: Int? = null,
+        @JsonProperty("video_id") val videoId: Int? = null,
+        @JsonProperty("episode_id") val episodeId: Int? = null,
+        @JsonProperty("name") val name: String? = null,
+        @JsonProperty("lang") val lang: String? = null,
+        @JsonProperty("data") val data: String? = null
+    )
 
     private data class SubSource(
         @JsonProperty("file") val file: String? = null,
