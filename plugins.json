@@ -307,7 +307,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84",
         "status": 1,
-        "version": 84,
+        "version": 82,
         "name": "DiziPalOriginal",
         "internalName": "DiziPalOriginal",
         "authors": [
@@ -323,7 +323,7 @@
         ],
         "iconUrl": "https://chessplyimages.cfd/uploads/site/favicon-32x32.png",
         "apiVersion": 1,
-        "fileHash": "sha256-578b1f8a6e52714212d760a9bfb14c4447d8169a501dbe7e454108cd7940fcad"
+        "fileHash": "sha256-e86a2e7eebcf5068a23aa9a7dd03fd77775eb74bccfda9339158fce68216c9e3"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziYou.cs3",
@@ -517,7 +517,7 @@
             "csprofesor"
         ],
         "description": "Sinema zevkini evinize kadar getirdik. T\u00fcrkiye'nin lider Film sitesinde, en yeni filmleri Full HD izleyin.",
-        "fileSize": 40117,
+        "fileSize": 40527,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -525,7 +525,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.fullhdfilmizlesene.de&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-8f2cff5f9fc87f38d415b65c30c7ad3b7c9a5d26f03d8e73b072ff520b499253"
+        "fileHash": "sha256-90c6a4d0eb79655ce20faad58da67d5cefc367b3006f72f26ae6bc256b79da90"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi.cs3",
