@@ -64,15 +64,27 @@ class DiziGom : MainAPI() {
         val pageUrl = if (page <= 1) request.data else request.data.trimEnd('/') + "/page/$page/"
         val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
 
-        val results = document?.select("div.episode-box")
-            ?.mapNotNull { it.toMainPageResult() }
-            ?.distinctBy { it.url }
-            ?: document?.select("a[href*='/diziler/']")
-                ?.mapNotNull { it.toMainPageResult() }
-                ?.distinctBy { it.url }
-                .orEmpty()
+        if (document == null) {
+            Log.d("DiziGom", "${request.name}: document alınamadı url=$pageUrl")
+            return newHomePageResponse(request.name, emptyList(), hasNext = false)
+        }
 
-        Log.d("DiziGom", "${request.name}: page=$page count=${results.size} url=$pageUrl")
+        // The current DiziGom markup may contain episode-box wrappers, but on
+        // some genre/list pages the series cards are exposed directly as links.
+        // Do not use ?: on mapNotNull here: an empty first result must fall back
+        // to the direct /diziler/ links.
+        val boxedResults = document.select("div.episode-box")
+            .mapNotNull { it.toMainPageResult() }
+            .distinctBy { it.url }
+
+        val directResults = document.select("a[href*='/diziler/']")
+            .mapNotNull { it.toMainPageResult() }
+            .distinctBy { it.url }
+
+        val results = (boxedResults + directResults)
+            .distinctBy { it.url }
+
+        Log.d("DiziGom", "${request.name}: page=$page count=${results.size} boxed=${boxedResults.size} direct=${directResults.size} url=$pageUrl")
         return newHomePageResponse(request.name, results, hasNext = results.isNotEmpty())
     }
 
@@ -97,16 +109,28 @@ class DiziGom : MainAPI() {
             .firstOrNull { it.hasClass("episode-box") }
             ?: this
 
-        val title = card.selectFirst("div.serie-name a")?.text()?.trim()
-            ?: selectFirst("img")?.attr("alt")?.trim()
-            ?: attr("title").trim()
+        val title = sequenceOf(
+            card.selectFirst("div.serie-name a")?.text(),
+            card.selectFirst(".serie-name")?.text(),
+            card.selectFirst("img")?.attr("alt"),
+            card.selectFirst("img")?.attr("title"),
+            card.attr("title"),
+            selectFirst("img")?.attr("alt")
+        )
+            .mapNotNull { it?.trim()?.takeIf { value -> value.isNotBlank() } }
+            .firstOrNull()
             ?: return null
 
-        val href = fixUrlNull(
-            card.selectFirst("a[href*='/diziler/']")?.attr("href")
-                ?: card.selectFirst("a")?.attr("href")
-                ?: attr("href")
-        ) ?: return null
+        val href = sequenceOf(
+            card.selectFirst("a[href*='/diziler/']")?.attr("href"),
+            card.selectFirst("a[href*='/dizi/']")?.attr("href"),
+            card.selectFirst("a")?.attr("href"),
+            attr("href")
+        )
+            .mapNotNull { it?.trim()?.takeIf { value -> value.isNotBlank() } }
+            .firstOrNull()
+            ?.let { fixUrlNull(it) }
+            ?: return null
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             posterUrl = card.posterUrl()
@@ -119,7 +143,7 @@ class DiziGom : MainAPI() {
             referer = "$mainUrl/"
         ).document
 
-        return document.select("div.single-item, div.episode-box, a[href*='/diziler/']")
+        return document.select("div.episode-box, div.single-item, a[href*='/diziler/']")
             .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
     }
