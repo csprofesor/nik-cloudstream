@@ -16,7 +16,7 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 
 class FullHDFilmizlesene : MainAPI() {
-    override var mainUrl              = "https://www.hdfilmizle.vip/"
+    override var mainUrl              = "https://www.fullhdfilmizlesene.now"
     override var name                 = "FullHDFilmizlesene"
     override val hasMainPage          = true
     override var lang                 = "tr"
@@ -42,7 +42,7 @@ class FullHDFilmizlesene : MainAPI() {
         "${mainUrl}/filmizle/korku-filmleri-izle-3/"            to "Korku Filmleri",
         "${mainUrl}/filmizle/macera-filmleri-fhd-izle/"         to "Macera Filmleri",
         "${mainUrl}/filmizle/muzikal-filmler-izle/"             to "Müzikal Filmler",
-        "${mainUrl}/filmizle/polisiye-filmleri-izle/"           to "Polisiye Filmler",
+        "${mainUrl}/filmizle/polisiye-filmleri-izle/"           to "Polisiye Filmleri",
         "${mainUrl}/filmizle/psikolojik-filmler-izle/"          to "Psikolojik Filmler",
         "${mainUrl}/filmizle/romantik-filmler-fhd-izle/"        to "Romantik Filmler",
         "${mainUrl}/filmizle/savas-filmleri-fhd-izle/"          to "Savaş Filmleri",
