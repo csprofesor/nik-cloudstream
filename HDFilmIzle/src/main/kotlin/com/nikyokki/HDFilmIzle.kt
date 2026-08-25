@@ -38,41 +38,50 @@ class HDFilmIzle : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/tur/aile/" to "Aile Filmleri",
-        "${mainUrl}/tur/aksiyon/" to "Aksiyon Filmleri",
-        "${mainUrl}/tur/animasyon/" to "Animasyon Filmleri",
-        "${mainUrl}/tur/belgesel/" to "Belgesel Filmleri",
-        "${mainUrl}/tur/bilim-kurgu/" to "Bilim Kurgu Filmleri",
-        "${mainUrl}/tur/dram/" to "Dram Filmleri",
-        "${mainUrl}/tur/fantastik/" to "Fantastik Filmleri",
-        "${mainUrl}/tur/gerilim/" to "Gerilim Filmleri",
-        "${mainUrl}/tur/gizem/" to "Gizem Filmleri",
-        "${mainUrl}/tur/komedi/" to "Komedi Filmleri",
-        "${mainUrl}/tur/korku/" to "Korku Filmleri",
-        "${mainUrl}/tur/macera/" to "Macera Filmleri",
-        "${mainUrl}/tur/romantik/" to "Romantik Filmler",
-        "${mainUrl}/tur/savas/" to "Savaş Filmleri",
-        "${mainUrl}/tur/suc/" to "Suç Filmleri",
-        "${mainUrl}/tur/tarih/" to "Tarih Filmleri",
-        "${mainUrl}/tur/vahsi-bati/" to "Vahşi Batı Filmleri",
-        "${mainUrl}/tur/yerli-film-izle/" to "Yerli Filmler",
+        "${mainUrl}/tur/aile-1/" to "Aile Filmleri",
+        "${mainUrl}/tur/aksiyon-1/" to "Aksiyon Filmleri",
+        "${mainUrl}/tur/animasyon-1/" to "Animasyon Filmleri",
+        "${mainUrl}/tur/belgesel-1/" to "Belgesel Filmleri",
+        "${mainUrl}/tur/bilim-kurgu-1/" to "Bilim Kurgu Filmleri",
+        "${mainUrl}/tur/dram-1/" to "Dram Filmleri",
+        "${mainUrl}/tur/fantastik-1/" to "Fantastik Filmleri",
+        "${mainUrl}/tur/gerilim-1/" to "Gerilim Filmleri",
+        "${mainUrl}/tur/gizem-1/" to "Gizem Filmleri",
+        "${mainUrl}/tur/komedi-1/" to "Komedi Filmleri",
+        "${mainUrl}/tur/korku-1/" to "Korku Filmleri",
+        "${mainUrl}/tur/macera-1/" to "Macera Filmleri",
+        "${mainUrl}/tur/muzik-1/" to "Müzik Filmleri",
+        "${mainUrl}/tur/romantik-1/" to "Romantik Filmler",
+        "${mainUrl}/tur/savas-1/" to "Savaş Filmleri",
+        "${mainUrl}/tur/suc-1/" to "Suç Filmleri",
+        "${mainUrl}/tur/tarih-1/" to "Tarih Filmleri",
+        "${mainUrl}/tur/vahsi-bati-1/" to "Vahşi Batı Filmleri",
+        "${mainUrl}/tur/yerli-film-izle-1/" to "Yerli Filmler",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(request.data).document
+        val pageUrl = if (page <= 1) {
+            request.data
+        } else {
+            request.data.replace(Regex("-1/?$"), "-$page/")
+        }
 
-        val home: List<SearchResponse>?
-
-        home = document.select("div#moviesListResult a.poster").mapNotNull { it.toSearchResult() }
+        val document = app.get(pageUrl).document
+        val home = document.select("div#moviesListResult a.poster, a.poster").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse {
-        val title = this.selectFirst("h2.title")?.text() ?: ""
-        val href = fixUrlNull(this.attr("href")) ?: ""
+        val title = this.selectFirst("h2.title")?.text()?.trim()
+            ?: this.selectFirst("h2")?.text()?.trim()
+            ?: this.selectFirst("img")?.attr("alt")?.trim()
+            ?: ""
+        val href = fixUrlNull(this.attr("href")) ?: return newMovieSearchResponse(title, mainUrl, TvType.Movie)
         val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
+            ?: fixUrlNull(this.selectFirst("img")?.attr("src"))
         val score = this.selectFirst("div.poster-imdb")?.text()?.trim()
+            ?: this.selectFirst(".poster-imdb")?.text()?.trim()
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
@@ -120,6 +129,7 @@ class HDFilmIzle : MainAPI() {
         val title =
             if (altTitle.isNotEmpty() && orgTitle != altTitle) "$orgTitle - $altTitle" else orgTitle
         val poster = fixUrlNull(document.selectFirst("picture.poster-auto img")?.attr("data-src"))
+            ?: fixUrlNull(document.selectFirst("picture.poster-auto img")?.attr("src"))
         val tags = document.select("div.pb-2.genres a").map { it.text() }
         val year = document.selectFirst("div.page-title")?.selectFirst("small.text-muted")?.text()
             ?.replace("(", "")?.replace(")", "")?.toIntOrNull()
@@ -156,7 +166,6 @@ class HDFilmIzle : MainAPI() {
         }
     }
 
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -166,9 +175,13 @@ class HDFilmIzle : MainAPI() {
         Log.d("HDF", "data » ${data}")
         val document = app.get(data).document
 
-        val iframe = document.selectFirst("iframe")?.attr("data-src") ?: ""
+        val iframe = document.selectFirst("iframe[data-src]")?.attr("data-src")
+            ?: document.selectFirst("iframe")?.attr("src")
+            ?: ""
         Log.d("HDF", "iframe » ${iframe}")
-        loadExtractor(iframe, mainUrl, subtitleCallback, callback)
+        if (iframe.isNotBlank()) {
+            loadExtractor(iframe, mainUrl, subtitleCallback, callback)
+        }
 
         return true
     }
