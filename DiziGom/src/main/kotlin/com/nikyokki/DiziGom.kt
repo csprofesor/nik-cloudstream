@@ -22,9 +22,8 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import org.jsoup.nodes.Element
+import java.net.URLEncoder
 
 class DiziGom : MainAPI() {
     override var mainUrl = "https://www.dizigom.love"
@@ -36,7 +35,6 @@ class DiziGom : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    // These are the categories currently exposed by DiziGom's archive.
     private val genres = listOf(
         "Aksiyon", "Animasyon", "Belgesel", "Bilim Kurgu", "Biyografi", "Dram",
         "Fantastik", "Gençlik", "Gerilim", "Gizem", "Komedi", "Korku", "Macera",
@@ -44,67 +42,29 @@ class DiziGom : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        *genres.map { "$mainUrl/dizi-izle/" to it }.toTypedArray()
+        *genres.map { "$mainUrl/dizi-izle/?tur=${URLEncoder.encode(it, "UTF-8")}" to it }.toTypedArray()
     )
 
-    private val archiveMutex = Mutex()
-    private var archiveCache: List<SearchResponse>? = null
-    private val genreCache = mutableMapOf<String, Set<String>>()
-
-    private suspend fun getArchive(): List<SearchResponse> {
-        archiveCache?.let { return it }
-
-        return archiveMutex.withLock {
-            archiveCache?.let { return@withLock it }
-
-            val allResults = mutableListOf<SearchResponse>()
-
-            // DiziGom currently exposes 27 archive pages. Stop automatically
-            // when a future page contains no real series cards.
-            for (page in 1..100) {
-                val url = if (page == 1) {
-                    "$mainUrl/dizi-izle/"
-                } else {
-                    "$mainUrl/dizi-izle/page/$page/"
-                }
-
-                val document = runCatching {
-                    app.get(url, referer = "$mainUrl/").document
-                }.getOrNull() ?: break
-
-                val pageResults = document
-                    .select("a[href*='/diziler/']")
-                    .mapNotNull { it.toArchiveResult() }
-                    .distinctBy { it.url }
-
-                if (pageResults.isEmpty()) break
-                allResults += pageResults
-            }
-
-            archiveCache = allResults.distinctBy { it.url }
-            archiveCache.orEmpty()
+    private fun genreUrl(genre: String, page: Int): String {
+        val encoded = URLEncoder.encode(genre, "UTF-8")
+        return if (page <= 1) {
+            "$mainUrl/dizi-izle/?tur=$encoded"
+        } else {
+            "$mainUrl/dizi-izle/page/$page/?tur=$encoded"
         }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val wantedGenre = normalizeGenre(request.name)
-        val archive = getArchive()
+        val document = app.get(genreUrl(request.name, page), referer = "$mainUrl/").document
+        val results = document
+            .select("a[href*='/diziler/']")
+            .mapNotNull { it.toSearchResult() }
+            .distinctBy { it.url }
 
-        val filtered = archive.filter { result ->
-            genreCache[result.url].orEmpty().any { normalizeGenre(it) == wantedGenre }
-        }
-
-        // Keep CloudStream pagination useful instead of dumping the whole
-        // archive into one row.
-        val pageSize = 20
-        val pageResults = filtered
-            .drop((page - 1).coerceAtLeast(0) * pageSize)
-            .take(pageSize)
-
-        return newHomePageResponse(request.name, pageResults)
+        return newHomePageResponse(request.name, results)
     }
 
-    private fun Element.findSeriesCard(href: String): Element? {
+    private fun Element.findSeriesCard(): Element? {
         return generateSequence(this as Element?) { it.parent() }
             .take(10)
             .firstOrNull { element ->
@@ -112,10 +72,6 @@ class DiziGom : MainAPI() {
                     .select("a[href*='/diziler/']")
                     .mapNotNull { fixUrlNull(it.attr("href")) }
                     .distinct()
-
-                // A real card contains exactly one series URL and an image.
-                // This prevents the site's alphabet/sidebar containers from
-                // supplying a poster belonging to another series.
                 seriesLinks.size == 1 && element.selectFirst("img") != null
             }
     }
@@ -144,10 +100,9 @@ class DiziGom : MainAPI() {
         return fixUrlNull(raw ?: styleUrl.orEmpty())
     }
 
-    private fun Element.toArchiveResult(): SearchResponse? {
+    private fun Element.toSearchResult(): SearchResponse? {
         val href = fixUrlNull(attr("href")) ?: return null
-        val card = findSeriesCard(href) ?: return null
-
+        val card = findSeriesCard() ?: return null
         val title = sequenceOf(
             selectFirst("img")?.attr("alt"),
             text(),
@@ -163,23 +118,6 @@ class DiziGom : MainAPI() {
             RegexOption.IGNORE_CASE
         ).find(cardText)?.groupValues?.getOrNull(1)
 
-        val typeText = Regex(
-            "Tür\\s*:\\s*(.*?)(?=\\s+Favorilere Ekle\\b|$)",
-            RegexOption.IGNORE_CASE
-        ).find(cardText)?.groupValues?.getOrNull(1).orEmpty()
-
-        val detectedGenres = typeText
-            .split(",", "|", "/")
-            .map { it.trim() }
-            .filter { value ->
-                genres.any { normalizeGenre(it) == normalizeGenre(value) }
-            }
-            .distinctBy(::normalizeGenre)
-
-        genreCache[href] = detectedGenres.toSet()
-
-        // Prefer the poster inside this exact link. Otherwise use the image
-        // inside the exact single-series card.
         val poster = extractPoster() ?: card.extractPoster()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
@@ -187,18 +125,6 @@ class DiziGom : MainAPI() {
             score = Score.from10(rating)
         }
     }
-
-    private fun normalizeGenre(value: String): String = value
-        .trim()
-        .lowercase()
-        .replace("ı", "i")
-        .replace("ş", "s")
-        .replace("ğ", "g")
-        .replace("ü", "u")
-        .replace("ö", "o")
-        .replace("ç", "c")
-        .replace("fantazi", "fantastik")
-        .replace(Regex("\\s+"), " ")
 
     override suspend fun search(query: String): List<SearchResponse> {
         val encoded = query.trim().replace(" ", "+")
@@ -209,7 +135,7 @@ class DiziGom : MainAPI() {
 
         return document
             .select("a[href*='/diziler/']")
-            .mapNotNull { it.toArchiveResult() }
+            .mapNotNull { it.toSearchResult() }
             .distinctBy { it.url }
     }
 
@@ -265,16 +191,13 @@ class DiziGom : MainAPI() {
         val tags = document.select("div.genreList a, .genreList a, a[href*='/tur/']")
             .map { it.text().trim() }
             .filter { it.isNotBlank() }
-            .distinctBy(::normalizeGenre)
+            .distinctBy { it.lowercase() }
 
         val actors = document.select("div.owl-stage a, .cast a, .actors a")
             .mapNotNull { actorLink ->
                 val actor = actorLink.text().trim()
                 if (actor.isBlank()) return@mapNotNull null
-                Actor(
-                    actor,
-                    actorLink.selectFirst("img")?.extractPoster()
-                )
+                Actor(actor, actorLink.selectFirst("img")?.extractPoster())
             }
             .distinctBy { it.name }
 
@@ -286,26 +209,14 @@ class DiziGom : MainAPI() {
                 val source = "$label ${episodeLink.attr("title")}".trim()
 
                 val season = Regex("(\\d+)\\s*\\.?\\s*Sezon", RegexOption.IGNORE_CASE)
-                    .find(source)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.toIntOrNull()
+                    .find(source)?.groupValues?.getOrNull(1)?.toIntOrNull()
                     ?: Regex("-(\\d+)-sezon-", RegexOption.IGNORE_CASE)
-                        .find(href)
-                        ?.groupValues
-                        ?.getOrNull(1)
-                        ?.toIntOrNull()
+                        .find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
                 val episode = Regex("(\\d+)\\s*\\.?\\s*Bölüm", RegexOption.IGNORE_CASE)
-                    .find(source)
-                    ?.groupValues
-                    ?.getOrNull(1)
-                    ?.toIntOrNull()
+                    .find(source)?.groupValues?.getOrNull(1)?.toIntOrNull()
                     ?: Regex("-(\\d+)-bolum", RegexOption.IGNORE_CASE)
-                        .find(href)
-                        ?.groupValues
-                        ?.getOrNull(1)
-                        ?.toIntOrNull()
+                        .find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
                 if (season == null || episode == null) return@mapNotNull null
 
