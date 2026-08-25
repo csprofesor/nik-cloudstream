@@ -23,7 +23,6 @@ import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class HDFilmIzle : MainAPI() {
@@ -150,51 +149,57 @@ class HDFilmIzle : MainAPI() {
         val document = app.get(data).document
         val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
 
-        // Yeni HDFilmIzle sitesinde player bilgisi sayfanın script'i içindeki
-        // `let parts = [...]` değişkeninde tutuluyor. Vidrame iframe'i HTML DOM'unda
-        // doğrudan bulunmadığı için önce bu veriyi parse ediyoruz.
-        val vidrameUrl = document.select("script").asSequence()
+        // HDFilmIzle player bilgisi script içinde `let parts = [...]` olarak geliyor.
+        // JSON'u doğrudan script'ten çıkarıp Vidrame'in iframe src değerini alıyoruz.
+        val partsJson = document.select("script").asSequence()
+            .map { it.data() }
             .mapNotNull { script ->
-                val scriptText = script.data()
-                val json = scriptText.substringAfter("let parts = ", "")
-                    .substringBeforeLast(";", "")
-                    .trim()
-                if (!json.startsWith("[")) return@mapNotNull null
-
-                try {
-                    val parts: List<PlayerPart> = objectMapper.readValue(json)
-                    parts.firstOrNull { it.name.equals("Vidrame", ignoreCase = true) }
-                        ?.data
-                        ?.let { html ->
-                            Regex("""<iframe[^>]+src=\\?\"([^\" ]+)""", RegexOption.IGNORE_CASE)
-                                .find(html)
-                                ?.groupValues?.getOrNull(1)
-                                ?.replace("\\/", "/")
-                        }
-                } catch (e: Exception) {
-                    Log.d("HDF", "Player script parse error: ${e.message}")
-                    null
-                }
+                val start = script.indexOf("let parts = [")
+                if (start < 0) return@mapNotNull null
+                val jsonStart = script.indexOf('[', start)
+                val jsonEnd = script.lastIndexOf("];" )
+                if (jsonStart < 0 || jsonEnd <= jsonStart) return@mapNotNull null
+                script.substring(jsonStart, jsonEnd + 1)
             }
-            .firstOrNull { it.isNotBlank() }
-            ?: ""
+            .firstOrNull()
+
+        val vidrameUrl = if (partsJson != null) {
+            try {
+                val parts: List<PlayerPart> = objectMapper.readValue(partsJson)
+                parts.firstOrNull { it.name.equals("Vidrame", ignoreCase = true) }
+                    ?.data
+                    ?.let { html ->
+                        Regex("""<iframe[^>]*\bsrc\s*=\s*[\"']([^\"']+)[\"']""", RegexOption.IGNORE_CASE)
+                            .find(html)
+                            ?.groupValues?.getOrNull(1)
+                            ?.replace("\\/", "/")
+                    }
+            } catch (e: Exception) {
+                Log.e("HDF", "Player parts parse error: ${e.message}")
+                null
+            }
+        } else null
 
         Log.d("HDF", "VidRame URL » $vidrameUrl")
-        if (vidrameUrl.isNotBlank()) {
-            loadExtractor(vidrameUrl, data, subtitleCallback, callback)
+        if (!vidrameUrl.isNullOrBlank()) {
+            // Local extractor'ı doğrudan çağırıyoruz; böylece loadExtractor'ın
+            // domain keşfine bağlı kalmadan VidRameExtractor kesin olarak çalışır.
+            VidRameExtractor().getUrl(vidrameUrl, data, subtitleCallback, callback)
             return true
         }
 
         // Eski/alternatif site yapısı için iframe yedeği.
         val iframe = document.select("iframe").mapNotNull { element ->
             element.attr("data-src").ifBlank { element.attr("src") }
-        }.firstOrNull { it.isNotBlank() } ?: ""
+        }.firstOrNull { it.isNotBlank() }
 
-        if (iframe.isNotBlank()) {
-            loadExtractor(iframe, data, subtitleCallback, callback)
+        if (!iframe.isNullOrBlank()) {
+            VidRameExtractor().getUrl(iframe, data, subtitleCallback, callback)
+            return true
         }
 
-        return true
+        Log.e("HDF", "VidRame iframe bulunamadı")
+        return false
     }
 
     private data class PlayerPart(
