@@ -38,7 +38,9 @@ jobs:
               'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
               'KONTROL.py', 'LICENSE', 'README.md', 'MiBox.md',
               '_config.yml', 'repo.json', 'settings.gradle.kts',
-              'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
+              'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat',
+              # FilmModu is maintained independently in this repository.
+              'FilmModu',
           }
 
           # Feroxx plugins verified as missing from this repository.
