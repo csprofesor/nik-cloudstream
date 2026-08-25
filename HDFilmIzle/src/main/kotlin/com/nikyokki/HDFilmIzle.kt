@@ -60,29 +60,21 @@ class HDFilmIzle : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val pageUrl = if (page <= 1) {
-            request.data
-        } else {
-            request.data.replace(Regex("-1/?$"), "-$page/")
-        }
-
+        val pageUrl = if (page <= 1) request.data else request.data.replace(Regex("-1/?$"), "-$page/")
         val document = app.get(pageUrl).document
         val home = document.select("div#moviesListResult a.poster, a.poster").mapNotNull { it.toSearchResult() }
-
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse {
         val title = this.selectFirst("h2.title")?.text()?.trim()
             ?: this.selectFirst("h2")?.text()?.trim()
-            ?: this.selectFirst("img")?.attr("alt")?.trim()
-            ?: ""
+            ?: this.selectFirst("img")?.attr("alt")?.trim() ?: ""
         val href = fixUrlNull(this.attr("href")) ?: return newMovieSearchResponse(title, mainUrl, TvType.Movie)
         val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
             ?: fixUrlNull(this.selectFirst("img")?.attr("src"))
         val score = this.selectFirst("div.poster-imdb")?.text()?.trim()
             ?: this.selectFirst(".poster-imdb")?.text()?.trim()
-
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
             this.score = Score.from10(score)
@@ -99,7 +91,6 @@ class HDFilmIzle : MainAPI() {
             data = mapOf("query" to query)
         ).document
         val searchResults = mutableListOf<SearchResponse>()
-
         val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
         try {
             val videos: List<Video> = objectMapper.readValue(response.body().text())
@@ -107,53 +98,35 @@ class HDFilmIzle : MainAPI() {
                 val title = video.name
                 val href = fixUrlNull(video.slug) ?: return@forEach
                 val posterUrl = fixUrlNull(video.thumbUrl) ?: fixUrlNull(video.thumbWebp)
-
-                searchResults.add(
-                    newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
-                )
+                searchResults.add(newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl })
             }
         } catch (e: Exception) {
             println("Error parsing JSON: ${e.message}")
         }
-
         return searchResults
     }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
-
         val orgTitle = document.selectFirst("div.page-title h1")?.text() ?: ""
-        val altTitle =
-            document.selectFirst("div.page-title")?.selectFirst("small.text-muted.alt-name")?.text()
-                ?: ""
-        val title =
-            if (altTitle.isNotEmpty() && orgTitle != altTitle) "$orgTitle - $altTitle" else orgTitle
+        val altTitle = document.selectFirst("div.page-title")?.selectFirst("small.text-muted.alt-name")?.text() ?: ""
+        val title = if (altTitle.isNotEmpty() && orgTitle != altTitle) "$orgTitle - $altTitle" else orgTitle
         val poster = fixUrlNull(document.selectFirst("picture.poster-auto img")?.attr("data-src"))
             ?: fixUrlNull(document.selectFirst("picture.poster-auto img")?.attr("src"))
         val tags = document.select("div.pb-2.genres a").map { it.text() }
-        val year = document.selectFirst("div.page-title")?.selectFirst("small.text-muted")?.text()
-            ?.replace("(", "")?.replace(")", "")?.toIntOrNull()
+        val year = document.selectFirst("div.page-title")?.selectFirst("small.text-muted")?.text()?.replace("(", "")?.replace(")", "")?.toIntOrNull()
         val description = document.selectFirst("article.text-white > p")?.text()?.trim()
         val rating = document.selectFirst("div.rate.mb-2 span")?.text()
         val actors = document.select("div.stories-wrapper a").map {
-            Actor(
-                it.selectFirst("div.story-item-title")!!.text(),
-                fixUrlNull(it.select("img").attr("data-src"))
-            )
+            Actor(it.selectFirst("div.story-item-title")!!.text(), fixUrlNull(it.select("img").attr("data-src")))
         }
-
         val recommendations = document.select("div#swiper-wrapper-benzer").mapNotNull {
             val recName = it.selectFirst("a")?.attr("title") ?: return@mapNotNull null
             val recHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src"))
-                ?: fixUrlNull(it.selectFirst("img")?.attr("src"))
-
-            newMovieSearchResponse(recName, recHref, TvType.Movie) {
-                this.posterUrl = recPosterUrl
-            }
+            val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src")) ?: fixUrlNull(it.selectFirst("img")?.attr("src"))
+            newMovieSearchResponse(recName, recHref, TvType.Movie) { this.posterUrl = recPosterUrl }
         }
         val trailer = document.selectFirst("div.nav-link")?.attr("data-trailer")
-
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
             this.posterUrl = poster
             this.year = year
@@ -172,17 +145,28 @@ class HDFilmIzle : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        Log.d("HDF", "data » ${data}")
+        Log.d("HDF", "data » $data")
         val document = app.get(data).document
 
+        // Yeni HDFilmIzle oynatıcısı VidRame kullanıyor. Önce VidRame bağlantısını ara.
+        val vidrame = document.select("a[href*='vidrame'], iframe[src*='vidrame'], iframe[data-src*='vidrame']")
+            .mapNotNull { element ->
+                element.attr("href").ifBlank { element.attr("data-src") }.ifBlank { element.attr("src") }
+            }
+            .firstOrNull { it.isNotBlank() }
+
+        if (!vidrame.isNullOrBlank()) {
+            loadExtractor(vidrame, data, subtitleCallback, callback)
+            return true
+        }
+
+        // Eski/alternatif player yapısı için yedek.
         val iframe = document.selectFirst("iframe[data-src]")?.attr("data-src")
             ?: document.selectFirst("iframe")?.attr("src")
             ?: ""
-        Log.d("HDF", "iframe » ${iframe}")
         if (iframe.isNotBlank()) {
-            loadExtractor(iframe, mainUrl, subtitleCallback, callback)
+            loadExtractor(iframe, data, subtitleCallback, callback)
         }
-
         return true
     }
 
