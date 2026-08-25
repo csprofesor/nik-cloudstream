@@ -38,17 +38,16 @@ jobs:
               'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
               'KONTROL.py', 'LICENSE', 'README.md', 'MiBox.md',
               '_config.yml', 'repo.json', 'settings.gradle.kts',
-              'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat',
-              # These two plugins are maintained locally because their current
-              # source/domain fixes must not be overwritten by Feroxx sync.
-              'DiziGom', 'DiziPalOriginal'
+              'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
           }
 
-          # Feroxx plugins verified as missing from this repository.
-          # Ddizi is intentionally not listed: this repo already has DDizi.
+          # Feroxx is the only external source for plugin synchronization.
+          # Existing plugins are updated from Feroxx and verified missing
+          # plugins are added from Feroxx as well.
           required_missing = {
               'AltiYuzAltmisAltiFilmIzle',
               'AsyaAnimeleri',
+              'DiziPalOriginal',
               'RareFilmm',
               'TLCtr',
               'TRanimaci',
@@ -65,9 +64,9 @@ jobs:
               if p.is_dir() and p.name not in excluded and (p / 'build.gradle.kts').exists()
           }
 
-          # Update every common plugin and add the verified missing providers.
           to_sync = sorted((source_plugins & target_plugins) | (source_plugins & required_missing))
-          print(f'Syncing {len(to_sync)} plugins')
+          print(f'Syncing {len(to_sync)} plugins from Feroxx')
+
           for name in to_sync:
               src = source / name
               dst = root / name
@@ -75,7 +74,7 @@ jobs:
                   shutil.rmtree(dst)
               shutil.copytree(src, dst)
 
-          # Keep this repository's ownership metadata while taking Feroxx's current plugin code.
+          # Keep repository ownership metadata as csprofesor.
           for gradle in root.glob('*/build.gradle.kts'):
               text = gradle.read_text(encoding='utf-8')
               text = re.sub(
