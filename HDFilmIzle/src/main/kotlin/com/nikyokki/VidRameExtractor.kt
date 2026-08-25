@@ -1,53 +1,109 @@
 package com.nikyokki
 
 import android.util.Base64
-import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.api.Log
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.utils.AppUtils.tryParseJson
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.utils.fixUrl
 import com.lagradost.cloudstream3.utils.newExtractorLink
-
+import org.jsoup.nodes.Document
 
 open class VidRameExtractor : ExtractorApi() {
     override val name = "VidRame"
     override val mainUrl = "https://vidrame.pro"
     override val requiresReferer = true
 
-    private fun rs(s: String): String {
-        return s.reversed()
-    }
-
-    private fun rr(s: String): String {
-        return s.replace(Regex("[a-zA-Z]")) { matchResult ->
-            val c = matchResult.value[0]
-            val charCode = c.code
-            val base = if (c <= 'Z') 90 else 122
-            val newCharCode = charCode + 13
-            val resultCharCode = if (base >= newCharCode) newCharCode else newCharCode - 26
-            resultCharCode.toChar().toString()
+    private fun decodeXor(data: List<Int>, key: String): String {
+        return buildString(data.size) {
+            data.forEachIndexed { index, value ->
+                val decoded = value xor key[index % key.length].code xor ((index * 17 + 13) and 255)
+                append(decoded.toChar())
+            }
         }
     }
 
-    private fun ee(s: String): String {
-        val r = rs(s)
-        val a = rr(r)
-        val b = Base64.encodeToString(a.toByteArray(), Base64.DEFAULT)
-        return b.replace("+", "-").replace("/", "_").replace("=+$".toRegex(), "")
+    private fun parseXorSource(script: String): String? {
+        val match = Regex(
+            """file:\s*\(function\(d,k\).*?\}\)\(\s*\[([0-9,\s]+)\]\s*,\s*\"([^\"]+)\"\s*\)""",
+            setOf(RegexOption.DOT_MATCHES_ALL)
+        ).find(script) ?: return null
+
+        val data = match.groupValues[1]
+            .split(',')
+            .mapNotNull { it.trim().toIntOrNull() }
+        val key = match.groupValues[2]
+        if (data.isEmpty() || key.isEmpty()) return null
+
+        return decodeXor(data, key)
     }
 
-    private fun String.addMarks(str: String): String {
-        return this.replace(Regex("\"?$str\"?"), "\"$str\"")
+    private fun decodeOldSource(encoded: String): String? {
+        return try {
+            var value = encoded.replace("-", "+").replace("_", "/")
+            while (value.length % 4 != 0) value += "="
+            val decoded = String(Base64.decode(value, Base64.DEFAULT))
+            decoded.map { c ->
+                when (c) {
+                    in 'a'..'z' -> ((c - 'a' + 13) % 26 + 'a'.code).toChar()
+                    in 'A'..'Z' -> ((c - 'A' + 13) % 26 + 'A'.code).toChar()
+                    else -> c
+                }
+            }.joinToString("").reversed()
+        } catch (_: Exception) {
+            null
+        }
     }
 
+    private fun extractSubtitles(script: String, subtitleCallback: (SubtitleFile) -> Unit) {
+        val tracksMatch = Regex(
+            """configs\.tracks\s*=\s*(\[[\s\S]*?]);"""
+        ).find(script) ?: return
+
+        val tracks = tracksMatch.groupValues[1]
+        val regex = Regex(
+            """\"kind\"\s*:\s*\"captions\"\s*,\s*\"label\"\s*:\s*\"([^\"]*)\"\s*,\s*\"language\"\s*:\s*\"([^\"]*)\"\s*,\s*\"fx\"\s*:\s*\{\s*\"d\"\s*:\s*\[([^]]*)\]\s*,\s*\"k\"\s*:\s*\"([^\"]+)\""""
+        )
+
+        regex.findAll(tracks).forEach { match ->
+            try {
+                val label = match.groupValues[1]
+                val language = match.groupValues[2]
+                val data = match.groupValues[3]
+                    .split(',')
+                    .mapNotNull { it.trim().toIntOrNull() }
+                val key = match.groupValues[4]
+                val subtitleUrl = decodeXor(data, key)
+
+                if (subtitleUrl.startsWith("http")) {
+                    subtitleCallback(SubtitleFile(label.ifBlank { language }, subtitleUrl))
+                }
+            } catch (e: Exception) {
+                Log.d("VidEx", "Subtitle decode error: ${e.message}")
+            }
+        }
+    }
+
+    private fun extractFromScript(script: String, subtitleCallback: (SubtitleFile) -> Unit): String? {
+        extractSubtitles(script, subtitleCallback)
+
+        parseXorSource(script)?.let { url ->
+            if (url.startsWith("http")) return url
+        }
+
+        // Eski VidRame kodlaması için geriye dönük uyumluluk.
+        val oldEncoded = Regex("""file:\s*EE\.dd\(\"([^\"]+)\"\)""").find(script)?.groupValues?.get(1)
+        return oldEncoded?.let { decodeOldSource(it) }
+    }
+
+    private fun findPlayerScript(document: Document): String? {
+        return document.select("script")
+            .asSequence()
+            .map { it.data() }
+            .firstOrNull { it.contains("sources:") && it.contains("file:") }
+    }
 
     override suspend fun getUrl(
         url: String,
@@ -55,79 +111,37 @@ open class VidRameExtractor : ExtractorApi() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        Log.d("VidEx", url)
+        Log.d("VidEx", "Player URL: $url")
+
+        val playerReferer = url.substringBefore("/vr/").ifBlank { "$mainUrl/" } + "/"
         val document = app.get(
             url,
-            headers = mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:136.0) Gecko/20100101 Firefox/136.0",
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/139.0 Safari/537.36",
                 "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Language" to "en-US,en;q=0.5"),
-            referer = referer
+                "Accept-Language" to "en-US,en;q=0.8"
+            ),
+            referer = referer ?: playerReferer
         ).document
-        Log.d("VidEx", "Document: $document")
 
-        val script = document.select("script").find { it.data().contains("sources:") }?.data() ?: ""
-        Log.d("VidEx", "Script: $script")
+        val script = findPlayerScript(document)
+            ?: throw Error("VidRame source script bulunamadı")
 
+        val videoUrl = extractFromScript(script, subtitleCallback)
+            ?: throw Error("VidRame HLS kaynağı bulunamadı")
 
-        val regex = """("file": )EE\.dd\(".*?"\)""".toRegex()
-        val videoData = script.substringAfter("sources: [")
-            .substringBefore("],").addMarks("file").addMarks("type")
-        Log.d("VidEx", videoData)
-        var output = videoData.replace(regex) { matchResult ->
-            "${matchResult.groupValues[1]}\"${matchResult.value.substringAfter(matchResult.groupValues[1])}\""
-        }
-        output = output.addMarks("type").replace("\r", "").replace("\n", "")
-            .replace("(\"", "(").replace("\")", ")")
-        val subData =
-            script.substringAfter("configs.tracks = ").substringBefore(";").addMarks("file")
-                .addMarks("label").addMarks("kind")
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        val captions: List<SubSource>? = subData.let { objectMapper.readValue(it) }
-        if (captions != null) {
-            tryParseJson<List<SubSource>>(subData)
-                ?.filter { it.kind == "captions" }?.map {
-                    subtitleCallback.invoke(
-                        SubtitleFile(
-                            it.label.toString(),
-                            fixUrl(it.file.toString())
-                        )
-                    )
-                }
-        }
-        tryParseJson<Source>(output)?.file?.let { m3uLink ->
-            var video = m3uLink?.substringAfter(".dd(")?.substringBefore(")")
-            video = video?.replace("-", "+")?.replace("_", "/")
-            while (video!!.length % 4 != 0) {
-                video += "="
+        Log.d("VidEx", "M3U8: $videoUrl")
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = name,
+                url = videoUrl,
+                type = ExtractorLinkType.M3U8
+            ) {
+                quality = Qualities.Unknown.value
+                this.referer = playerReferer
             }
-            val a = String(Base64.decode(video, Base64.DEFAULT))
-            val b = rr(a)
-            val sonm3uLink = rs(b)
-            Log.d("VidEx", "SonM3u : $sonm3uLink")
-            callback.invoke(
-                newExtractorLink(
-                    source = this.name,
-                    name = this.name,
-                    url = sonm3uLink,
-                    ExtractorLinkType.M3U8
-                ) {
-                    this.referer = "$mainUrl/"
-                    this.quality = Qualities.Unknown.value
-                }
-            )
-        }
+        )
     }
 }
-
-
-private data class Source(
-    @JsonProperty("file") val file: String? = null,
-    @JsonProperty("type") val type: String? = null,
-)
-
-private data class SubSource(
-    @JsonProperty("file") val file: String? = null,
-    @JsonProperty("label") val label: String? = null,
-    @JsonProperty("kind") val kind: String? = null,
-    @JsonProperty("language") val language: String? = null,
-)
