@@ -23,7 +23,6 @@ import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
-import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
@@ -73,8 +72,7 @@ class HDFilmIzle : MainAPI() {
         val href = fixUrlNull(this.attr("href")) ?: return newMovieSearchResponse(title, mainUrl, TvType.Movie)
         val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
             ?: fixUrlNull(this.selectFirst("img")?.attr("src"))
-        val score = this.selectFirst("div.poster-imdb")?.text()?.trim()
-            ?: this.selectFirst(".poster-imdb")?.text()?.trim()
+        val score = this.selectFirst(".poster-imdb")?.text()?.trim()
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
             this.score = Score.from10(score)
@@ -95,13 +93,14 @@ class HDFilmIzle : MainAPI() {
         try {
             val videos: List<Video> = objectMapper.readValue(response.body().text())
             videos.forEach { video ->
-                val title = video.name
                 val href = fixUrlNull(video.slug) ?: return@forEach
                 val posterUrl = fixUrlNull(video.thumbUrl) ?: fixUrlNull(video.thumbWebp)
-                searchResults.add(newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl })
+                searchResults.add(newMovieSearchResponse(video.name, href, TvType.Movie) {
+                    this.posterUrl = posterUrl
+                })
             }
         } catch (e: Exception) {
-            println("Error parsing JSON: ${e.message}")
+            Log.e("HDF", "Search parse error: ${e.message}")
         }
         return searchResults
     }
@@ -109,21 +108,23 @@ class HDFilmIzle : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url).document
         val orgTitle = document.selectFirst("div.page-title h1")?.text() ?: ""
-        val altTitle = document.selectFirst("div.page-title")?.selectFirst("small.text-muted.alt-name")?.text() ?: ""
+        val altTitle = document.selectFirst("div.page-title small.text-muted.alt-name")?.text() ?: ""
         val title = if (altTitle.isNotEmpty() && orgTitle != altTitle) "$orgTitle - $altTitle" else orgTitle
         val poster = fixUrlNull(document.selectFirst("picture.poster-auto img")?.attr("data-src"))
             ?: fixUrlNull(document.selectFirst("picture.poster-auto img")?.attr("src"))
         val tags = document.select("div.pb-2.genres a").map { it.text() }
-        val year = document.selectFirst("div.page-title")?.selectFirst("small.text-muted")?.text()?.replace("(", "")?.replace(")", "")?.toIntOrNull()
+        val year = document.selectFirst("div.page-title small.text-muted")?.text()
+            ?.replace("(", "")?.replace(")", "")?.toIntOrNull()
         val description = document.selectFirst("article.text-white > p")?.text()?.trim()
         val rating = document.selectFirst("div.rate.mb-2 span")?.text()
         val actors = document.select("div.stories-wrapper a").map {
-            Actor(it.selectFirst("div.story-item-title")!!.text(), fixUrlNull(it.select("img").attr("data-src")))
+            Actor(it.selectFirst("div.story-item-title")?.text() ?: "", fixUrlNull(it.select("img").attr("data-src")))
         }
         val recommendations = document.select("div#swiper-wrapper-benzer").mapNotNull {
             val recName = it.selectFirst("a")?.attr("title") ?: return@mapNotNull null
             val recHref = fixUrlNull(it.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src")) ?: fixUrlNull(it.selectFirst("img")?.attr("src"))
+            val recPosterUrl = fixUrlNull(it.selectFirst("img")?.attr("data-src"))
+                ?: fixUrlNull(it.selectFirst("img")?.attr("src"))
             newMovieSearchResponse(recName, recHref, TvType.Movie) { this.posterUrl = recPosterUrl }
         }
         val trailer = document.selectFirst("div.nav-link")?.attr("data-trailer")
@@ -143,30 +144,37 @@ class HDFilmIzle : MainAPI() {
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
+        callback: (com.lagradost.cloudstream3.utils.ExtractorLink) -> Unit
     ): Boolean {
         Log.d("HDF", "data » $data")
         val document = app.get(data).document
 
-        // Yeni HDFilmIzle oynatıcısı VidRame kullanıyor. Önce VidRame bağlantısını ara.
-        val vidrame = document.select("a[href*='vidrame'], iframe[src*='vidrame'], iframe[data-src*='vidrame']")
-            .mapNotNull { element ->
-                element.attr("href").ifBlank { element.attr("data-src") }.ifBlank { element.attr("src") }
-            }
-            .firstOrNull { it.isNotBlank() }
+        // Yeni sitede VidRame player iframe olarak sayfaya ekleniyor.
+        // URL'nin içinde "vidrame" geçmesini şart koşmuyoruz.
+        val iframe = document.select("iframe").mapNotNull { element ->
+            element.attr("data-src").ifBlank { element.attr("src") }
+        }.firstOrNull { it.isNotBlank() } ?: ""
 
-        if (!vidrame.isNullOrBlank()) {
-            loadExtractor(vidrame, data, subtitleCallback, callback)
+        Log.d("HDF", "iframe » $iframe")
+        if (iframe.isNotBlank()) {
+            loadExtractor(iframe, data, subtitleCallback, callback)
             return true
         }
 
-        // Eski/alternatif player yapısı için yedek.
-        val iframe = document.selectFirst("iframe[data-src]")?.attr("data-src")
-            ?: document.selectFirst("iframe")?.attr("src")
-            ?: ""
-        if (iframe.isNotBlank()) {
-            loadExtractor(iframe, data, subtitleCallback, callback)
+        // Bazı sürümlerde player URL'si düğmenin data alanında bulunabiliyor.
+        val playerUrl = document.select("a,button,div").firstOrNull {
+            it.text().trim().equals("Vidrame", ignoreCase = true)
+        }?.let { element ->
+            sequenceOf("href", "data-src", "data-url", "data-player", "data-embed", "data-iframe")
+                .map { element.attr(it) }
+                .firstOrNull { it.isNotBlank() }
+        } ?: ""
+
+        Log.d("HDF", "VidRame/player » $playerUrl")
+        if (playerUrl.isNotBlank()) {
+            loadExtractor(playerUrl, data, subtitleCallback, callback)
         }
+
         return true
     }
 
