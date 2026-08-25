@@ -1,4 +1,4 @@
-version = 10
+version = 11
 
 cloudstream {
     authors = listOf("csprofesor")
@@ -12,9 +12,9 @@ cloudstream {
      * 2: Slow
      * 3: Beta only
     **/
-    status  = 1 // will be 3 if unspecified
+    status  = 1
     tvTypes = listOf("TvSeries")
     iconUrl = "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%"
 }
 
-// Trigger a fresh build for the current DiziGom implementation.
+// Fresh build: posters + PilayerPlay stream resolver.
