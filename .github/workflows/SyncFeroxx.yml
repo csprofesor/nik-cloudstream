@@ -38,7 +38,10 @@ jobs:
               'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
               'KONTROL.py', 'LICENSE', 'README.md', 'MiBox.md',
               '_config.yml', 'repo.json', 'settings.gradle.kts',
-              'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
+              'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat',
+              # These two plugins are maintained locally because their current
+              # source/domain fixes must not be overwritten by Feroxx sync.
+              'DiziGom', 'DiziPalOriginal'
           }
 
           # Feroxx plugins verified as missing from this repository.
@@ -46,7 +49,6 @@ jobs:
           required_missing = {
               'AltiYuzAltmisAltiFilmIzle',
               'AsyaAnimeleri',
-              'DiziPalOriginal',
               'RareFilmm',
               'TLCtr',
               'TRanimaci',
