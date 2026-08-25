@@ -69,22 +69,60 @@ class DiziGom : MainAPI() {
     }
 
     private fun Element.findCard(): Element = generateSequence(this as Element?) { it.parent() }
-        .take(10).firstOrNull { it.selectFirst("img") != null } ?: this
+        .take(10)
+        .firstOrNull { it.hasClass("episode-box") }
+        ?: generateSequence(this as Element?) { it.parent() }
+            .take(10)
+            .firstOrNull { it.selectFirst("img") != null || it.attr("style").contains("background", true) }
+        ?: this
 
     private fun Element.poster(): String? {
-        val img = selectFirst("img") ?: return null
-        return fixUrlNull(img.attr("data-src").ifBlank { img.attr("data-lazy-src").ifBlank { img.attr("src") } })
+        val image = selectFirst("img")
+        val imageUrl = image?.let {
+            sequenceOf(
+                it.attr("data-src"),
+                it.attr("data-lazy-src"),
+                it.attr("data-original"),
+                it.attr("data-image"),
+                it.attr("src")
+            ).firstOrNull { value -> value.isNotBlank() }
+        }
+        if (!imageUrl.isNullOrBlank()) return fixUrlNull(imageUrl.substringBefore(",").trim())
+
+        val sourceUrl = selectFirst("source")?.let {
+            sequenceOf(it.attr("data-srcset"), it.attr("srcset"), it.attr("data-src"), it.attr("src"))
+                .firstOrNull { value -> value.isNotBlank() }
+        }
+        if (!sourceUrl.isNullOrBlank()) return fixUrlNull(sourceUrl.substringBefore(",").trim().substringBefore(" "))
+
+        val style = attr("style")
+        val background = Regex("url\\((?:\\\"|')?([^\\\"')]+)", RegexOption.IGNORE_CASE)
+            .find(style)?.groupValues?.getOrNull(1)
+        if (!background.isNullOrBlank()) return fixUrlNull(background)
+
+        val dataBackground = sequenceOf(
+            attr("data-bg"),
+            attr("data-background"),
+            attr("data-background-image"),
+            attr("data-image")
+        ).firstOrNull { it.isNotBlank() }
+        return fixUrlNull(dataBackground.orEmpty())
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
         val href = fixUrlNull(attr("href")) ?: return null
         val card = findCard()
-        val title = sequenceOf(attr("title"), selectFirst("img")?.attr("alt"), card.selectFirst("img")?.attr("alt"), text())
-            .map { it?.trim().orEmpty() }.firstOrNull { it.isNotBlank() } ?: return null
+        val title = sequenceOf(
+            attr("title"),
+            selectFirst("img")?.attr("alt"),
+            card.selectFirst("img")?.attr("alt"),
+            card.selectFirst("div.serie-name a")?.text(),
+            text()
+        ).map { it?.trim().orEmpty() }.firstOrNull { it.isNotBlank() } ?: return null
         val rating = Regex("(?:IMDb|IMDB)\\s*:?\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE)
             .find(card.text())?.groupValues?.getOrNull(1)
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            posterUrl = poster() ?: card.poster()
+            posterUrl = card.poster() ?: poster()
             score = Score.from10(rating)
         }
     }
