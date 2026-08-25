@@ -578,7 +578,7 @@
             "csprofesor"
         ],
         "description": "HDFilmizle ile Full HD izle, 1080p kalitede Yerli ve Yabanc\u0131 filmlerle T\u00fcrk\u00e7e dublaj veya Altyaz\u0131 olarak kesintisiz film izlemenin tad\u0131n\u0131 \u00e7\u0131kar\u0131n.",
-        "fileSize": 31958,
+        "fileSize": 32404,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -587,7 +587,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmizle.to&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-16b93015f0be8afcb5765e4991b8ed79af124ab0509e614d11e8e2d1a9a7c920"
+        "fileHash": "sha256-eecc3812689344638a5a32b5defb5e4482c04a5627eb2fa648bafcfa573cd638"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmSitesi.cs3",
