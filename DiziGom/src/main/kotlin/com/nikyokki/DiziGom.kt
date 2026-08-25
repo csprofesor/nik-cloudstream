@@ -19,7 +19,6 @@ import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
 class DiziGom : MainAPI() {
@@ -174,8 +173,35 @@ class DiziGom : MainAPI() {
         val frames = document.select("iframe[src], iframe[data-src], iframe[data-lazy-src], .player iframe").mapNotNull { iframe ->
             fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src").ifBlank { iframe.attr("data-lazy-src") } })
         }.distinct()
+
         var found = false
-        for (frame in frames) found = runCatching { loadExtractor(frame, "$mainUrl/", subtitleCallback, callback) }.getOrDefault(false) || found
+        for (frame in frames) {
+            val loaded = runCatching {
+                val playerSource = app.get(frame, referer = "$mainUrl/").text
+                val videoId = Regex("[\\\"']v[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)").find(playerSource)?.groupValues?.getOrNull(1)
+                    ?: return@runCatching false
+
+                val playerBase = frame.substringBefore("/assets/").trimEnd('/')
+                val tokenUrl = "$playerBase/api/token.php?v=$videoId"
+                val tokenResponse = app.get(tokenUrl, referer = frame).text
+                val token = Regex("[\\\"']token[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)").find(tokenResponse)?.groupValues?.getOrNull(1)
+                    ?: return@runCatching false
+
+                val streamUrl = "$playerBase/api/stream.php?v=$videoId&token=$token"
+                callback(
+                    ExtractorLink(
+                        source = "DiziGom",
+                        name = "Pilavyer",
+                        url = streamUrl,
+                        referer = frame,
+                        quality = 1080,
+                        isM3u8 = true
+                    )
+                )
+                true
+            }.getOrDefault(false)
+            found = loaded || found
+        }
         return found
     }
 }
