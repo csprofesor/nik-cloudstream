@@ -101,35 +101,53 @@ class FilmModu : MainAPI() {
         document.select("div.alternates a").forEach {
             val altLink = fixUrlNull(it.attr("href")) ?: return@forEach
             val altName = it.text()
-            if (altName == "Fragman") return@forEach
+            if (altName.contains("Fragman", true)) return@forEach
 
-            val altReq  = app.get(altLink)
-            val vidId   = Regex("""var videoId = '(.*)'""").find(altReq.text)?.groupValues?.get(1) ?: return@forEach
-            val vidType = Regex("""var videoType = '(.*)'""").find(altReq.text)?.groupValues?.get(1) ?: return@forEach
+            try {
+                // Alternatif video sayfası ana film sayfasının referer'ı ile istenir.
+                val altReq = app.get(altLink, referer = data)
+                val altText = altReq.text
 
-            val vidReq = app.get("${mainUrl}/get-source?movie_id=${vidId}&type=${vidType}").parsedSafe<GetSource>() ?: return@forEach
+                // Eski greedy regex yanlış videoId/videoType yakalayabiliyordu.
+                val vidId = Regex("""var videoId = '(\\d+)';""").find(altText)?.groupValues?.getOrNull(1)
+                    ?: return@forEach
+                val vidType = Regex("""var videoType = '(\\w+)';""").find(altText)?.groupValues?.getOrNull(1)
+                    ?: return@forEach
 
-            if (vidReq.subtitle != null) {
-                subtitleCallback.invoke(
-                    SubtitleFile(
-                        lang = "Türkçe",
-                        url  = fixUrl(vidReq.subtitle)
+                val sourceUrl = "${mainUrl}/get-source?movie_id=${vidId}&type=${vidType}"
+                val vidReqRaw = app.get(sourceUrl, referer = altLink)
+                if (vidReqRaw.code != 200) {
+                    Log.e("FLMMD", "get-source HTTP hata kodu: ${vidReqRaw.code}")
+                    return@forEach
+                }
+
+                val vidReq = vidReqRaw.parsedSafe<GetSource>() ?: return@forEach
+
+                vidReq.subtitle?.let {
+                    subtitleCallback.invoke(
+                        SubtitleFile(
+                            lang = "Türkçe",
+                            url = fixUrl(it)
+                        )
                     )
-                )
-            }
+                }
 
-            vidReq.sources?.forEach { source ->
-                callback.invoke(
-                    newExtractorLink(
-                        source  = "${this.name} - $altName",
-                        name    = "${this.name} - $altName",
-                        url     = fixUrl(source.src),
-                        type    = ExtractorLinkType.M3U8
-                    ) {
-                       headers = mapOf("Referer" to "${mainUrl}/")
-                       quality = getQualityFromName(source.label)
-            }
-                )
+                vidReq.sources?.forEach { source ->
+                    callback.invoke(
+                        newExtractorLink(
+                            source = "${this.name} - $altName",
+                            name = "${this.name} - $altName",
+                            url = fixUrl(source.src),
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            // CDN, doğrudan alternatif video sayfasının Referer'ını bekliyor.
+                            this.referer = altLink
+                            this.quality = getQualityFromName(source.label)
+                        }
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("FLMMD", "Alternatif link işleme hatası: $altLink", e)
             }
         }
 
