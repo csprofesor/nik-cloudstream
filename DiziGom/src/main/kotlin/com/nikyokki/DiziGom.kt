@@ -7,7 +7,6 @@ import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
-import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
@@ -20,6 +19,8 @@ import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.JsUnpacker
+import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
@@ -34,6 +35,7 @@ class DiziGom : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries)
 
     private val genreRoutes = linkedMapOf(
+        "Aile" to "aile",
         "Aksiyon" to "aksiyon",
         "Animasyon" to "animasyon",
         "Belgesel" to "belgesel",
@@ -61,150 +63,256 @@ class DiziGom : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val pageUrl = if (page <= 1) request.data else request.data.trimEnd('/') + "/page/$page/"
         val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
-        val results = document?.select("a[href*='/diziler/']")
+
+        val results = document?.select("div.episode-box")
             ?.mapNotNull { it.toMainPageResult() }
             ?.distinctBy { it.url }
-            .orEmpty()
+            ?: document?.select("a[href*='/diziler/']")
+                ?.mapNotNull { it.toMainPageResult() }
+                ?.distinctBy { it.url }
+                .orEmpty()
+
         Log.d("DiziGom", "${request.name}: page=$page count=${results.size} url=$pageUrl")
         return newHomePageResponse(request.name, results, hasNext = results.isNotEmpty())
     }
 
-    private fun Element.findCard(): Element = generateSequence(this as Element?) { it.parent() }
-        .take(10)
-        .firstOrNull { it.hasClass("episode-box") }
-        ?: generateSequence(this as Element?) { it.parent() }
-            .take(10)
-            .firstOrNull { it.selectFirst("img") != null || it.attr("style").contains("background", true) }
-        ?: this
-
-    private fun Element.poster(): String? {
-        val image = selectFirst("img")
-        val imageUrl = image?.let {
-            sequenceOf(
-                it.attr("data-src"),
-                it.attr("data-lazy-src"),
-                it.attr("data-original"),
-                it.attr("data-image"),
-                it.attr("src")
-            ).firstOrNull { value -> value.isNotBlank() }
-        }
-        if (!imageUrl.isNullOrBlank()) return fixUrlNull(imageUrl.substringBefore(",").trim())
-
-        val sourceUrl = selectFirst("source")?.let {
-            sequenceOf(it.attr("data-srcset"), it.attr("srcset"), it.attr("data-src"), it.attr("src"))
-                .firstOrNull { value -> value.isNotBlank() }
-        }
-        if (!sourceUrl.isNullOrBlank()) return fixUrlNull(sourceUrl.substringBefore(",").trim().substringBefore(" "))
-
-        val style = attr("style")
-        val background = Regex("url\\((?:\\\"|')?([^\\\"')]+)", RegexOption.IGNORE_CASE)
-            .find(style)?.groupValues?.getOrNull(1)
-        if (!background.isNullOrBlank()) return fixUrlNull(background)
-
-        val dataBackground = sequenceOf(
-            attr("data-bg"),
-            attr("data-background"),
-            attr("data-background-image"),
-            attr("data-image")
+    private fun Element.posterUrl(): String? {
+        val img = selectFirst("img") ?: return null
+        return sequenceOf(
+            img.attr("data-src"),
+            img.attr("data-lazy-src"),
+            img.attr("data-original"),
+            img.attr("data-image"),
+            img.attr("src")
         ).firstOrNull { it.isNotBlank() }
-        return fixUrlNull(dataBackground.orEmpty())
+            ?.substringBefore(",")
+            ?.trim()
+            ?.substringBefore(" ")
+            ?.let { fixUrlNull(it) }
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val href = fixUrlNull(attr("href")) ?: return null
-        val card = findCard()
-        val title = sequenceOf(
-            attr("title"),
-            selectFirst("img")?.attr("alt"),
-            card.selectFirst("img")?.attr("alt"),
-            card.selectFirst("div.serie-name a")?.text(),
-            text()
-        ).map { it?.trim().orEmpty() }.firstOrNull { it.isNotBlank() } ?: return null
-        val rating = Regex("(?:IMDb|IMDB)\\s*:?\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE)
-            .find(card.text())?.groupValues?.getOrNull(1)
+        val card = if (hasClass("episode-box")) this else generateSequence(this as Element?) { it.parent() }
+            .take(10)
+            .firstOrNull { it.hasClass("episode-box") }
+            ?: this
+
+        val title = card.selectFirst("div.serie-name a")?.text()?.trim()
+            ?: selectFirst("img")?.attr("alt")?.trim()
+            ?: attr("title").trim()
+            ?: return null
+
+        val href = fixUrlNull(
+            card.selectFirst("a[href*='/diziler/']")?.attr("href")
+                ?: card.selectFirst("a")?.attr("href")
+                ?: attr("href")
+        ) ?: return null
+
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            posterUrl = card.poster() ?: poster()
-            score = Score.from10(rating)
+            posterUrl = card.posterUrl()
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("$mainUrl/?s=${query.trim().replace(" ", "+")}", referer = "$mainUrl/").document
-        return document.select("a[href*='/diziler/']").mapNotNull { it.toMainPageResult() }.distinctBy { it.url }
+        val document = app.get(
+            "$mainUrl/?s=${query.trim().replace(" ", "+")}",
+            referer = "$mainUrl/"
+        ).document
+
+        return document.select("div.single-item, div.episode-box, a[href*='/diziler/']")
+            .mapNotNull { it.toMainPageResult() }
+            .distinctBy { it.url }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
-    private fun Element.backgroundPoster(): String? = Regex("url\\((?:\\\"|')?([^\\\"')]+)", RegexOption.IGNORE_CASE)
-        .find(attr("style"))?.groupValues?.getOrNull(1)?.let { fixUrlNull(it) }
+    private fun Element.backgroundPoster(): String? {
+        val style = attr("style")
+        val background = Regex("url\\((?:\\\"|')?([^\\\"')]+)", RegexOption.IGNORE_CASE)
+            .find(style)?.groupValues?.getOrNull(1)
+        return background?.let { fixUrlNull(it) }
+    }
 
     private fun Element.firstText(vararg selectors: String): String? = selectors.asSequence()
-        .mapNotNull { selectFirst(it)?.text()?.trim() }.firstOrNull { it.isNotBlank() }
+        .mapNotNull { selectFirst(it)?.text()?.trim() }
+        .firstOrNull { it.isNotBlank() }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, referer = "$mainUrl/").document
-        val title = document.firstText("div.serieTitle h1", ".serieTitle h1", "h1.entry-title", "article h1", "h1") ?: return null
+        val title = document.firstText(
+            "div.serieTitle h1",
+            ".serieTitle h1",
+            "h1.entry-title",
+            "article h1",
+            "h1"
+        ) ?: return null
+
         val poster = document.selectFirst("div.seriePoster")?.backgroundPoster()
-            ?: document.selectFirst("div.seriePoster img")?.poster()
+            ?: document.selectFirst("div.seriePoster img")?.posterUrl()
             ?: document.selectFirst("meta[property='og:image']")?.attr("content")?.let { fixUrlNull(it) }
-        val description = document.firstText("div.serieDescription p", ".serieDescription p", ".description p", ".entry-content p")
-        val year = Regex("(?:Yapım Yılı|Yapim Yili)\\s*:?\\s*(\\d{4})", RegexOption.IGNORE_CASE).find(document.text())?.groupValues?.getOrNull(1)?.toIntOrNull()
-        val rating = Regex("(?:IMDB|IMDb)\\s*:?\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(document.text())?.groupValues?.getOrNull(1)
-        val tags = document.select("div.genreList a, .genreList a").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
-        val actors = document.select("div.owl-stage a, .cast a, .actors a").mapNotNull { link ->
-            val actor = link.text().trim(); if (actor.isBlank()) null else Actor(actor, link.selectFirst("img")?.poster())
-        }.distinctBy { it.name }
-        val episodes = document.select("div.bolumust, a[href*='-sezon-'][href*='-bolum']").mapNotNull { element ->
-            val link = if (element.tagName() == "a") element else element.selectFirst("a") ?: return@mapNotNull null
-            val href = fixUrlNull(link.attr("href")) ?: return@mapNotNull null
-            val source = "${element.text()} ${link.attr("title")}".trim()
-            val season = Regex("(\\d+)\\s*\\.?\\s*Sezon", RegexOption.IGNORE_CASE).find(source)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                ?: Regex("-(\\d+)-sezon-", RegexOption.IGNORE_CASE).find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
-            val episode = Regex("(\\d+)\\s*\\.?\\s*Bölüm", RegexOption.IGNORE_CASE).find(source)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                ?: Regex("-(\\d+)-bolum", RegexOption.IGNORE_CASE).find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
-            if (season == null || episode == null) return@mapNotNull null
-            newEpisode(href) { name = element.selectFirst("div.bolum-ismi")?.text()?.trim() ?: element.text().trim(); this.season = season; this.episode = episode }
-        }.distinctBy { it.data }.sortedWith(compareBy({ it.season ?: 0 }, { it.episode ?: 0 }))
+
+        val description = document.firstText(
+            "div.serieDescription p",
+            ".serieDescription p",
+            ".description p",
+            ".entry-content p"
+        )
+
+        val year = Regex("(?:Yapım Yılı|Yapim Yili)\\s*:?\\s*(\\d{4})", RegexOption.IGNORE_CASE)
+            .find(document.text())?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+        val rating = Regex("(?:IMDB|IMDb)\\s*:?\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE)
+            .find(document.text())?.groupValues?.getOrNull(1)
+
+        val tags = document.select("div.genreList a, .genreList a")
+            .map { it.text().trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+
+        val actors = document.select("div.owl-stage a, .cast a, .actors a")
+            .mapNotNull { link ->
+                val actor = link.text().trim()
+                if (actor.isBlank()) null else Actor(actor, link.selectFirst("img")?.posterUrl())
+            }
+            .distinctBy { it.name }
+
+        val episodes = document.select("div.bolumust, a[href*='-sezon-'][href*='-bolum']")
+            .mapNotNull { element ->
+                val link = if (element.tagName() == "a") element else element.selectFirst("a") ?: return@mapNotNull null
+                val href = fixUrlNull(link.attr("href")) ?: return@mapNotNull null
+                val source = "${element.text()} ${link.attr("title")}".trim()
+
+                val season = Regex("(\\d+)\\s*\\.?\\s*Sezon", RegexOption.IGNORE_CASE)
+                    .find(source)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    ?: Regex("-(\\d+)-sezon-", RegexOption.IGNORE_CASE)
+                        .find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+                val episode = Regex("(\\d+)\\s*\\.?\\s*Bölüm", RegexOption.IGNORE_CASE)
+                    .find(source)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    ?: Regex("-(\\d+)-bolum", RegexOption.IGNORE_CASE)
+                        .find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+                if (season == null || episode == null) return@mapNotNull null
+
+                newEpisode(href) {
+                    name = element.selectFirst("div.bolum-ismi")?.text()?.trim() ?: element.text().trim()
+                    this.season = season
+                    this.episode = episode
+                }
+            }
+            .distinctBy { it.data }
+            .sortedWith(compareBy({ it.season ?: 0 }, { it.episode ?: 0 }))
+
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-            posterUrl = poster; this.year = year; plot = description; this.tags = tags; score = Score.from10(rating); addActors(actors)
+            posterUrl = poster
+            this.year = year
+            plot = description
+            this.tags = tags
+            score = com.lagradost.cloudstream3.Score.from10(rating)
+            addActors(actors)
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        val document = app.get(data, referer = "$mainUrl/").document
-        val frames = document.select("iframe[src], iframe[data-src], iframe[data-lazy-src], .player iframe").mapNotNull { iframe ->
-            fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src").ifBlank { iframe.attr("data-lazy-src") } })
-        }.distinct()
+    private fun extractJsonLdContentUrl(document: org.jsoup.nodes.Document): String? {
+        val script = document.select("script[type='application/ld+json']")
+            .firstOrNull { it.data().contains("contentUrl", ignoreCase = true) }
+            ?.data()
+            ?: return null
 
-        var found = false
-        for (frame in frames) {
-            val loaded = runCatching {
-                val playerSource = app.get(frame, referer = "$mainUrl/").text
-                val videoId = Regex("[\\\"']v[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)").find(playerSource)?.groupValues?.getOrNull(1)
-                    ?: return@runCatching false
+        return Regex("[\\\"']contentUrl[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)[\\\"']")
+            .find(script)?.groupValues?.getOrNull(1)
+            ?.replace("\\/", "/")
+    }
 
-                val playerBase = frame.substringBefore("/assets/").trimEnd('/')
-                val tokenUrl = "$playerBase/api/token.php?v=$videoId"
-                val tokenResponse = app.get(tokenUrl, referer = frame).text
-                val token = Regex("[\\\"']token[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)").find(tokenResponse)?.groupValues?.getOrNull(1)
-                    ?: return@runCatching false
+    private fun extractSourceLinks(text: String): List<Triple<String, String, String>> {
+        val sources = text.substringAfter("sources:[", "")
+            .substringBefore("]", "")
+            .replace("\\/", "/")
 
-                val streamUrl = "$playerBase/api/stream.php?v=$videoId&token=$token"
-                callback(
-                    newExtractorLink(
-                        source = "DiziGom",
-                        name = "Pilavyer",
-                        url = streamUrl,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        this.referer = frame
-                        this.quality = 1080
-                    }
-                )
-                true
-            }.getOrDefault(false)
-            found = loaded || found
+        if (sources.isBlank()) return emptyList()
+
+        val regex = Regex(
+            "[\\\"']file[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)[\\\"'].*?" +
+                "[\\\"']label[\\\"']\\s*:\\s*[\\\"']([^\\\"']*)[\\\"'].*?" +
+                "[\\\"']type[\\\"']\\s*:\\s*[\\\"']([^\\\"']*)[\\\"']",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        )
+
+        return regex.findAll(sources).map {
+            Triple(it.groupValues[1], it.groupValues[2], it.groupValues[3])
+        }.toList()
+    }
+
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        Log.d("DiziGom", "Resolving episode: $data")
+        val document = runCatching { app.get(data, referer = "$mainUrl/").document }.getOrNull() ?: return false
+
+        // DiziGom's player exposes its real video URL in the JSON-LD contentUrl.
+        // The old /api/token.php resolver is no longer used here.
+        val contentUrl = extractJsonLdContentUrl(document)
+        if (!contentUrl.isNullOrBlank()) {
+            val playUrl = contentUrl.replaceFirst("https://", "https://play.")
+            val iframeDocument = runCatching {
+                app.get(playUrl, referer = "$mainUrl/").document
+            }.getOrNull()
+
+            if (iframeDocument != null) {
+                val packed = iframeDocument.select("script")
+                    .firstOrNull { it.data().contains("eval(function(p,a,c,k,e", ignoreCase = false) }
+                    ?.data()
+                    .orEmpty()
+
+                val unpacked = if (packed.isNotBlank()) {
+                    runCatching { JsUnpacker(packed).unpack().orEmpty() }.getOrDefault("")
+                } else ""
+
+                val candidates = extractSourceLinks(unpacked)
+                for ((file, label, type) in candidates) {
+                    if (file.isBlank()) continue
+                    val isM3u8 = type.contains("mpegurl", true) || file.contains(".m3u8", true)
+                    callback(
+                        newExtractorLink(
+                            source = name,
+                            name = if (label.isBlank()) name else label,
+                            url = file,
+                            type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                        ) {
+                            referer = "$mainUrl/"
+                            quality = getQualityFromName(label)
+                        }
+                    )
+                }
+
+                if (candidates.isNotEmpty()) return true
+            }
         }
-        return found
+
+        // Fallback: pick a directly exposed m3u8/video URL if the player markup changed.
+        val directUrls = Regex("https?://[^\\\"'\\s<>]+(?:\\.m3u8(?:\\?[^\\\"'\\s<>]*)?|\\.mp4(?:\\?[^\\\"'\\s<>]*)?)", RegexOption.IGNORE_CASE)
+            .findAll(document.html())
+            .map { it.value.replace("\\/", "/") }
+            .distinct()
+            .toList()
+
+        for (url in directUrls) {
+            callback(
+                newExtractorLink(
+                    source = name,
+                    name = name,
+                    url = url,
+                    type = if (url.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                ) {
+                    referer = "$mainUrl/"
+                    quality = 1080
+                }
+            )
+        }
+
+        return directUrls.isNotEmpty()
     }
 }
