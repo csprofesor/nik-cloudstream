@@ -19,6 +19,8 @@ import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
+import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
 class DiziGom : MainAPI() {
@@ -189,14 +191,15 @@ class DiziGom : MainAPI() {
 
                 val streamUrl = "$playerBase/api/stream.php?v=$videoId&token=$token"
                 callback(
-                    ExtractorLink(
+                    newExtractorLink(
                         source = "DiziGom",
                         name = "Pilavyer",
                         url = streamUrl,
-                        referer = frame,
-                        quality = 1080,
-                        isM3u8 = true
-                    )
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = frame
+                        this.quality = 1080
+                    }
                 )
                 true
             }.getOrDefault(false)
