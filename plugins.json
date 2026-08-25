@@ -183,16 +183,16 @@
         "fileHash": "sha256-a64febe1430e7d417f57244e311b38a0a87d580114e3ea2d70bf4b2d2622197e"
     },
     {
-        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3",
+        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=10",
         "status": 1,
-        "version": 9,
+        "version": 10,
         "name": "DiziGom",
         "internalName": "DiziGom",
         "authors": [
             "csprofesor"
         ],
         "description": "T\u00fcrk\u00e7e altyaz\u0131l\u0131 yabanc\u0131 dizi izle, T\u00fcm yabanc\u0131, kore, netflix dizilerin yeni ve eski sezonlar\u0131n\u0131 orijinal dilinde dizigom1 alt yaz\u0131l\u0131 film izleyebilir, sadece t\u00fcrk\u00e7e altyaz\u0131l\u0131 en iyi yabanc\u0131 diziler ve filmler hakk\u0131nda yorum yapabilirsiniz.",
-        "fileSize": 19918,
+        "fileSize": 19919,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -200,7 +200,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-8eb44267366d72734be154bf603475741859f95f584e9ec76dd1280a458a0d2c"
+        "fileHash": "sha256-d282491566234ca26e7f19a39c320df4d716ed05438f3df836a37a5fe10ba362"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
@@ -305,16 +305,16 @@
         "fileHash": "sha256-ea79e8729c70dcd1dd46d19e275bda7b06a2d91ce5fdb54631a0b88b7be4e2e4"
     },
     {
-        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3",
+        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84",
         "status": 1,
-        "version": 83,
+        "version": 84,
         "name": "DiziPalOriginal",
         "internalName": "DiziPalOriginal",
         "authors": [
             "csprofesor"
         ],
         "description": "en yeni dizileri g\u00fcvenli ve h\u0131zl\u0131 \u015fekilde sunar.",
-        "fileSize": 25022,
+        "fileSize": 25013,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -323,7 +323,7 @@
         ],
         "iconUrl": "https://chessplyimages.cfd/uploads/site/favicon-32x32.png",
         "apiVersion": 1,
-        "fileHash": "sha256-5e115f7e80b2939cca918a0c5ada50496b6fab25075ba5683b1403b6d40c9a30"
+        "fileHash": "sha256-578b1f8a6e52714212d760a9bfb14c4447d8169a501dbe7e454108cd7940fcad"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziYou.cs3",
