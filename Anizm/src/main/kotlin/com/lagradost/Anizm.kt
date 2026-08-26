@@ -279,26 +279,62 @@ class Anizm : MainAPI() {
                             )
 
                             safeApiCall {
+                                // Anizm'in güncel yapısında player URL önce gerçek sağlayıcıya
+                                // 302 ile yönlenir. Bazı sağlayıcılarda ise eski JSON/iframe
+                                // yapısı hâlâ dönebiliyor; ikisini de destekle.
                                 val redirect = app.get(
                                     playerUrl,
                                     referer = data,
                                     allowRedirects = false
                                 ).headers["location"]?.let(::fixUrl)
 
-                                val targetUrl = redirect ?: playerUrl
-
-                                if (
-                                    targetUrl.contains("$mainServer/video/") ||
-                                    targetUrl.contains("$mainServer/player/")
-                                ) {
-                                    invokeAincradSource(targetUrl, translator, callback)
+                                if (redirect != null) {
+                                    if (
+                                        redirect.contains("$mainServer/video/") ||
+                                        redirect.contains("$mainServer/player/")
+                                    ) {
+                                        invokeAincradSource(redirect, translator, callback)
+                                    } else {
+                                        loadExtractor(
+                                            redirect,
+                                            playerUrl,
+                                            subtitleCallback,
+                                            callback
+                                        )
+                                    }
                                 } else {
-                                    loadExtractor(
-                                        targetUrl,
+                                    // Eski Anizm player cevabı: JSON içindeki iframe'i al.
+                                    app.get(
                                         playerUrl,
-                                        subtitleCallback,
-                                        callback
-                                    )
+                                        referer = data,
+                                        headers = mapOf(
+                                            "Accept" to "application/json, text/javascript, */*; q=0.01",
+                                            "X-Requested-With" to "XMLHttpRequest"
+                                        )
+                                    ).parsedSafe<Videos>()?.player?.let { iframeHtml ->
+                                        val iframe = Jsoup.parse(iframeHtml)
+                                            .selectFirst("iframe")
+                                            ?.attr("src")
+                                            ?.trim()
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?: return@safeApiCall
+
+                                        val targetUrl = fixUrl(iframe)
+
+                                        if (
+                                            targetUrl.contains("$mainServer/video/") ||
+                                            targetUrl.contains("$mainServer/player/")
+                                        ) {
+                                            invokeAincradSource(targetUrl, translator, callback)
+                                        } else {
+                                            loadExtractor(
+                                                targetUrl,
+                                                playerUrl,
+                                                subtitleCallback,
+                                                callback
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
