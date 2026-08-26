@@ -31,6 +31,7 @@ class Anizm : MainAPI() {
         "$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler",
         "$mainUrl/kategoriler/4" to "Dram",
         "$mainUrl/kategoriler/2" to "Aksiyon",
+        "$mainUrl/kategoriler/8" to "Bilim-Kurgu",
     )
 
     override suspend fun getMainPage(
