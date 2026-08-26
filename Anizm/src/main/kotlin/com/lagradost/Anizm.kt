@@ -64,7 +64,7 @@ class Anizm : MainAPI() {
                 .mapNotNull { it.toSearchResult() }
         }
 
-        return newHomePageResponse(request.name, home, hasNext = home.isNotEmpty())
+        return newHomePageResponse(request.name, home)
     }
 
     private fun getProperAnimeLink(uri: String): String {
