@@ -89,8 +89,6 @@ class Anizm : MainAPI() {
             href.contains("javascript:")
         ) return null
 
-        // Site menüsündeki kartlar da img içerdiği için yalnızca anime detay
-        // sayfalarına benzeyen tek-segment Anizm URL'lerini kabul et.
         val path = href.removePrefix(mainUrl).trim('/')
         val reservedPaths = setOf(
             "kayit-ol", "kayit", "kategoriler", "sasirt-beni", "tavsiye-robotu",
@@ -99,20 +97,25 @@ class Anizm : MainAPI() {
         )
         if (path.isBlank() || path.contains("/") || path in reservedPaths) return null
 
-        var card: Element = link
-        var parent = link.parent()
-        repeat(6) {
-            if (parent == null) return@repeat
-            if (parent.selectFirst("img") != null) {
-                card = parent
-                return@repeat
-            }
-            parent = parent.parent()
+        // Anime kartının tamamını bul. Sadece img içeren <a> etiketini
+        // kart sanmak başlık olarak "İzle" alınmasına neden oluyordu.
+        var card: Element? = link
+        repeat(8) {
+            val current = card ?: return@repeat
+            val hasImage = current.selectFirst("img") != null
+            val hasTitle = current.selectFirst(
+                "h5.animeTitle a, h5.animeTitle, .animeTitle, .title, h4, h3"
+            ) != null
+            if (hasImage && hasTitle) return@repeat
+            card = current.parent()
         }
 
-        val image = card.selectFirst("img") ?: return null
-        val title = link.text().trim().takeIf { it.isNotBlank() }
-            ?: card.selectFirst("div.title, h5.animeTitle a, h5.animeTitle, h5, .title")?.text()?.trim()
+        val container = card ?: return null
+        val image = container.selectFirst("img") ?: return null
+
+        val title = container.selectFirst(
+            "h5.animeTitle a, h5.animeTitle, .animeTitle, .title, h4, h3"
+        )?.text()?.trim()?.takeIf { it.isNotBlank() }
             ?: return null
 
         val posterUrl = fixUrlNull(
@@ -123,7 +126,7 @@ class Anizm : MainAPI() {
             }
         )
 
-        val episode = card.selectFirst("div.truncateText")?.text()?.let {
+        val episode = container.selectFirst("div.truncateText")?.text()?.let {
             Regex("([0-9]+).?\\s?Bölüm").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull()
         }
 
