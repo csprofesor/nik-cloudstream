@@ -52,10 +52,13 @@ class Anizm : MainAPI() {
                 .take(8)
                 .firstOrNull { container ->
                     container.select("a[href]").count { anchor ->
-                        val href = anchor.attr("href").trim()
-                        href.isNotBlank() &&
+                        val href = fixUrl(anchor.attr("href").trim())
+                        val text = anchor.text().trim()
+                        href.startsWith(mainUrl) &&
                             !href.contains("/kategoriler/") &&
-                            !href.contains("/anime-izle")
+                            !href.contains("/anime-izle") &&
+                            text.length > 2 &&
+                            !text.equals("İzle", ignoreCase = true)
                     } >= 5
                 }
 
