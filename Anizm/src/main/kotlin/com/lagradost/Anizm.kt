@@ -41,13 +41,16 @@ class Anizm : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(request.data + page).document
         val home = document.select(
-            "div#episodesMiddle div.posterBlock, " +
+            "div.restrictedWidth div#episodesMiddle, " +
+                "div.restrictedWidth div.posterBlock, " +
+                "div.restrictedWidth div.searchResultItem, " +
+                "div.restrictedWidth div.ui.grid > div.four.wide, " +
+                "div.restrictedWidth div.ui.grid > div.column, " +
+                "div#episodesMiddle div.posterBlock, " +
                 "div#episodesMiddle div.searchResultItem, " +
                 "div#episodesMiddle div.four.wide, " +
-                "div#episodesMiddle div.card, " +
                 "div.anizm_boxContent div.posterBlock, " +
-                "div.anizm_boxContent div.four.wide, " +
-                "div.anizm_boxContent div.card"
+                "div.anizm_boxContent div.four.wide"
         ).mapNotNull { it.toSearchResult() }.distinctBy { it.url }
 
         val hasNext = document.selectFirst(
