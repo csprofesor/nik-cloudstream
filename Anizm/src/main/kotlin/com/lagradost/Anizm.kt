@@ -144,7 +144,7 @@ class Anizm : MainAPI() {
         val episodes = document.select("div.ui.grid div.four.wide").map {
             val name = it.select("div.episodeBlock").text()
             val link = fixUrl(it.selectFirst("a")?.attr("href").toString())
-            Episode(link, name)
+            newEpisode(link) { this.name = name }
         }
         return newAnimeLoadResponse(title, url, type) {
             posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img")?.attr("src"))
@@ -197,7 +197,7 @@ class Anizm : MainAPI() {
         val document = app.get(data).document
         document.select("div.episodeTranslators div#fansec").map {
             Pair(it.select("a").attr("translator"), it.select("div.title").text())
-        }.apmap { (url, translator) ->
+        }.amap { (url, translator) ->
             safeApiCall {
                 app.get(
                     url,
@@ -207,7 +207,7 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").apmap { video ->
+                    Jsoup.parse(it).select("a").amap { video ->
                         app.get(
                             video.attr("video"),
                             referer = data,
