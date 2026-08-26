@@ -196,6 +196,25 @@ class Anizm : MainAPI() {
         }
     }
 
+    private suspend fun resolveProvider(
+        url: String,
+        translator: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ) {
+        val target = fixUrl(url)
+        when {
+            target.contains("anizmplayer.com") -> invokeAincradSource(target, translator, callback)
+            target.contains("drive.google") -> loadExtractor(
+                "https://gdriveplayer.to/embed2.php?link=$target",
+                target,
+                subtitleCallback,
+                callback
+            )
+            else -> loadExtractor(target, target, subtitleCallback, callback)
+        }
+    }
+
     private suspend fun invokeAincradSource(
         url: String,
         translator: String,
@@ -243,130 +262,52 @@ class Anizm : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        val translators = document.select(
-            "div#fansec > a, div.episodeTranslators div#fansec > a"
-        ).mapNotNull { anchor ->
-            val translatorUrl = anchor.attr("translator").trim()
-            if (translatorUrl.isBlank()) return@mapNotNull null
+        val translators = document.select("div.episodeTranslators div#fansec a, div#fansec > a")
+            .mapNotNull { anchor ->
+                val translatorUrl = anchor.attr("translator").trim()
+                if (translatorUrl.isBlank()) return@mapNotNull null
+                val translatorName = anchor.text().trim().ifBlank { "Anizm" }
+                Pair(fixUrl(translatorUrl), translatorName)
+            }.distinctBy { it.first }
 
-            val translatorName = anchor.text().trim()
-                .ifBlank { anchor.selectFirst("div.title")?.text()?.trim().orEmpty() }
-
-            Pair(fixUrl(translatorUrl), translatorName.ifBlank { "Anizm" })
-        }.distinctBy { it.first }
+        var found = false
 
         translators.forEach { (translatorUrl, translator) ->
             safeApiCall {
-                app.get(
+                val response = app.get(
                     translatorUrl,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let { html ->
-                    // Fansec'teki bütün sağlayıcı butonlarını ele al.
-                    // Anizm burada Aincrad, Sisternn varyantları, Odnoklassniki,
-                    // GDrive, Abyss, Uoload, BYSE, Vidmoly, HDvid, Voe vb.
-                    // farklı hostları aynı liste içinde döndürebiliyor.
-                    Jsoup.parse(html)
-                        .select(
-                            "a.videoPlayerButtons, a[video], a[data-video], " +
-                                "a[href][video], a[data-url], a[data-link], a[url]"
-                        )
-                        .distinctBy { anchor ->
-                            anchor.attr("video").ifBlank {
-                                anchor.attr("data-video").ifBlank {
-                                    anchor.attr("data-url").ifBlank {
-                                        anchor.attr("data-link").ifBlank {
-                                            anchor.attr("url").ifBlank { anchor.attr("href") }
-                                        }
-                                    }
-                                }
+                ).parsedSafe<Translators>() ?: return@safeApiCall
+
+                Jsoup.parse(response.data)
+                    .select("a.videoPlayerButtons")
+                    .forEach { host ->
+                        val hostName = host.text().trim()
+                        val raw = host.attr("video").trim()
+                        if (raw.isBlank()) return@forEach
+
+                        val playerUrl = fixUrl(raw.replace("/video/", "/player/"))
+                        safeApiCall {
+                            val redirect = app.get(
+                                playerUrl,
+                                referer = data,
+                                allowRedirects = false
+                            ).headers["location"]?.let(::fixUrl)
+
+                            if (redirect != null) {
+                                found = true
+                                resolveProvider(redirect, "$translator - $hostName", subtitleCallback, callback)
                             }
                         }
-                        .forEach { video ->
-                            val rawVideoUrl = video.attr("video").ifBlank {
-                                video.attr("data-video").ifBlank {
-                                    video.attr("data-url").ifBlank {
-                                        video.attr("data-link").ifBlank {
-                                            video.attr("url").ifBlank { video.attr("href") }
-                                        }
-                                    }
-                                }
-                            }.trim()
-
-                            if (rawVideoUrl.isBlank() || rawVideoUrl == "#") return@forEach
-
-                            val playerUrl = fixUrl(
-                                rawVideoUrl.replace("/video/", "/player/")
-                            )
-
-                            safeApiCall {
-                                // Anizm'in güncel yapısında player URL önce gerçek sağlayıcıya
-                                // 302 ile yönlenir. Bazı sağlayıcılarda ise eski JSON/iframe
-                                // yapısı hâlâ dönebiliyor; ikisini de destekle.
-                                val redirect = app.get(
-                                    playerUrl,
-                                    referer = data,
-                                    allowRedirects = false
-                                ).headers["location"]?.let(::fixUrl)
-
-                                if (redirect != null) {
-                                    if (
-                                        redirect.contains("$mainServer/video/") ||
-                                        redirect.contains("$mainServer/player/")
-                                    ) {
-                                        invokeAincradSource(redirect, translator, callback)
-                                    } else {
-                                        loadExtractor(
-                                            redirect,
-                                            playerUrl,
-                                            subtitleCallback,
-                                            callback
-                                        )
-                                    }
-                                } else {
-                                    // Eski Anizm player cevabı: JSON içindeki iframe'i al.
-                                    app.get(
-                                        playerUrl,
-                                        referer = data,
-                                        headers = mapOf(
-                                            "Accept" to "application/json, text/javascript, */*; q=0.01",
-                                            "X-Requested-With" to "XMLHttpRequest"
-                                        )
-                                    ).parsedSafe<Videos>()?.player?.let { iframeHtml ->
-                                        val iframe = Jsoup.parse(iframeHtml)
-                                            .selectFirst("iframe")
-                                            ?.attr("src")
-                                            ?.trim()
-                                            ?.takeIf { it.isNotBlank() }
-                                            ?: return@safeApiCall
-
-                                        val targetUrl = fixUrl(iframe)
-
-                                        if (
-                                            targetUrl.contains("$mainServer/video/") ||
-                                            targetUrl.contains("$mainServer/player/")
-                                        ) {
-                                            invokeAincradSource(targetUrl, translator, callback)
-                                        } else {
-                                            loadExtractor(
-                                                targetUrl,
-                                                playerUrl,
-                                                subtitleCallback,
-                                                callback
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                }
+                    }
             }
         }
 
-        return translators.isNotEmpty()
+        return found
     }
 
     data class Source(
