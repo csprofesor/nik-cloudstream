@@ -40,6 +40,27 @@
         "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
     },
     {
+        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3",
+        "status": 1,
+        "version": 1,
+        "name": "Anizm",
+        "internalName": "Anizm",
+        "authors": [
+            "csprofesor"
+        ],
+        "fileSize": 18070,
+        "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
+        "language": "tr",
+        "tvTypes": [
+            "AnimeMovie",
+            "Anime",
+            "OVA"
+        ],
+        "iconUrl": "https://www.google.com/s2/favicons?domain=anizm.net&sz=%size%",
+        "apiVersion": 1,
+        "fileHash": "sha256-404dbe9eed1eaa25f64a4d2af80bfe12c8589c8a6a3b798341aa113e945612ce"
+    },
+    {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AsyaAnimeleri.cs3",
         "status": 1,
         "version": 1,
@@ -192,7 +213,7 @@
             "csprofesor"
         ],
         "description": "T\u00fcrk\u00e7e altyaz\u0131l\u0131 yabanc\u0131 dizi izle, T\u00fcm yabanc\u0131, kore, netflix dizilerin yeni ve eski sezonlar\u0131n\u0131 orijinal dilinde dizigom1 alt yaz\u0131l\u0131 film izleyebilir, sadece t\u00fcrk\u00e7e altyaz\u0131l\u0131 en iyi yabanc\u0131 diziler ve filmler hakk\u0131nda yorum yapabilirsiniz.",
-        "fileSize": 23683,
+        "fileSize": 23873,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -200,7 +221,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-60d8a86a9ac181d2736323918e963c48a83a45e7076d70d603c6661c8e166046"
+        "fileHash": "sha256-d28584be00bdbacd9719e647e0bc48bfade9ec6405f40d4c2b4aac9b0082dd08"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
