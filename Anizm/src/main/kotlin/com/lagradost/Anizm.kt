@@ -89,6 +89,16 @@ class Anizm : MainAPI() {
             href.contains("javascript:")
         ) return null
 
+        // Site menüsündeki kartlar da img içerdiği için yalnızca anime detay
+        // sayfalarına benzeyen tek-segment Anizm URL'lerini kabul et.
+        val path = href.removePrefix(mainUrl).trim('/')
+        val reservedPaths = setOf(
+            "kayit-ol", "kayit", "kategoriler", "sasirt-beni", "tavsiye-robotu",
+            "fansublar", "manga", "anime-haber", "discord", "izle", "takvim",
+            "giris", "fullViewSearch", "iletisim", "hakkimizda", "sss"
+        )
+        if (path.isBlank() || path.contains("/") || path in reservedPaths) return null
+
         var card: Element = link
         var parent = link.parent()
         repeat(6) {
