@@ -66,11 +66,6 @@ jobs:
           cd $GITHUB_WORKSPACE/src
           sed -i 's/private fun iframe2AesLink/private suspend fun iframe2AesLink/' TurkAnime/src/main/kotlin/com/keyiflerolsun/TurkAnime.kt
 
-      - name: DiziGom Kotlin Uyumluluk Düzeltmesi
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          sed -i 's/\.map { it\.trim() }/.mapNotNull { it?.trim() }/g' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
-
       - name: Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
