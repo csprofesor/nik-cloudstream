@@ -22,12 +22,35 @@ class Anizm : MainAPI() {
 
     companion object { private const val mainServer = "https://anizmplayer.com" }
 
-    override val mainPage = mainPageOf("$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler")
+    override val mainPage = mainPageOf(
+        "$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler",
+        "$mainUrl/kategoriler/1?page=" to "Macera",
+        "$mainUrl/kategoriler/2?page=" to "Aksiyon",
+        "$mainUrl/kategoriler/3?page=" to "Komedi",
+        "$mainUrl/kategoriler/4?page=" to "Dram",
+        "$mainUrl/kategoriler/5?page=" to "Romantizm",
+        "$mainUrl/kategoriler/8?page=" to "Bilim-Kurgu",
+        "$mainUrl/kategoriler/13?page=" to "Fantastik",
+        "$mainUrl/kategoriler/20?page=" to "Korku",
+        "$mainUrl/kategoriler/26?page=" to "Okul",
+        "$mainUrl/kategoriler/34?page=" to "Shounen",
+    )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(request.data + page).document
-        val home = document.select("div.restrictedWidth div#episodesMiddle").mapNotNull { it.toSearchResult() }
-        return newHomePageResponse(request.name, home)
+        val home = document.select(
+            "div#episodesMiddle div.posterBlock, " +
+                "div#episodesMiddle div.searchResultItem, " +
+                "div.anizm_boxContent div.posterBlock"
+        ).mapNotNull { it.toSearchResult() }.distinctBy { it.url }
+
+        val hasNext = document.selectFirst(
+            "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
+                "div.nextBeforeButtons a.right:not(.disabled), " +
+                "a[rel=next]:not(.disabled)"
+        ) != null
+
+        return newHomePageResponse(request.name, home, hasNext = hasNext)
     }
 
     private fun getProperAnimeLink(uri: String): String = if (uri.contains("-bolum")) {
@@ -35,12 +58,25 @@ class Anizm : MainAPI() {
     } else uri
 
     private fun Element.toSearchResult(): AnimeSearchResponse? {
-        val href = getProperAnimeLink(this.selectFirst("a")!!.attr("href"))
-        val title = this.selectFirst("div.title, h5.animeTitle a")?.text() ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
-        val episode = this.selectFirst("div.truncateText")?.text()?.let {
-            Regex("([0-9]+).\\s?Bölüm").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        }
+        val link = if (tagName() == "a") this else selectFirst("a") ?: return null
+        val href = getProperAnimeLink(link.attr("href"))
+        if (href.isBlank()) return null
+
+        val title = selectFirst("div.title, h5.animeTitle a, .title")?.text()?.trim()
+            ?: link.attr("title").trim().takeIf { it.isNotBlank() }
+            ?: link.text().trim().takeIf { it.isNotBlank() }
+            ?: return null
+
+        val posterUrl = fixUrlNull(selectFirst("img")?.let { image ->
+            image.attr("data-src").ifBlank {
+                image.attr("data-original").ifBlank { image.attr("src") }
+            }
+        })
+
+        val episodeText = selectFirst("div.truncateText, div.episodeBlock")?.text() ?: link.text()
+        val episode = Regex("""([0-9]+)\.?\s?Bölüm""", RegexOption.IGNORE_CASE)
+            .find(episodeText)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
         return newAnimeSearchResponse(title, href, TvType.Anime) {
             this.posterUrl = posterUrl
             addSub(episode)
@@ -52,26 +88,71 @@ class Anizm : MainAPI() {
             "$mainUrl/fullViewSearch?search=$query&skip=0",
             headers = mapOf("X-Requested-With" to "XMLHttpRequest")
         ).document
-        return document.select("div.searchResultItem").mapNotNull { it.toSearchResult() }
+        return document.select("div.searchResultItem, div.posterBlock")
+            .mapNotNull { it.toSearchResult() }
+            .distinctBy { it.url }
+    }
+
+    private fun extractImdbId(document: org.jsoup.nodes.Document): String? {
+        val candidates = sequenceOf(
+            document.selectFirst("a[href*='imdb.com/title/']")?.attr("href"),
+            document.selectFirst("[data-imdb-id]")?.attr("data-imdb-id"),
+            document.selectFirst("[data-imdb]")?.attr("data-imdb"),
+            document.select("span.dataValue").joinToString(" ") { it.text() }
+        )
+
+        return candidates.mapNotNull {
+            Regex("""tt[0-9]{7,9}""").find(it)?.value
+        }.firstOrNull()
     }
 
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
-        val title = document.selectFirst("h2.anizm_pageTitle a")!!.text().trim()
-        val type = if (document.select("div.ui.grid div.four.wide").size == 1) TvType.Movie else TvType.Anime
-        val trailer = document.select("div.yt-hd-thumbnail-inner-container iframe").attr("src")
-        val episodes = document.select("div.ui.grid div.four.wide").map {
-            newEpisode(fixUrl(it.selectFirst("a")?.attr("href").toString())) {
-                name = it.select("div.episodeBlock").text()
+
+        val title = document.selectFirst("h2.anizm_pageTitle, h2.anizm_pageTitle a")!!.text().trim()
+
+        val episodeElements = document.select(
+            "div.episodeListTabContent div > a, div.ui.grid div.four.wide"
+        )
+
+        val episodes = episodeElements.mapNotNull { element ->
+            val link = if (element.tagName() == "a") element else element.selectFirst("a")
+            val href = link?.attr("href")?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val episodeName = element.selectFirst("div.episodeBlock")?.text()?.trim()
+                ?: element.text().trim().takeIf { it.isNotBlank() }
+                ?: "Bölüm"
+
+            newEpisode(fixUrl(href)) {
+                name = episodeName
             }
-        }
+        }.distinctBy { it.data }
+
+        val type = if (episodes.size == 1) TvType.Movie else TvType.Anime
+        val trailer = document.selectFirst(
+            "div.yt-hd-thumbnail-inner-container iframe, iframe[src*='youtube.com'], iframe[src*='youtu.be']"
+        )?.attr("src")
+
+        val year = Regex("""\b(19|20)\d{2}\b""").find(
+            document.select("div.infoSta li, div.anizm_boxContent li.dataRow")
+                .joinToString(" ") { it.text() }
+        )?.value?.toIntOrNull()
+
+        val imdbId = extractImdbId(document)
+
         return newAnimeLoadResponse(title, url, type) {
-            posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img")?.attr("src"))
-            year = document.select("div.infoSta ul li:first-child").text().trim().toIntOrNull()
+            posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img, div.infoPosterImg img")?.let {
+                it.attr("data-src").ifBlank {
+                    it.attr("data-original").ifBlank { it.attr("src") }
+                }
+            })
+            this.year = year
             addEpisodes(DubStatus.Subbed, episodes)
-            plot = document.select("div.infoDesc").text().trim()
-            tags = document.select("span.dataValue span.ui.label").map { it.text() }
-            addTrailer(trailer)
+            plot = document.selectFirst("div.infoDesc")?.text()?.trim()
+            tags = document.select(
+                "span.dataValue > span.tag > span.label, span.dataValue span.ui.label"
+            ).map { it.text() }.distinct()
+            imdbId?.let { addImdbId(it) }
+            trailer?.let { addTrailer(it) }
         }
     }
 
