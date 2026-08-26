@@ -29,17 +29,31 @@ class Anizm : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler",
+        "$mainUrl/kategoriler/4" to "Dram",
     )
 
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val document = app.get(request.data + page).document
-        val home = document.select("div.restrictedWidth div#episodesMiddle").mapNotNull {
-            it.toSearchResult()
+        val url = if (request.data.contains("/kategoriler/")) {
+            if (page <= 1) request.data else "${request.data}?page=$page"
+        } else {
+            request.data + page
         }
-        return newHomePageResponse(request.name, home)
+
+        val document = app.get(url).document
+        val home = document.select("div.restrictedWidth div#episodesMiddle")
+            .mapNotNull { it.toSearchResult() }
+            .distinctBy { it.url }
+
+        val hasNext = document.selectFirst(
+            "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
+                "div.nextBeforeButtons a.right:not(.disabled), " +
+                "a[rel=next]:not(.disabled)"
+        ) != null
+
+        return newHomePageResponse(request.name, home, hasNext = hasNext)
     }
 
     private fun getProperAnimeLink(uri: String): String {
@@ -51,12 +65,47 @@ class Anizm : MainAPI() {
     }
 
     private fun Element.toSearchResult(): AnimeSearchResponse? {
-        val href = getProperAnimeLink(this.selectFirst("a")!!.attr("href"))
-        val title = this.selectFirst("div.title, h5.animeTitle a")?.text() ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
-        val episode = this.selectFirst("div.truncateText")?.text()?.let {
-            Regex("([0-9]+).\\s?Bölüm").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val link = if (tagName() == "a") this else selectFirst("a") ?: return null
+        val rawHref = link.attr("href").trim()
+        if (rawHref.isBlank()) return null
+
+        val href = getProperAnimeLink(rawHref)
+        if (!href.startsWith(mainUrl)) return null
+
+        var card: Element = this
+        if (tagName() == "a") {
+            var parent = parent()
+            repeat(5) {
+                if (parent == null) return@repeat
+                if (parent.selectFirst("img") != null) {
+                    card = parent
+                    return@repeat
+                }
+                parent = parent.parent()
+            }
         }
+
+        val title = card.selectFirst("div.title, h5.animeTitle a, .title, h5, h4, h3")?.text()?.trim()
+            ?: card.selectFirst("img")?.attr("alt")?.trim()?.takeIf { it.isNotBlank() }
+            ?: link.attr("title").trim().takeIf { it.isNotBlank() }
+            ?: link.text().trim().takeIf { it.isNotBlank() }
+            ?: return null
+
+        val posterUrl = fixUrlNull(
+            card.selectFirst("img")?.let { image ->
+                image.attr("data-src").ifBlank {
+                    image.attr("data-original").ifBlank {
+                        image.attr("data-lazy-src").ifBlank {
+                            image.attr("src")
+                        }
+                    }
+                }
+            }
+        )
+
+        val episodeText = card.selectFirst("div.truncateText, div.episodeBlock")?.text() ?: link.text()
+        val episode = Regex("""([0-9]+).?\s?Bölüm""", RegexOption.IGNORE_CASE)
+            .find(episodeText)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
             this.posterUrl = posterUrl
@@ -70,9 +119,9 @@ class Anizm : MainAPI() {
             headers = mapOf("X-Requested-With" to "XMLHttpRequest")
         ).document
 
-        return document.select("div.searchResultItem").mapNotNull {
-            it.toSearchResult()
-        }
+        return document.select("div.searchResultItem, div.posterBlock")
+            .mapNotNull { it.toSearchResult() }
+            .distinctBy { it.url }
     }
 
     override suspend fun load(url: String): LoadResponse {
@@ -105,7 +154,7 @@ class Anizm : MainAPI() {
         app.get(url, referer = "$mainUrl/").document.select("script").find { script ->
             script.data().contains("eval(function(p,a,c,k,e,d)")
         }?.let {
-            val key = getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",")
+            val key = getAndUnpack(it.data()).substringAfter("FirePlayer("").substringBefore("",")
             val referer = "$mainServer/video/$key"
             val link = "$mainServer/player/index.php?data=$key&do=getVideo"
             Log.i("hexated", link)
