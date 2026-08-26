@@ -97,6 +97,11 @@ class Anizm : MainAPI() {
         )
         if (path.isBlank() || path.contains("/") || path in reservedPaths) return null
 
+        // Kategori kartlarında aynı anime için iki bağlantı bulunuyor: "İzle"
+        // ve anime adı. Sadece anime adı bağlantısını kullan.
+        val linkText = link.text().trim()
+        if (linkText.equals("İzle", ignoreCase = true) || linkText.isBlank()) return null
+
         // Anime kartının tamamını bul. Sadece img içeren <a> etiketini
         // kart sanmak başlık olarak "İzle" alınmasına neden oluyordu.
         var card: Element? = link
@@ -113,9 +118,10 @@ class Anizm : MainAPI() {
         val container = card ?: return null
         val image = container.selectFirst("img") ?: return null
 
-        val title = container.selectFirst(
-            "h5.animeTitle a, h5.animeTitle, .animeTitle, .title, h4, h3"
-        )?.text()?.trim()?.takeIf { it.isNotBlank() }
+        val title = linkText.takeIf { it.isNotBlank() }
+            ?: container.selectFirst(
+                "h5.animeTitle a, h5.animeTitle, .animeTitle, .title, h4, h3"
+            )?.text()?.trim()?.takeIf { it.isNotBlank() }
             ?: return null
 
         val posterUrl = fixUrlNull(
