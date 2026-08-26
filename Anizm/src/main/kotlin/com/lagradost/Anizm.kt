@@ -43,7 +43,11 @@ class Anizm : MainAPI() {
         val home = document.select(
             "div#episodesMiddle div.posterBlock, " +
                 "div#episodesMiddle div.searchResultItem, " +
-                "div.anizm_boxContent div.posterBlock"
+                "div#episodesMiddle div.four.wide, " +
+                "div#episodesMiddle div.card, " +
+                "div.anizm_boxContent div.posterBlock, " +
+                "div.anizm_boxContent div.four.wide, " +
+                "div.anizm_boxContent div.card"
         ).mapNotNull { it.toSearchResult() }.distinctBy { it.url }
 
         val hasNext = document.selectFirst(
