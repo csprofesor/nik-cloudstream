@@ -56,8 +56,9 @@ class Anizm : MainAPI() {
         val document = app.get(url).document
 
         val home = if (isCategory) {
-            document.select("div.ui.grid div.four.wide")
+            document.select("a[href]")
                 .mapNotNull { it.toSearchResult() }
+                .distinctBy { it.url }
         } else {
             document.select("div.restrictedWidth div#episodesMiddle")
                 .mapNotNull { it.toSearchResult() }
@@ -75,25 +76,44 @@ class Anizm : MainAPI() {
     }
 
     private fun Element.toSearchResult(): AnimeSearchResponse? {
-        val link = selectFirst("a") ?: return null
+        val link = if (tagName() == "a") this else selectFirst("a") ?: return null
         val href = getProperAnimeLink(link.attr("href"))
-        if (href.isBlank()) return null
 
-        val title = selectFirst("div.title, h5.animeTitle a, h5.animeTitle, h5, .title")?.text()?.trim()
-            ?: link.attr("title").trim().takeIf { it.isNotBlank() }
+        if (href.isBlank() ||
+            href.contains("/kategoriler/") ||
+            href.contains("/anime-izle") ||
+            href.contains("/takvim") ||
+            href.contains("/giris") ||
+            href.contains("/kayit") ||
+            href.contains("/fullViewSearch") ||
+            href.contains("javascript:")
+        ) return null
+
+        var card: Element = link
+        var parent = link.parent()
+        repeat(6) {
+            if (parent == null) return@repeat
+            if (parent.selectFirst("img") != null) {
+                card = parent
+                return@repeat
+            }
+            parent = parent.parent()
+        }
+
+        val image = card.selectFirst("img") ?: return null
+        val title = link.text().trim().takeIf { it.isNotBlank() }
+            ?: card.selectFirst("div.title, h5.animeTitle a, h5.animeTitle, h5, .title")?.text()?.trim()
             ?: return null
 
         val posterUrl = fixUrlNull(
-            selectFirst("img")?.let { img ->
-                img.attr("src").ifBlank {
-                    img.attr("data-src").ifBlank {
-                        img.attr("data-original")
-                    }
+            image.attr("src").ifBlank {
+                image.attr("data-src").ifBlank {
+                    image.attr("data-original").ifBlank { image.attr("data-lazy-src") }
                 }
             }
         )
 
-        val episode = selectFirst("div.truncateText")?.text()?.let {
+        val episode = card.selectFirst("div.truncateText")?.text()?.let {
             Regex("([0-9]+).?\\s?Bölüm").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull()
         }
 
