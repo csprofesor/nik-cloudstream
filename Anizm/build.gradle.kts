@@ -1,8 +1,8 @@
-version = 2
+version = 1
 
 cloudstream {
     language = "tr"
-    authors = listOf("csprofesor")
+    authors = listOf("Hexated")
     status = 1
     tvTypes = listOf(
         "AnimeMovie",
