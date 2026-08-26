@@ -51,7 +51,17 @@ class Anizm : MainAPI() {
                 "div#episodesMiddle div.four.wide, " +
                 "div.anizm_boxContent div.posterBlock, " +
                 "div.anizm_boxContent div.four.wide"
-        ).mapNotNull { it.toSearchResult() }.distinctBy { it.url }
+        ).mapNotNull { it.toSearchResult() }
+            .toMutableList()
+            .apply {
+                if (isEmpty()) {
+                    addAll(
+                        document.select("a[href*='-bolum']")
+                            .mapNotNull { it.toSearchResult() }
+                    )
+                }
+            }
+            .distinctBy { it.url }
 
         val hasNext = document.selectFirst(
             "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
@@ -71,12 +81,26 @@ class Anizm : MainAPI() {
         val href = getProperAnimeLink(link.attr("href"))
         if (href.isBlank()) return null
 
-        val title = selectFirst("div.title, h5.animeTitle a, .title")?.text()?.trim()
+        var card: Element = this
+        if (tagName() == "a") {
+            var parent = parent()
+            repeat(5) {
+                if (parent == null) return@repeat
+                if (parent.selectFirst("img") != null) {
+                    card = parent
+                    return@repeat
+                }
+                parent = parent.parent()
+            }
+        }
+
+        val title = card.selectFirst("div.title, h5.animeTitle a, .title, h5, h4, h3")?.text()?.trim()
+            ?: card.selectFirst("img")?.attr("alt")?.trim()?.takeIf { it.isNotBlank() }
             ?: link.attr("title").trim().takeIf { it.isNotBlank() }
             ?: link.text().trim().takeIf { it.isNotBlank() }
             ?: return null
 
-        val posterUrl = fixUrlNull(selectFirst("img")?.let { image ->
+        val posterUrl = fixUrlNull(card.selectFirst("img")?.let { image ->
             image.attr("data-src").ifBlank {
                 image.attr("data-original").ifBlank { image.attr("src") }
             }
