@@ -43,9 +43,32 @@ class Anizm : MainAPI() {
         }
 
         val document = app.get(url).document
-        val home = document.select("div#episodesMiddle div.posterBlock > a")
-            .mapNotNull { it.toSearchResult() }
-            .distinctBy { it.url }
+
+        val home = if (request.data.contains("/kategoriler/")) {
+            val heading = document.select("h1, h2, h3, h4")
+                .firstOrNull { it.text().contains("Kategorisindeki Animeler", ignoreCase = true) }
+
+            val categoryContainer = generateSequence(heading?.parent()) { it.parent() }
+                .take(8)
+                .firstOrNull { container ->
+                    container.select("a[href]").count { anchor ->
+                        val href = anchor.attr("href").trim()
+                        href.isNotBlank() &&
+                            !href.contains("/kategoriler/") &&
+                            !href.contains("/anime-izle")
+                    } >= 5
+                }
+
+            categoryContainer
+                ?.select("a[href]")
+                ?.mapNotNull { it.toSearchResult() }
+                ?.distinctBy { it.url }
+                .orEmpty()
+        } else {
+            document.select("div#episodesMiddle div.posterBlock > a")
+                .mapNotNull { it.toSearchResult() }
+                .distinctBy { it.url }
+        }
 
         val hasNext = document.selectFirst(
             "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
@@ -69,26 +92,31 @@ class Anizm : MainAPI() {
         val rawHref = link.attr("href").trim()
         if (rawHref.isBlank()) return null
 
-        val href = getProperAnimeLink(rawHref)
+        val absoluteHref = fixUrl(rawHref)
+        val href = getProperAnimeLink(absoluteHref)
         if (!href.startsWith(mainUrl)) return null
+        if (href.contains("/kategoriler/") || href.contains("/anime-izle")) return null
 
         var card: Element = this
         if (tagName() == "a") {
             var parent = parent()
-            repeat(5) {
+            var foundCard = false
+            repeat(4) {
                 if (parent == null) return@repeat
                 if (parent.selectFirst("img") != null) {
                     card = parent
+                    foundCard = true
                     return@repeat
                 }
                 parent = parent.parent()
             }
+            if (!foundCard) return null
         }
 
         val title = card.selectFirst("div.title, h5.animeTitle a, .title, h5, h4, h3")?.text()?.trim()
             ?: card.selectFirst("img")?.attr("alt")?.trim()?.takeIf { it.isNotBlank() }
             ?: link.attr("title").trim().takeIf { it.isNotBlank() }
-            ?: link.text().trim().takeIf { it.isNotBlank() }
+            ?: link.text().trim().takeIf { it.isNotBlank() && !it.equals("İzle", ignoreCase = true) }
             ?: return null
 
         val posterUrl = fixUrlNull(
