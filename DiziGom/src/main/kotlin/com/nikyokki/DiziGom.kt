@@ -60,48 +60,55 @@ class DiziGom : MainAPI() {
         return cleanUrl(match?.groupValues?.getOrNull(1))
     }
 
+    // DDizi'deki çalışan yöntemle aynı mantık: özellikle img-back/img-back-cat
+    // elemanlarını önce dene, sonra tüm lazy-load ve background kaynaklarını tara.
     private fun Element.posterUrl(): String? {
-        val img = selectFirst("img")
+        val images = select("img.img-back, img.img-back-cat, img")
         val attributes = listOf(
-            "data-poster", "data-bg", "data-background", "data-image", "data-img",
-            "data-thumb", "data-thumbnail", "data-cover", "data-url",
-            "data-src", "data-lazy-src", "data-original", "data-wpfc-original-src",
-            "data-lazyload", "data-lazy", "data-image-url", "data-poster-url",
-            "data-srcset", "data-lazy-srcset", "srcset", "src"
+            "data-src", "data-poster", "data-bg", "data-background", "data-image",
+            "data-img", "data-thumb", "data-thumbnail", "data-cover", "data-url",
+            "data-lazy-src", "data-original", "data-wpfc-original-src", "data-lazyload",
+            "data-lazy", "data-image-url", "data-poster-url", "data-srcset",
+            "data-lazy-srcset", "srcset", "src"
         )
 
         val candidates = sequence {
-            for (attribute in attributes) {
-                yield(attr(attribute))
-                if (img != null) yield(img.attr(attribute))
-            }
-            yield(backgroundUrl())
-            if (img != null) {
+            // DDizi'nin çalışan parserındaki kritik selector doğrudan burada.
+            for (img in images) {
+                for (attribute in attributes) yield(img.attr(attribute))
                 yield(img.attr("style"))
                 yield(img.parent()?.attr("style"))
+            }
+            for (element in listOf(this@posterUrl)) {
+                for (attribute in attributes) yield(element.attr(attribute))
+                yield(element.attr("style"))
+                yield(backgroundUrl())
             }
         }
 
         return candidates
-            .flatMap { value ->
-                sequenceOf(value)
-                    .filter { !it.isNullOrBlank() }
-                    .flatMap { raw ->
-                        raw!!.split(",").asSequence().map { it.trim().substringBefore(" ") }
-                    }
+            .filter { it.isNotBlank() }
+            .flatMap { raw ->
+                raw.split(",").asSequence().map { it.trim().substringBefore(" ") }
             }
             .mapNotNull { cleanUrl(it) }
             .firstOrNull { url ->
-                !url.equals("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", true) &&
-                    !url.startsWith("data:image/", true)
+                !url.startsWith("data:image/", true) &&
+                    !url.equals("about:blank", true) &&
+                    !url.contains("placeholder", true) &&
+                    !url.contains("placehold", true)
             }
     }
 
     private fun Element.findCard(): Element {
-        if (hasClass("episode-box") || hasClass("single-item")) return this
+        if (hasClass("episode-box") || hasClass("single-item") ||
+            hasClass("dizi-boxpost") || hasClass("dizi-boxpost-cat")) return this
         return generateSequence(this as Element?) { it.parent() }
             .take(12)
-            .firstOrNull { it.hasClass("episode-box") || it.hasClass("single-item") }
+            .firstOrNull {
+                it.hasClass("episode-box") || it.hasClass("single-item") ||
+                    it.hasClass("dizi-boxpost") || it.hasClass("dizi-boxpost-cat")
+            }
             ?: this
     }
 
@@ -123,8 +130,11 @@ class DiziGom : MainAPI() {
             attr("href")
         ).mapNotNull { cleanUrl(it) }.firstOrNull() ?: return null
 
+        val poster = card.posterUrl()
+        Log.d("DiziGom", "Home item: $title poster=$poster")
+
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            posterUrl = card.posterUrl()
+            posterUrl = poster
         }
     }
 
@@ -133,8 +143,8 @@ class DiziGom : MainAPI() {
         val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
             ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
 
-        val results = (document.select("div.episode-box, div.single-item, a[href*='/diziler/'], a[href*='/dizi/']")
-            .mapNotNull { it.toMainPageResult() })
+        val results = document.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat, a[href*='/diziler/'], a[href*='/dizi/']")
+            .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
 
         Log.d("DiziGom", "${request.name}: page=$page count=${results.size} url=$pageUrl")
@@ -146,7 +156,7 @@ class DiziGom : MainAPI() {
             "$mainUrl/?s=${query.trim().replace(" ", "+")}",
             referer = "$mainUrl/"
         ).document
-        return document.select("div.episode-box, div.single-item, a[href*='/diziler/'], a[href*='/dizi/']")
+        return document.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat, a[href*='/diziler/'], a[href*='/dizi/']")
             .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
     }
@@ -166,7 +176,9 @@ class DiziGom : MainAPI() {
             ?: document.selectFirst("div.seriePoster")?.posterUrl()
             ?: document.selectFirst("div.seriePoster img")?.posterUrl()
             ?: document.selectFirst("[class*='seriePoster']")?.posterUrl()
+            ?: document.selectFirst("div.dizi-boxpost, div.dizi-boxpost-cat")?.posterUrl()
             ?: document.selectFirst("article img, .entry-content img")?.posterUrl()
+            ?: document.selectFirst("img.img-back, img.img-back-cat")?.posterUrl()
             ?: document.selectFirst("img")?.posterUrl()
 
         val description = document.firstText(
@@ -207,6 +219,7 @@ class DiziGom : MainAPI() {
             }.distinctBy { it.data }
             .sortedWith(compareBy({ it.season ?: 0 }, { it.episode ?: 0 }))
 
+        Log.d("DiziGom", "Loaded $title poster=$poster episodes=${episodes.size}")
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
             posterUrl = poster
             this.year = year
