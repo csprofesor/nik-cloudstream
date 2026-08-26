@@ -283,7 +283,8 @@ class Anizm : MainAPI() {
                     )
                 ).parsedSafe<Translators>() ?: return@safeApiCall
 
-                Jsoup.parse(response.data)
+                val providerHtml = response.data ?: return@safeApiCall
+                Jsoup.parse(providerHtml)
                     .select("a.videoPlayerButtons")
                     .forEach { host ->
                         val hostName = host.text().trim()
