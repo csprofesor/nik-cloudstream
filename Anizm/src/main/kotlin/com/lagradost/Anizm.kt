@@ -6,6 +6,7 @@ import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
+import com.lagradost.cloudstream3.LoadResponse.Companion.addImdbId
 import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
@@ -101,7 +102,7 @@ class Anizm : MainAPI() {
             document.select("span.dataValue").joinToString(" ") { it.text() }
         )
 
-        return candidates.mapNotNull {
+        return candidates.filterNotNull().mapNotNull {
             Regex("""tt[0-9]{7,9}""").find(it)?.value
         }.firstOrNull()
     }
