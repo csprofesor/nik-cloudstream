@@ -51,6 +51,7 @@ class DiziGom : MainAPI() {
         ?.replace("\\u0026", "&")
         ?.trim()
         ?.takeIf { it.isNotBlank() }
+        ?.let { if (it.startsWith("//")) "https:$it" else it }
         ?.let { fixUrlNull(it) }
 
     private fun Element.backgroundUrl(): String? {
@@ -61,15 +62,39 @@ class DiziGom : MainAPI() {
 
     private fun Element.posterUrl(): String? {
         val img = selectFirst("img")
-        val candidates = sequenceOf(
-            attr("data-poster"), attr("data-bg"), attr("data-background"), attr("data-image"),
-            img?.attr("data-src"), img?.attr("data-lazy-src"), img?.attr("data-original"),
-            img?.attr("data-image"), img?.attr("src"), backgroundUrl()
+        val attributes = listOf(
+            "data-poster", "data-bg", "data-background", "data-image", "data-img",
+            "data-thumb", "data-thumbnail", "data-cover", "data-url",
+            "data-src", "data-lazy-src", "data-original", "data-wpfc-original-src",
+            "data-lazyload", "data-lazy", "data-image-url", "data-poster-url",
+            "data-srcset", "data-lazy-srcset", "srcset", "src"
         )
+
+        val candidates = sequence {
+            for (attribute in attributes) {
+                yield(attr(attribute))
+                if (img != null) yield(img.attr(attribute))
+            }
+            yield(backgroundUrl())
+            if (img != null) {
+                yield(img.attr("style"))
+                yield(img.parent()?.attr("style"))
+            }
+        }
+
         return candidates
-            .mapNotNull { it?.substringBefore(",")?.trim()?.substringBefore(" ") }
+            .flatMap { value ->
+                sequenceOf(value)
+                    .filter { !it.isNullOrBlank() }
+                    .flatMap { raw ->
+                        raw!!.split(",").asSequence().map { it.trim().substringBefore(" ") }
+                    }
+            }
             .mapNotNull { cleanUrl(it) }
-            .firstOrNull()
+            .firstOrNull { url ->
+                !url.equals("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==", true) &&
+                    !url.startsWith("data:image/", true)
+            }
     }
 
     private fun Element.findCard(): Element {
@@ -137,9 +162,12 @@ class DiziGom : MainAPI() {
         val title = document.firstText("div.serieTitle h1", ".serieTitle h1", "h1.entry-title", "article h1", "h1")
             ?: return null
 
-        val poster = document.selectFirst("div.seriePoster")?.posterUrl()
+        val poster = document.selectFirst("meta[property='og:image']")?.attr("content")?.let { cleanUrl(it) }
+            ?: document.selectFirst("div.seriePoster")?.posterUrl()
             ?: document.selectFirst("div.seriePoster img")?.posterUrl()
-            ?: document.selectFirst("meta[property='og:image']")?.attr("content")?.let { cleanUrl(it) }
+            ?: document.selectFirst("[class*='seriePoster']")?.posterUrl()
+            ?: document.selectFirst("article img, .entry-content img")?.posterUrl()
+            ?: document.selectFirst("img")?.posterUrl()
 
         val description = document.firstText(
             "div.serieDescription p", ".serieDescription p", ".description p", ".entry-content p"
