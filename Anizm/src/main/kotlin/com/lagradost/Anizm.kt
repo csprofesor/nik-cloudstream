@@ -32,6 +32,7 @@ class Anizm : MainAPI() {
         "$mainUrl/kategoriler/4" to "Dram",
         "$mainUrl/kategoriler/2" to "Aksiyon",
         "$mainUrl/kategoriler/8" to "Bilim-Kurgu",
+        "$mainUrl/kategoriler/20" to "Korku",
     )
 
     override suspend fun getMainPage(
