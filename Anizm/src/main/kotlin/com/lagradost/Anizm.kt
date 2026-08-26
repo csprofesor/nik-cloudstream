@@ -265,14 +265,38 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let { html ->
+                    // Fansec'teki bütün sağlayıcı butonlarını ele al.
+                    // Anizm burada Aincrad, Sisternn varyantları, Odnoklassniki,
+                    // GDrive, Abyss, Uoload, BYSE, Vidmoly, HDvid, Voe vb.
+                    // farklı hostları aynı liste içinde döndürebiliyor.
                     Jsoup.parse(html)
-                        .select("a.videoPlayerButtons, a[video], a[href][video]")
+                        .select(
+                            "a.videoPlayerButtons, a[video], a[data-video], " +
+                                "a[href][video], a[data-url], a[data-link], a[url]"
+                        )
+                        .distinctBy { anchor ->
+                            anchor.attr("video").ifBlank {
+                                anchor.attr("data-video").ifBlank {
+                                    anchor.attr("data-url").ifBlank {
+                                        anchor.attr("data-link").ifBlank {
+                                            anchor.attr("url").ifBlank { anchor.attr("href") }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         .forEach { video ->
                             val rawVideoUrl = video.attr("video").ifBlank {
-                                video.attr("data-video").ifBlank { video.attr("href") }
+                                video.attr("data-video").ifBlank {
+                                    video.attr("data-url").ifBlank {
+                                        video.attr("data-link").ifBlank {
+                                            video.attr("url").ifBlank { video.attr("href") }
+                                        }
+                                    }
+                                }
                             }.trim()
 
-                            if (rawVideoUrl.isBlank()) return@forEach
+                            if (rawVideoUrl.isBlank() || rawVideoUrl == "#") return@forEach
 
                             val playerUrl = fixUrl(
                                 rawVideoUrl.replace("/video/", "/player/")
