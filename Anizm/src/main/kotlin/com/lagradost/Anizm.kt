@@ -196,21 +196,26 @@ class Anizm : MainAPI() {
         }
     }
 
-    private suspend fun invokeLokalSource(
+    private suspend fun invokeAincradSource(
         url: String,
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
-        app.get(url, referer = "$mainUrl/").document.select("script").find { script ->
-            script.data().contains("eval(function(p,a,c,k,e,d)")
-        }?.let {
-            val key = getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",")
-            val referer = "$mainServer/video/$key"
-            val link = "$mainServer/player/index.php?data=$key&do=getVideo"
-            Log.i("hexated", link)
+        val hash = Regex("""/(?:video|player)/([^/?#]+)""")
+            .find(url)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?: url.substringAfterLast("/").substringBefore("?").substringBefore("#")
+
+        if (hash.isBlank()) return
+
+        val referer = if (url.contains("/video/")) url else "$mainServer/video/$hash"
+        val link = "$mainServer/player/index.php?data=$hash&do=getVideo"
+
+        safeApiCall {
             app.post(
                 link,
-                data = mapOf("hash" to key, "r" to "$mainUrl/"),
+                data = mapOf("hash" to hash, "r" to "$mainUrl/"),
                 referer = referer,
                 headers = mapOf(
                     "Accept" to "*/*",
@@ -218,12 +223,14 @@ class Anizm : MainAPI() {
                     "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                     "X-Requested-With" to "XMLHttpRequest"
                 )
-            ).parsedSafe<Source>()?.videoSource?.let { m3uLink ->
-                M3u8Helper.generateM3u8(
-                    "${this.name} ($translator)",
-                    m3uLink,
-                    referer
-                ).forEach(sourceCallback)
+            ).parsedSafe<Source>()?.let { source ->
+                (source.securedLink ?: source.videoSource)?.let { m3uLink ->
+                    M3u8Helper.generateM3u8(
+                        "${this.name} ($translator)",
+                        m3uLink,
+                        referer
+                    ).forEach(sourceCallback)
+                }
             }
         }
     }
@@ -235,51 +242,75 @@ class Anizm : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        document.select("div.episodeTranslators div#fansec").map {
-            Pair(it.select("a").attr("translator"), it.select("div.title").text())
-        }.forEach { (url, translator) ->
+
+        val translators = document.select(
+            "div#fansec > a, div.episodeTranslators div#fansec > a"
+        ).mapNotNull { anchor ->
+            val translatorUrl = anchor.attr("translator").trim()
+            if (translatorUrl.isBlank()) return@mapNotNull null
+
+            val translatorName = anchor.text().trim()
+                .ifBlank { anchor.selectFirst("div.title")?.text()?.trim().orEmpty() }
+
+            Pair(fixUrl(translatorUrl), translatorName.ifBlank { "Anizm" })
+        }.distinctBy { it.first }
+
+        translators.forEach { (translatorUrl, translator) ->
             safeApiCall {
                 app.get(
-                    url,
+                    translatorUrl,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").forEach { video ->
-                        app.get(
-                            video.attr("video"),
-                            referer = data,
-                            headers = mapOf(
-                                "Accept" to "application/json, text/javascript, */*; q=0.01",
-                                "X-Requested-With" to "XMLHttpRequest"
+                ).parsedSafe<Translators>()?.data?.let { html ->
+                    Jsoup.parse(html)
+                        .select("a.videoPlayerButtons, a[video], a[href][video]")
+                        .forEach { video ->
+                            val rawVideoUrl = video.attr("video").ifBlank {
+                                video.attr("data-video").ifBlank { video.attr("href") }
+                            }.trim()
+
+                            if (rawVideoUrl.isBlank()) return@forEach
+
+                            val playerUrl = fixUrl(
+                                rawVideoUrl.replace("/video/", "/player/")
                             )
-                        ).parsedSafe<Videos>()?.player?.let { iframe ->
-                            Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
-                                when {
-                                    link.startsWith(mainServer) -> {
-                                        invokeLokalSource(link, translator, callback)
-                                    }
-                                    else -> {
-                                        loadExtractor(
-                                            fixUrl(link),
-                                            "$mainUrl/",
-                                            subtitleCallback,
-                                            callback
-                                        )
-                                    }
+
+                            safeApiCall {
+                                val redirect = app.get(
+                                    playerUrl,
+                                    referer = data,
+                                    allowRedirects = false
+                                ).headers["location"]?.let(::fixUrl)
+
+                                val targetUrl = redirect ?: playerUrl
+
+                                if (
+                                    targetUrl.contains("$mainServer/video/") ||
+                                    targetUrl.contains("$mainServer/player/")
+                                ) {
+                                    invokeAincradSource(targetUrl, translator, callback)
+                                } else {
+                                    loadExtractor(
+                                        targetUrl,
+                                        playerUrl,
+                                        subtitleCallback,
+                                        callback
+                                    )
                                 }
                             }
                         }
-                    }
                 }
             }
         }
-        return true
+
+        return translators.isNotEmpty()
     }
 
     data class Source(
+        @JsonProperty("securedLink") val securedLink: String?,
         @JsonProperty("videoSource") val videoSource: String?,
     )
 
