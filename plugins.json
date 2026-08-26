@@ -204,9 +204,9 @@
         "fileHash": "sha256-a64febe1430e7d417f57244e311b38a0a87d580114e3ea2d70bf4b2d2622197e"
     },
     {
-        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=12",
+        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=13",
         "status": 1,
-        "version": 12,
+        "version": 13,
         "name": "DiziGom",
         "internalName": "DiziGom",
         "authors": [
@@ -221,7 +221,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-d28584be00bdbacd9719e647e0bc48bfade9ec6405f40d4c2b4aac9b0082dd08"
+        "fileHash": "sha256-b6faefb9743b266d5b86fbbed323eae02e14746e3a47e3eddc1bbcd4a398ca68"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
