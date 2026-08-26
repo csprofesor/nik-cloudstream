@@ -25,44 +25,25 @@ class Anizm : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler",
-        "$mainUrl/kategoriler/1?page=" to "Macera",
-        "$mainUrl/kategoriler/2?page=" to "Aksiyon",
-        "$mainUrl/kategoriler/3?page=" to "Komedi",
-        "$mainUrl/kategoriler/4?page=" to "Dram",
-        "$mainUrl/kategoriler/5?page=" to "Romantizm",
-        "$mainUrl/kategoriler/8?page=" to "Bilim-Kurgu",
-        "$mainUrl/kategoriler/13?page=" to "Fantastik",
-        "$mainUrl/kategoriler/20?page=" to "Korku",
-        "$mainUrl/kategoriler/22?page=" to "Filmler",
-        "$mainUrl/kategoriler/26?page=" to "Okul",
-        "$mainUrl/kategoriler/34?page=" to "Shounen",
+        "$mainUrl/kategoriler/1" to Macera",
+        "$mainUrl/kategoriler/2" to Aksiyon",
+        "$mainUrl/kategoriler/3" to Komedi",
+        "$mainUrl/kategoriler/4" to Dram",
+        "$mainUrl/kategoriler/5" to Romantizm",
+        "$mainUrl/kategoriler/8" to Bilim-Kurgu",
+        "$mainUrl/kategoriler/13" to Fantastik",
+        "$mainUrl/kategoriler/20" to Korku",
+        "$mainUrl/kategoriler/22" to Filmler",
+        "$mainUrl/kategoriler/26" to Okul",
+        "$mainUrl/kategoriler/34" to Shounen",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(request.data + page).document
-        val home = document.select(
-            "div.restrictedWidth div#episodesMiddle, " +
-                "div.restrictedWidth div.posterBlock, " +
-                "div.restrictedWidth div.searchResultItem, " +
-                "div.restrictedWidth div.ui.grid > div.four.wide, " +
-                "div.restrictedWidth div.ui.grid > div.column, " +
-                "div#episodesMiddle div.posterBlock, " +
-                "div#episodesMiddle div.searchResultItem, " +
-                "div#episodesMiddle div.four.wide, " +
-                "div.anizm_boxContent div.posterBlock, " +
-                "div.anizm_boxContent div.four.wide"
-        ).mapNotNull { it.toSearchResult() }
-            .toMutableList()
-            .apply {
-                if (isEmpty()) {
-                    addAll(
-                        document.select("a[href*='-bolum']")
-                            .mapNotNull { it.toSearchResult() }
-                    )
-                }
-            }
+        val url = if (page <= 1) request.data else request.data + "?page=" + page
+        val document = app.get(url).document
+        val home = document.select("div.restrictedWidth div#episodesMiddle")
+            .mapNotNull { it.toSearchResult() }
             .distinctBy { it.url }
-
         val hasNext = document.selectFirst(
             "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
                 "div.nextBeforeButtons a.right:not(.disabled), " +
@@ -100,11 +81,15 @@ class Anizm : MainAPI() {
             ?: link.text().trim().takeIf { it.isNotBlank() }
             ?: return null
 
-        val posterUrl = fixUrlNull(card.selectFirst("img")?.let { image ->
-            image.attr("data-src").ifBlank {
-                image.attr("data-original").ifBlank { image.attr("src") }
+        val posterUrl = fixUrlNull(
+            card.selectFirst("img")?.let { image ->
+                image.attr("data-src").ifBlank {
+                    image.attr("data-original").ifBlank {
+                        image.attr("data-lazy-src").ifBlank { image.attr("src") }
+                    }
+                }
             }
-        })
+        )
 
         val episodeText = selectFirst("div.truncateText, div.episodeBlock")?.text() ?: link.text()
         val episode = Regex("""([0-9]+)\.?\s?Bölüm""", RegexOption.IGNORE_CASE)
