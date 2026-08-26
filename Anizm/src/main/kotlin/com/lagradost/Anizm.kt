@@ -43,7 +43,7 @@ class Anizm : MainAPI() {
         }
 
         val document = app.get(url).document
-        val home = document.select("div.restrictedWidth div#episodesMiddle")
+        val home = document.select("div#episodesMiddle div.posterBlock > a")
             .mapNotNull { it.toSearchResult() }
             .distinctBy { it.url }
 
@@ -133,9 +133,7 @@ class Anizm : MainAPI() {
             ?: url.substringAfterLast("/").replace("-", " ").trim()
 
         val poster = fixUrlNull(
-            document.selectFirst(
-                "div.infoPosterImg img, .infoPosterImg img, .poster img, img"
-            )?.let { img ->
+            document.selectFirst("div.infoPosterImg > img")?.let { img ->
                 img.attr("src").ifBlank {
                     img.attr("data-src").ifBlank {
                         img.attr("data-original").ifBlank { img.attr("data-lazy-src") }
@@ -144,7 +142,7 @@ class Anizm : MainAPI() {
             }
         )
 
-        val episodes = document.select("a[href]").mapNotNull { a ->
+        val episodes = document.select("div.episodeListTabContent div > a").mapNotNull { a ->
             val name = a.text().trim()
             val href = a.attr("href")
             if (name.contains("Bölüm", ignoreCase = true) && href.isNotBlank()) {
