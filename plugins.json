@@ -42,7 +42,7 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3",
         "status": 1,
-        "version": 1,
+        "version": 2,
         "name": "Anizm",
         "internalName": "Anizm",
         "authors": [
@@ -58,7 +58,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=anizm.net&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-404dbe9eed1eaa25f64a4d2af80bfe12c8589c8a6a3b798341aa113e945612ce"
+        "fileHash": "sha256-c3bbd674192cf0fd3fe847abf122288a74f4287caf6c436f114e8a5a9a64e812"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AsyaAnimeleri.cs3",
@@ -204,7 +204,7 @@
         "fileHash": "sha256-a64febe1430e7d417f57244e311b38a0a87d580114e3ea2d70bf4b2d2622197e"
     },
     {
-        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=11",
+        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=12",
         "status": 1,
         "version": 12,
         "name": "DiziGom",
@@ -213,7 +213,7 @@
             "csprofesor"
         ],
         "description": "T\u00fcrk\u00e7e altyaz\u0131l\u0131 yabanc\u0131 dizi izle, T\u00fcm yabanc\u0131, kore, netflix dizilerin yeni ve eski sezonlar\u0131n\u0131 orijinal dilinde dizigom1 alt yaz\u0131l\u0131 film izleyebilir, sadece t\u00fcrk\u00e7e altyaz\u0131l\u0131 en iyi yabanc\u0131 diziler ve filmler hakk\u0131nda yorum yapabilirsiniz.",
-        "fileSize": 24123,
+        "fileSize": 23873,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -221,7 +221,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-4602d9ef502bf5c67961c9de953fa65c85e47cbc13d7d363fc440c100a699399"
+        "fileHash": "sha256-d28584be00bdbacd9719e647e0bc48bfade9ec6405f40d4c2b4aac9b0082dd08"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
