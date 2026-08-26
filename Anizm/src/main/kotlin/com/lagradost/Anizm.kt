@@ -29,41 +29,16 @@ class Anizm : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler",
-        "$mainUrl/kategoriler/1" to "Macera",
-        "$mainUrl/kategoriler/2" to "Aksiyon",
-        "$mainUrl/kategoriler/3" to "Komedi",
-        "$mainUrl/kategoriler/4" to "Dram",
-        "$mainUrl/kategoriler/5" to "Romantizm",
-        "$mainUrl/kategoriler/8" to "Bilim-Kurgu",
-        "$mainUrl/kategoriler/13" to "Fantastik",
-        "$mainUrl/kategoriler/20" to "Korku",
-        "$mainUrl/kategoriler/22" to "Filmler",
-        "$mainUrl/kategoriler/26" to "Okul",
-        "$mainUrl/kategoriler/34" to "Shounen",
     )
 
     override suspend fun getMainPage(
         page: Int,
         request: MainPageRequest
     ): HomePageResponse {
-        val isCategory = request.data.contains("/kategoriler/")
-        val url = if (isCategory) {
-            if (page <= 1) request.data else request.data + "?page=" + page
-        } else {
-            request.data + page
+        val document = app.get(request.data + page).document
+        val home = document.select("div.restrictedWidth div#episodesMiddle").mapNotNull {
+            it.toSearchResult()
         }
-
-        val document = app.get(url).document
-
-        val home = if (isCategory) {
-            document.select("a[href]")
-                .mapNotNull { it.toSearchResult() }
-                .distinctBy { it.url }
-        } else {
-            document.select("div.restrictedWidth div#episodesMiddle")
-                .mapNotNull { it.toSearchResult() }
-        }
-
         return newHomePageResponse(request.name, home)
     }
 
@@ -76,64 +51,11 @@ class Anizm : MainAPI() {
     }
 
     private fun Element.toSearchResult(): AnimeSearchResponse? {
-        val link = if (tagName() == "a") this else selectFirst("a") ?: return null
-        val href = getProperAnimeLink(link.attr("href"))
-
-        if (href.isBlank() ||
-            href.contains("/kategoriler/") ||
-            href.contains("/anime-izle") ||
-            href.contains("/takvim") ||
-            href.contains("/giris") ||
-            href.contains("/kayit") ||
-            href.contains("/fullViewSearch") ||
-            href.contains("javascript:")
-        ) return null
-
-        val path = href.removePrefix(mainUrl).trim('/')
-        val reservedPaths = setOf(
-            "kayit-ol", "kayit", "kategoriler", "sasirt-beni", "tavsiye-robotu",
-            "fansublar", "manga", "anime-haber", "discord", "izle", "takvim",
-            "giris", "fullViewSearch", "iletisim", "hakkimizda", "sss"
-        )
-        if (path.isBlank() || path.contains("/") || path in reservedPaths) return null
-
-        // Kategori kartlarında aynı anime için iki bağlantı bulunuyor: "İzle"
-        // ve anime adı. Sadece anime adı bağlantısını kullan.
-        val linkText = link.text().trim()
-        if (linkText.equals("İzle", ignoreCase = true) || linkText.isBlank()) return null
-
-        // Anime kartının tamamını bul. Sadece img içeren <a> etiketini
-        // kart sanmak başlık olarak "İzle" alınmasına neden oluyordu.
-        var card: Element? = link
-        repeat(8) {
-            val current = card ?: return@repeat
-            val hasImage = current.selectFirst("img") != null
-            val hasTitle = current.selectFirst(
-                "h5.animeTitle a, h5.animeTitle, .animeTitle, .title, h4, h3"
-            ) != null
-            if (hasImage && hasTitle) return@repeat
-            card = current.parent()
-        }
-
-        val container = card ?: return null
-        val image = container.selectFirst("img") ?: return null
-
-        val title = linkText.takeIf { it.isNotBlank() }
-            ?: container.selectFirst(
-                "h5.animeTitle a, h5.animeTitle, .animeTitle, .title, h4, h3"
-            )?.text()?.trim()?.takeIf { it.isNotBlank() }
-            ?: return null
-
-        val posterUrl = fixUrlNull(
-            image.attr("src").ifBlank {
-                image.attr("data-src").ifBlank {
-                    image.attr("data-original").ifBlank { image.attr("data-lazy-src") }
-                }
-            }
-        )
-
-        val episode = container.selectFirst("div.truncateText")?.text()?.let {
-            Regex("([0-9]+).?\\s?Bölüm").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        val href = getProperAnimeLink(this.selectFirst("a")!!.attr("href"))
+        val title = this.selectFirst("div.title, h5.animeTitle a")?.text() ?: return null
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
+        val episode = this.selectFirst("div.truncateText")?.text()?.let {
+            Regex("([0-9]+).\\s?Bölüm").find(it)?.groupValues?.getOrNull(1)?.toIntOrNull()
         }
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
@@ -156,39 +78,21 @@ class Anizm : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
 
-        val title = document.selectFirst(
-            "h1, h2.anizm_pageTitle a, h2.anizm_pageTitle, .animeTitle, .title"
-        )?.text()?.trim().takeIf { !it.isNullOrBlank() }
-            ?: url.substringAfterLast("/").replace("-", " ").trim()
-
-        val poster = fixUrlNull(
-            document.selectFirst(
-                "div.infoPosterImg img, .infoPosterImg img, .poster img, img"
-            )?.let { img ->
-                img.attr("src").ifBlank {
-                    img.attr("data-src").ifBlank {
-                        img.attr("data-original").ifBlank { img.attr("data-lazy-src") }
-                    }
-                }
-            }
-        )
-
-        val episodes = document.select("a[href]").mapNotNull { a ->
-            val name = a.text().trim()
-            val href = a.attr("href")
-            if (name.contains("Bölüm", ignoreCase = true) && href.isNotBlank()) {
-                newEpisode(fixUrl(href)) { this.name = name }
-            } else null
-        }.distinctBy { it.name }
-
-        val type = if (episodes.isEmpty()) TvType.Movie else TvType.Anime
-        val trailer = document.selectFirst("iframe")?.attr("src")
-
+        val title = document.selectFirst("h2.anizm_pageTitle a")!!.text().trim()
+        val type =
+            if (document.select("div.ui.grid div.four.wide").size == 1) TvType.Movie else TvType.Anime
+        val trailer = document.select("div.yt-hd-thumbnail-inner-container iframe").attr("src")
+        val episodes = document.select("div.ui.grid div.four.wide").map {
+            val name = it.select("div.episodeBlock").text()
+            val link = fixUrl(it.selectFirst("a")?.attr("href").toString())
+            Episode(link, name)
+        }
         return newAnimeLoadResponse(title, url, type) {
-            posterUrl = poster
+            posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img")?.attr("src"))
+            this.year = document.select("div.infoSta ul li:first-child").text().trim().toIntOrNull()
             addEpisodes(DubStatus.Subbed, episodes)
-            plot = document.selectFirst("div.infoDesc, .infoDesc, .description")?.text()?.trim()
-            this.tags = document.select("span.dataValue span.ui.label, .ui.label").map { it.text() }
+            plot = document.select("div.infoDesc").text().trim()
+            this.tags = document.select("span.dataValue span.ui.label").map { it.text() }
             addTrailer(trailer)
         }
     }
@@ -234,7 +138,7 @@ class Anizm : MainAPI() {
         val document = app.get(data).document
         document.select("div.episodeTranslators div#fansec").map {
             Pair(it.select("a").attr("translator"), it.select("div.title").text())
-        }.amap { (url, translator) ->
+        }.apmap { (url, translator) ->
             safeApiCall {
                 app.get(
                     url,
@@ -244,7 +148,7 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").amap { video ->
+                    Jsoup.parse(it).select("a").apmap { video ->
                         app.get(
                             video.attr("video"),
                             referer = data,
