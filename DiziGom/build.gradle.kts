@@ -19,3 +19,4 @@ cloudstream {
 
 // Fresh build: posters + PilayerPlay stream resolver.
 // Build compatibility fix: nullable poster attributes are normalized in CI.
+// Trigger rebuild after repository cache-version correction.
