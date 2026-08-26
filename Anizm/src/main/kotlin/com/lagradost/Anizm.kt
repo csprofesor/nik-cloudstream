@@ -137,21 +137,39 @@ class Anizm : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
 
-        val title = document.selectFirst("h2.anizm_pageTitle a")!!.text().trim()
-        val type =
-            if (document.select("div.ui.grid div.four.wide").size == 1) TvType.Movie else TvType.Anime
-        val trailer = document.select("div.yt-hd-thumbnail-inner-container iframe").attr("src")
-        val episodes = document.select("div.ui.grid div.four.wide").map {
-            val name = it.select("div.episodeBlock").text()
-            val link = fixUrl(it.selectFirst("a")?.attr("href").toString())
-            newEpisode(link) { this.name = name }
-        }
+        val title = document.selectFirst(
+            "h1, h2.anizm_pageTitle a, h2.anizm_pageTitle, .animeTitle, .title"
+        )?.text()?.trim().takeIf { !it.isNullOrBlank() }
+            ?: url.substringAfterLast("/").replace("-", " ").trim()
+
+        val poster = fixUrlNull(
+            document.selectFirst(
+                "div.infoPosterImg img, .infoPosterImg img, .poster img, img"
+            )?.let { img ->
+                img.attr("src").ifBlank {
+                    img.attr("data-src").ifBlank {
+                        img.attr("data-original").ifBlank { img.attr("data-lazy-src") }
+                    }
+                }
+            }
+        )
+
+        val episodes = document.select("a[href]").mapNotNull { a ->
+            val name = a.text().trim()
+            val href = a.attr("href")
+            if (name.contains("Bölüm", ignoreCase = true) && href.isNotBlank()) {
+                newEpisode(fixUrl(href)) { this.name = name }
+            } else null
+        }.distinctBy { it.url }
+
+        val type = if (episodes.isEmpty()) TvType.Movie else TvType.Anime
+        val trailer = document.selectFirst("iframe")?.attr("src")
+
         return newAnimeLoadResponse(title, url, type) {
-            posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img")?.attr("src"))
-            this.year = document.select("div.infoSta ul li:first-child").text().trim().toIntOrNull()
+            posterUrl = poster
             addEpisodes(DubStatus.Subbed, episodes)
-            plot = document.select("div.infoDesc").text().trim()
-            this.tags = document.select("span.dataValue span.ui.label").map { it.text() }
+            plot = document.selectFirst("div.infoDesc, .infoDesc, .description")?.text()?.trim()
+            this.tags = document.select("span.dataValue span.ui.label, .ui.label").map { it.text() }
             addTrailer(trailer)
         }
     }
