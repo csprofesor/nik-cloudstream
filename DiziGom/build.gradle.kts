@@ -1,5 +1,7 @@
 version = 13
 
+// DiziGom v13 build
+
 cloudstream {
     authors = listOf("csprofesor")
     language    = "tr"
