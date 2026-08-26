@@ -1,0 +1,16 @@
+[
+  {
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3",
+    "status": 1,
+    "version": 1,
+    "name": "Anizm",
+    "internalName": "Anizm",
+    "authors": ["csprofesor"],
+    "language": "tr",
+    "tvTypes": ["AnimeMovie", "Anime", "OVA"],
+    "iconUrl": "https://www.google.com/s2/favicons?domain=anizm.net&sz=%size%",
+    "apiVersion": 1,
+    "fileSize": 18070,
+    "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream"
+  }
+]
