@@ -78,7 +78,7 @@ jobs:
           shopt -s globstar
           ./gradlew make makePluginsJson --stacktrace
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=36"#' build/plugins.json
-          sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=11"#' build/plugins.json
+          sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=12"#' build/plugins.json
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84"#' build/plugins.json
           cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
           cp build/plugins.json $GITHUB_WORKSPACE/builds
