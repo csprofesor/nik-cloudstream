@@ -196,45 +196,21 @@ class Anizm : MainAPI() {
         }
     }
 
-    private suspend fun resolveProvider(
-        url: String,
-        translator: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ) {
-        val target = fixUrl(url)
-        when {
-            target.contains("anizmplayer.com") -> invokeAincradSource(target, translator, callback)
-            target.contains("drive.google") -> loadExtractor(
-                "https://gdriveplayer.to/embed2.php?link=$target",
-                target,
-                subtitleCallback,
-                callback
-            )
-            else -> loadExtractor(target, target, subtitleCallback, callback)
-        }
-    }
-
-    private suspend fun invokeAincradSource(
+    private suspend fun invokeLokalSource(
         url: String,
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
-        val hash = Regex("""/(?:video|player)/([^/?#]+)""")
-            .find(url)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?: url.substringAfterLast("/").substringBefore("?").substringBefore("#")
+        app.get(url, referer = "$mainUrl/").document.select("script").find { script ->
+            script.data().contains("eval(function(p,a,c,k,e,d)")
+        }?.let {
+            val key = getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",")
+            val referer = "$mainServer/video/$key"
+            val link = "$mainServer/player/index.php?data=$key&do=getVideo"
 
-        if (hash.isBlank()) return
-
-        val referer = if (url.contains("/video/")) url else "$mainServer/video/$hash"
-        val link = "$mainServer/player/index.php?data=$hash&do=getVideo"
-
-        safeApiCall {
             app.post(
                 link,
-                data = mapOf("hash" to hash, "r" to "$mainUrl/"),
+                data = mapOf("hash" to key, "r" to "$mainUrl/"),
                 referer = referer,
                 headers = mapOf(
                     "Accept" to "*/*",
@@ -242,14 +218,12 @@ class Anizm : MainAPI() {
                     "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                     "X-Requested-With" to "XMLHttpRequest"
                 )
-            ).parsedSafe<Source>()?.let { source ->
-                (source.securedLink ?: source.videoSource)?.let { m3uLink ->
-                    M3u8Helper.generateM3u8(
-                        "${this.name} ($translator)",
-                        m3uLink,
-                        referer
-                    ).forEach(sourceCallback)
-                }
+            ).parsedSafe<Source>()?.videoSource?.let { m3uLink ->
+                M3u8Helper.generateM3u8(
+                    "${this.name} ($translator)",
+                    m3uLink,
+                    referer
+                ).forEach(sourceCallback)
             }
         }
     }
@@ -262,53 +236,62 @@ class Anizm : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        val translators = document.select("div.episodeTranslators div#fansec a, div#fansec > a")
-            .mapNotNull { anchor ->
-                val translatorUrl = anchor.attr("translator").trim()
-                if (translatorUrl.isBlank()) return@mapNotNull null
-                val translatorName = anchor.text().trim().ifBlank { "Anizm" }
-                Pair(fixUrl(translatorUrl), translatorName)
-            }.distinctBy { it.first }
+        document.select("div.episodeTranslators div#fansec").apmap { translatorBlock ->
+            val translatorUrl = translatorBlock.selectFirst("a")?.attr("translator").orEmpty()
+            val translator = translatorBlock.selectFirst("div.title")?.text()?.trim().orEmpty()
+            if (translatorUrl.isBlank()) return@apmap
 
-        var found = false
-
-        translators.forEach { (translatorUrl, translator) ->
             safeApiCall {
-                val response = app.get(
-                    translatorUrl,
+                app.get(
+                    fixUrl(translatorUrl),
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>() ?: return@safeApiCall
+                ).parsedSafe<Translators>()?.data?.let { html ->
+                    Jsoup.parse(html).select("a").apmap { video ->
+                        val videoUrl = video.attr("video").trim()
+                        if (videoUrl.isBlank()) return@apmap
 
-                val providerHtml = response.data ?: return@safeApiCall
-                Jsoup.parse(providerHtml)
-                    .select("a.videoPlayerButtons")
-                    .forEach { host ->
-                        val hostName = host.text().trim()
-                        val raw = host.attr("video").trim()
-                        if (raw.isBlank()) return@forEach
-
-                        val playerUrl = fixUrl(raw.replace("/video/", "/player/"))
                         safeApiCall {
-                            val redirect = app.get(
-                                playerUrl,
+                            app.get(
+                                fixUrl(videoUrl),
                                 referer = data,
-                                allowRedirects = false
-                            ).headers["location"]?.let(::fixUrl)
+                                headers = mapOf(
+                                    "Accept" to "application/json, text/javascript, */*; q=0.01",
+                                    "X-Requested-With" to "XMLHttpRequest"
+                                )
+                            ).parsedSafe<Videos>()?.player?.let { playerHtml ->
+                                val link = Jsoup.parse(playerHtml)
+                                    .selectFirst("iframe")
+                                    ?.attr("src")
+                                    ?.trim()
+                                    .orEmpty()
 
-                            if (redirect != null) {
-                                found = true
-                                resolveProvider(redirect, "$translator - $hostName", subtitleCallback, callback)
+                                if (link.isBlank()) return@let
+
+                                when {
+                                    link.startsWith(mainServer) -> {
+                                        invokeLokalSource(link, translator, callback)
+                                    }
+                                    else -> {
+                                        loadExtractor(
+                                            fixUrl(link),
+                                            "$mainUrl/",
+                                            subtitleCallback,
+                                            callback
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
+                }
             }
         }
 
-        return found
+        return true
     }
 
     data class Source(
