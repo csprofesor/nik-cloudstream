@@ -59,7 +59,9 @@ class Anizm : MainAPI() {
         val type = if (document.select("div.ui.grid div.four.wide").size == 1) TvType.Movie else TvType.Anime
         val trailer = document.select("div.yt-hd-thumbnail-inner-container iframe").attr("src")
         val episodes = document.select("div.ui.grid div.four.wide").map {
-            Episode(fixUrl(it.selectFirst("a")?.attr("href").toString()), it.select("div.episodeBlock").text())
+            newEpisode(fixUrl(it.selectFirst("a")?.attr("href").toString())) {
+                name = it.select("div.episodeBlock").text()
+            }
         }
         return newAnimeLoadResponse(title, url, type) {
             posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img")?.attr("src"))
@@ -91,18 +93,20 @@ class Anizm : MainAPI() {
         val document = app.get(data).document
         document.select("div.episodeTranslators div#fansec").map {
             Pair(it.select("a").attr("translator"), it.select("div.title").text())
-        }.apmap { (url, translator) -> safeApiCall {
-            app.get(url, referer = data, headers = mapOf("Accept" to "application/json, text/javascript, */*; q=0.01", "X-Requested-With" to "XMLHttpRequest"))
-                .parsedSafe<Translators>()?.data?.let { html -> Jsoup.parse(html).select("a").apmap { video ->
-                    app.get(video.attr("video"), referer = data, headers = mapOf("Accept" to "application/json, text/javascript, */*; q=0.01", "X-Requested-With" to "XMLHttpRequest"))
-                        .parsedSafe<Videos>()?.player?.let { iframe ->
-                            Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
-                                if (link.startsWith(mainServer)) invokeLokalSource(link, translator, callback)
-                                else loadExtractor(fixUrl(link), "$mainUrl/", subtitleCallback, callback)
+        }.forEach { (url, translator) ->
+            safeApiCall {
+                app.get(url, referer = data, headers = mapOf("Accept" to "application/json, text/javascript, */*; q=0.01", "X-Requested-With" to "XMLHttpRequest"))
+                    .parsedSafe<Translators>()?.data?.let { html -> Jsoup.parse(html).select("a").forEach { video ->
+                        app.get(video.attr("video"), referer = data, headers = mapOf("Accept" to "application/json, text/javascript, */*; q=0.01", "X-Requested-With" to "XMLHttpRequest"))
+                            .parsedSafe<Videos>()?.player?.let { iframe ->
+                                Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
+                                    if (link.startsWith(mainServer)) invokeLokalSource(link, translator, callback)
+                                    else loadExtractor(fixUrl(link), "$mainUrl/", subtitleCallback, callback)
+                                }
                             }
-                        }
-                } }
-        } }
+                    } }
+            }
+        }
         return true
     }
 
