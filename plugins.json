@@ -185,14 +185,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=11",
         "status": 1,
-        "version": 11,
+        "version": 12,
         "name": "DiziGom",
         "internalName": "DiziGom",
         "authors": [
             "csprofesor"
         ],
         "description": "T\u00fcrk\u00e7e altyaz\u0131l\u0131 yabanc\u0131 dizi izle, T\u00fcm yabanc\u0131, kore, netflix dizilerin yeni ve eski sezonlar\u0131n\u0131 orijinal dilinde dizigom1 alt yaz\u0131l\u0131 film izleyebilir, sadece t\u00fcrk\u00e7e altyaz\u0131l\u0131 en iyi yabanc\u0131 diziler ve filmler hakk\u0131nda yorum yapabilirsiniz.",
-        "fileSize": 23682,
+        "fileSize": 23683,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -200,7 +200,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-a874089062fd82dfb96be7a51f09c8968bb15d2bed87662337ab83fb7e63ad98"
+        "fileHash": "sha256-60d8a86a9ac181d2736323918e963c48a83a45e7076d70d603c6661c8e166046"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
@@ -307,14 +307,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84",
         "status": 1,
-        "version": 84,
+        "version": 83,
         "name": "DiziPalOriginal",
         "internalName": "DiziPalOriginal",
         "authors": [
             "csprofesor"
         ],
         "description": "en yeni dizileri g\u00fcvenli ve h\u0131zl\u0131 \u015fekilde sunar.",
-        "fileSize": 25013,
+        "fileSize": 25022,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -323,7 +323,7 @@
         ],
         "iconUrl": "https://chessplyimages.cfd/uploads/site/favicon-32x32.png",
         "apiVersion": 1,
-        "fileHash": "sha256-cfdfc290a85dc94962bc9dc33f91a9ae1196fd691517a54da349a9f92758df99"
+        "fileHash": "sha256-5e115f7e80b2939cca918a0c5ada50496b6fab25075ba5683b1403b6d40c9a30"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziYou.cs3",
