@@ -160,7 +160,7 @@ class Anizm : MainAPI() {
             if (name.contains("Bölüm", ignoreCase = true) && href.isNotBlank()) {
                 newEpisode(fixUrl(href)) { this.name = name }
             } else null
-        }.distinctBy { it.url }
+        }.distinctBy { it.name }
 
         val type = if (episodes.isEmpty()) TvType.Movie else TvType.Anime
         val trailer = document.selectFirst("iframe")?.attr("src")
