@@ -223,7 +223,7 @@ class Anizm : MainAPI() {
                     "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                     "X-Requested-With" to "XMLHttpRequest"
                 )
-            ).parsedSafe<Source>()?.videoSource?.let { m3uLink ->
+            ).parsedSafe<Source>()?.securedLink?.let { m3uLink ->
                 M3u8Helper.generateM3u8(
                     "${this.name} ($translator)",
                     m3uLink,
@@ -294,6 +294,7 @@ class Anizm : MainAPI() {
     }
 
     data class Source(
+        @JsonProperty("securedLink") val securedLink: String?,
         @JsonProperty("videoSource") val videoSource: String?,
     )
 
