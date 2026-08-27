@@ -342,9 +342,12 @@ class Anizm : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        document.select("div.episodeTranslators div#fansec").map {
-            Pair(it.select("a").attr("translator"), it.select("div.title").text())
-        }.apmap { (url, translator) ->
+        val translators = document.select("div.episodeTranslators div#fansec")
+            .map {
+                Pair(it.select("a").attr("translator"), it.select("div.title").text())
+            }
+
+        for ((url, translator) in translators) {
             safeApiCall {
                 val translatorResponse = app.get(
                     url,
@@ -355,9 +358,10 @@ class Anizm : MainAPI() {
                     )
                 ).parsedSafe<Translators>() ?: return@safeApiCall
 
-                Jsoup.parse(translatorResponse.data.orEmpty()).select("a").apmap { video ->
+                val videos = Jsoup.parse(translatorResponse.data.orEmpty()).select("a")
+                for (video in videos) {
                     val videoUrl = video.attr("video")
-                    if (videoUrl.isBlank()) return@apmap
+                    if (videoUrl.isBlank()) continue
 
                     val videoResponse = app.get(
                         videoUrl,
@@ -366,16 +370,14 @@ class Anizm : MainAPI() {
                             "Accept" to "application/json, text/javascript, */*; q=0.01",
                             "X-Requested-With" to "XMLHttpRequest"
                         )
-                    ).parsedSafe<Videos>() ?: return@apmap
+                    ).parsedSafe<Videos>() ?: continue
 
                     val playerHtml = videoResponse.player.orEmpty()
                     val playerDoc = Jsoup.parse(playerHtml)
 
-                    // AsyaWatch-style provider/player relationship:
-                    // obtain every iframe/player source and hand it to
-                    // CloudStream's extractor framework instead of guessing
-                    // a provider from the host.
-                    val players = playerDoc.select("iframe[src], iframe[data-src], video[src], source[src], a[href]")
+                    // Follow the provider -> player -> extractor chain.
+                    val players = playerDoc
+                        .select("iframe[src], iframe[data-src], video[src], source[src], a[href]")
                         .mapNotNull { el ->
                             val value = when {
                                 el.hasAttr("src") -> el.attr("src")
@@ -386,7 +388,7 @@ class Anizm : MainAPI() {
                         }
                         .distinct()
 
-                    players.forEach { player ->
+                    for (player in players) {
                         invokeProviderLink(player, data, subtitleCallback, callback)
                     }
                 }
