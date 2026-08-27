@@ -20,6 +20,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 
+// Build sync: provider/player extractor flow
 class Anizm : MainAPI() {
     override var mainUrl = "https://anizm.net"
     override var name = "Anizm"
