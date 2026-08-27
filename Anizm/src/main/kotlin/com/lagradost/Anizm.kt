@@ -244,7 +244,7 @@ class Anizm : MainAPI() {
 
         val extractM3u8: (String) -> String? = { body ->
             Regex(
-                """(?:https?:)?//[^"'\\s]+\\.m3u8(?:\\?[^"'\\s]+)?|/hlsmod/[^"'\\s]+"""
+                """(?:https?:)?//[^"\s]+\.m3u8(?:\?[^"\s]+)?|/hlsmod/[^"\s]+"""
             ).find(body)?.value?.let { found ->
                 when {
                     found.startsWith("//") -> "https:$found"
@@ -257,9 +257,7 @@ class Anizm : MainAPI() {
         val infoResponse = app.get(
             "$base/api/v1/info?id=$videoId",
             referer = iframeUrl,
-            headers = mapOf(
-                "Accept" to "application/json, text/plain, */*"
-            )
+            headers = mapOf("Accept" to "application/json, text/plain, */*")
         ).text
 
         val token = Regex(
@@ -268,7 +266,7 @@ class Anizm : MainAPI() {
 
         extractM3u8(infoResponse)?.let { direct ->
             M3u8Helper.generateM3u8(
-                "${this.name} ($translator)",
+                "\${this.name} ($translator)",
                 direct,
                 iframeUrl
             ).forEach(sourceCallback)
@@ -277,17 +275,16 @@ class Anizm : MainAPI() {
 
         if (token.isNullOrBlank()) return
 
+        val encodedToken = java.net.URLEncoder.encode(token, "UTF-8")
         val playerResponse = app.get(
-            "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
+            "$base/api/v1/player?t=$encodedToken",
             referer = iframeUrl,
-            headers = mapOf(
-                "Accept" to "application/json, text/plain, */*"
-            )
+            headers = mapOf("Accept" to "application/json, text/plain, */*")
         ).text
 
         extractM3u8(playerResponse)?.let { direct ->
             M3u8Helper.generateM3u8(
-                "${this.name} ($translator)",
+                "\${this.name} ($translator)",
                 direct,
                 iframeUrl
             ).forEach(sourceCallback)
@@ -312,15 +309,13 @@ class Anizm : MainAPI() {
                 app.get(
                     endpoint,
                     referer = iframeUrl,
-                    headers = mapOf(
-                        "Accept" to "application/json, text/plain, */*"
-                    )
+                    headers = mapOf("Accept" to "application/json, text/plain, */*")
                 ).text
             }.getOrNull() ?: continue
 
             extractM3u8(response)?.let { direct ->
                 M3u8Helper.generateM3u8(
-                    "${this.name} ($translator)",
+                    "\${this.name} ($translator)",
                     direct,
                     iframeUrl
                 ).forEach(sourceCallback)
