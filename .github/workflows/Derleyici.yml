@@ -82,6 +82,7 @@ jobs:
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84"#' build/plugins.json
           cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
           cp build/plugins.json $GITHUB_WORKSPACE/builds
+          cp repo.json $GITHUB_WORKSPACE/builds/repo.json
 
       - name: Derlemeleri Yükle
         run: |
