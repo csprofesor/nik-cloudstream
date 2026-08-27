@@ -157,7 +157,7 @@ class Anizm : MainAPI() {
                 ).parsedSafe<Translators>()?.data?.let {
                     Jsoup.parse(it).select("a").map { video ->
                         app.get(
-                            video.attr("video").replace("/video/", "/player/"),
+                            video.attr("video"),
                             referer = data,
                             headers = mapOf(
                                 "Accept" to "application/json, text/javascript, */*; q=0.01",
