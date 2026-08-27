@@ -119,7 +119,7 @@ class Anizm : MainAPI() {
             .find(episodeText)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
-            posterUrl = posterUrl
+            this.posterUrl = posterUrl
             addSub(episode)
         }
     }
@@ -241,7 +241,7 @@ class Anizm : MainAPI() {
                     "${this.name} ($translator) " + if (quality > 0) "${quality}p" else "",
                     absolute, ExtractorLinkType.M3U8
                 ) {
-                    referer = referer
+                    this.referer = referer
                     this.quality = quality
                     headers = mapOf("Origin" to mainServer, "Referer" to referer)
                 })
