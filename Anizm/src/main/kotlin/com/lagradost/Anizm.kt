@@ -213,51 +213,97 @@ class Anizm : MainAPI() {
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        val document = app.get(data).document
-        document.select("div.episodeTranslators div#fansec").forEach { item ->
-            val translatorUrl = fixUrl(item.select("a").attr("translator"))
-            val translator = item.select("div.title").text()
-            if (translatorUrl.isBlank()) return@forEach
+        Log.d("Anizm", "loadLinks data=$data")
+        val document = app.get(data, referer = "$mainUrl/").document
 
+        val translatorItems = document.select(
+            "div.episodeTranslators div#fansec, div.episodeTranslators [translator], a[translator]"
+        ).distinctBy { it.selectFirst("a[translator]")?.attr("translator") ?: it.attr("translator") }
+
+        Log.d("Anizm", "translator items=${translatorItems.size}")
+
+        translatorItems.forEach { item ->
             safeApiCall {
-                app.get(
+                val translatorAnchor = item.selectFirst("a[translator]") ?: item.takeIf { it.hasAttr("translator") }
+                val translatorUrl = translatorAnchor?.attr("translator")?.let(::fixUrl).orEmpty()
+                    .ifBlank { translatorAnchor?.attr("href")?.let(::fixUrl).orEmpty() }
+                val translator = item.selectFirst("div.title")?.text()?.trim()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: translatorAnchor?.text()?.trim().orEmpty()
+
+                if (translatorUrl.isBlank()) {
+                    Log.d("Anizm", "translator URL missing: $translator")
+                    return@safeApiCall
+                }
+
+                Log.d("Anizm", "translator=$translator url=$translatorUrl")
+
+                val translatorResponse = app.get(
                     translatorUrl,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let { html ->
-                    Jsoup.parse(html).select("a[video]").forEach { video ->
-                        val videoUrl = fixUrl(video.attr("video"))
-                        if (videoUrl.isBlank()) return@forEach
+                ).parsedSafe<Translators>()
 
-                        app.get(
+                val translatorHtml = translatorResponse?.data
+                if (translatorHtml.isNullOrBlank()) {
+                    Log.d("Anizm", "translator response/data empty")
+                    return@safeApiCall
+                }
+
+                val videoLinks = Jsoup.parse(translatorHtml).select("a[video]")
+                Log.d("Anizm", "video links=${videoLinks.size}")
+
+                videoLinks.forEach { video ->
+                    val videoUrl = video.attr("video").let(::fixUrl)
+                    if (videoUrl.isBlank()) return@forEach
+
+                    Log.d("Anizm", "video url=$videoUrl")
+
+                    safeApiCall {
+                        val player = app.get(
                             videoUrl,
                             referer = data,
                             headers = mapOf(
                                 "Accept" to "application/json, text/javascript, */*; q=0.01",
                                 "X-Requested-With" to "XMLHttpRequest"
                             )
-                        ).parsedSafe<Videos>()?.player?.let { iframe ->
-                            val link = Jsoup.parse(iframe).select("iframe").firstOrNull()?.let {
-                                it.attr("src").ifBlank {
-                                    it.attr("data-src").ifBlank { it.attr("data-lazy-src") }
-                                }
-                            }?.let { fixUrl(it) }
+                        ).parsedSafe<Videos>()?.player
 
-                            if (!link.isNullOrBlank()) {
-                                if (link.startsWith(mainServer)) {
-                                    invokeLokalSource(link, translator, callback)
-                                } else {
-                                    loadExtractor(link, "$mainUrl/", subtitleCallback, callback)
-                                }
-                            }
+                        if (player.isNullOrBlank()) {
+                            Log.d("Anizm", "player response empty")
+                            return@safeApiCall
+                        }
+
+                        val parsed = Jsoup.parse(player)
+                        val iframeElement = parsed.selectFirst("iframe")
+                        val link = (
+                            iframeElement?.attr("src")
+                                ?: iframeElement?.attr("data-src")
+                                ?: iframeElement?.attr("data-lazy-src")
+                        )?.trim()?.takeIf { it.isNotBlank() }
+                            ?: player.trim().takeIf { it.startsWith("http") }
+
+                        if (link.isNullOrBlank()) {
+                            Log.d("Anizm", "iframe/player URL missing")
+                            return@safeApiCall
+                        }
+
+                        val fixedLink = fixUrl(link)
+                        Log.d("Anizm", "resolved link=$fixedLink")
+
+                        if (fixedLink.startsWith(mainServer)) {
+                            invokeLokalSource(fixedLink, translator, callback)
+                        } else {
+                            loadExtractor(fixedLink, data, subtitleCallback, callback)
                         }
                     }
                 }
             }
         }
+
         return true
     }
     data class Source(@JsonProperty("videoSource") val videoSource: String?)
