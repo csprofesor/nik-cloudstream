@@ -56,6 +56,7 @@ class Anizm : MainAPI() {
             }
             .mapNotNull { it.toSearchResult() }
             .filter { it.url.startsWith(mainUrl) }
+            .filterNot { it.name.equals("Logo", ignoreCase = true) }
             .distinctBy { it.url }
         val hasNext = document.selectFirst(
             "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
@@ -108,6 +109,8 @@ class Anizm : MainAPI() {
         val episode = Regex("""([0-9]+)\.?\s?Bölüm""", RegexOption.IGNORE_CASE)
             .find(episodeText)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
+        if (title.equals("Logo", ignoreCase = true)) return null
+
         return newAnimeSearchResponse(title, href, TvType.Anime) {
             this.posterUrl = posterUrl
             addSub(episode)
@@ -140,7 +143,11 @@ class Anizm : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
 
-        val title = document.selectFirst("h2.anizm_pageTitle, h2.anizm_pageTitle a")!!.text().trim()
+        val title = document.selectFirst("h2.anizm_pageTitle a, h2.anizm_pageTitle, h1.anizm_pageTitle, h1")?.text()?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?: return newAnimeLoadResponse("Anime", url, TvType.Anime)
 
         val episodeElements = document.select(
             "div.episodeListTabContent div > a, div.ui.grid div.four.wide"
