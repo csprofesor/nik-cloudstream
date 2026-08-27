@@ -176,13 +176,15 @@ class Anizm : MainAPI() {
             }
         )
 
-        val episodes = document.select("div.episodeListTabContent div > a").mapNotNull { a ->
-            val name = a.text().trim()
-            val href = a.attr("href")
-            if (name.contains("Bölüm", ignoreCase = true) && href.isNotBlank()) {
+        val episodes = document.select("a[href]")
+            .mapNotNull { a ->
+                val name = a.text().trim()
+                val href = a.attr("href").trim()
+                if (href.isBlank() || !href.contains("-bolum", ignoreCase = true)) return@mapNotNull null
+                if (!name.contains("Bölüm", ignoreCase = true)) return@mapNotNull null
                 newEpisode(fixUrl(href)) { this.name = name }
-            } else null
-        }.distinctBy { it.name }
+            }
+            .distinctBy { it.url }
 
         val type = if (episodes.isEmpty()) TvType.Movie else TvType.Anime
         val trailer = document.selectFirst("iframe")?.attr("src")
@@ -228,6 +230,50 @@ class Anizm : MainAPI() {
         }
     }
 
+    private suspend fun invokeSistennSource(
+        iframeUrl: String,
+        translator: String,
+        sourceCallback: (ExtractorLink) -> Unit
+    ) {
+        val base = "https://sistenn.uns.bio"
+        val videoId = iframeUrl.substringAfter("#", "").trim()
+        if (videoId.isBlank()) return
+
+        val info = app.get(
+            "$base/api/v1/info?id=$videoId",
+            referer = iframeUrl,
+            headers = mapOf("Accept" to "application/json, text/plain, */*")
+        ).text
+
+        val direct = Regex("""https?://[^\"'\s]+\.m3u8(?:\?[^\"'\s]+)?""", RegexOption.IGNORE_CASE)
+            .find(info)?.value
+
+        if (!direct.isNullOrBlank()) {
+            M3u8Helper.generateM3u8("\${this.name} (\$translator)", direct, iframeUrl)
+                .forEach(sourceCallback)
+            return
+        }
+
+        val token = Regex("""\"(?:t|token)\"\s*:\s*\"([^\"]+)\"""")
+            .find(info)?.groupValues?.getOrNull(1)
+
+        if (!token.isNullOrBlank()) {
+            val player = app.get(
+                "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
+                referer = iframeUrl,
+                headers = mapOf("Accept" to "application/json, text/plain, */*")
+            ).text
+
+            val playerDirect = Regex("""https?://[^\"'\s]+\.m3u8(?:\?[^\"'\s]+)?""", RegexOption.IGNORE_CASE)
+                .find(player)?.value
+
+            if (!playerDirect.isNullOrBlank()) {
+                M3u8Helper.generateM3u8("\${this.name} (\$translator)", playerDirect, iframeUrl)
+                    .forEach(sourceCallback)
+            }
+        }
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -236,12 +282,11 @@ class Anizm : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        document.select("div.episodeTranslators div#fansec").map {
-            Pair(
-                it.select("a").attr("translator"),
-                it.select("div.title").text()
-            )
-        }.apmap { (url, translator) ->
+        document.select("[translator]").mapNotNull { element ->
+            val url = element.attr("translator").trim()
+            if (url.isBlank()) return@mapNotNull null
+            Pair(url, element.selectFirst(".title, .translatorCompactBox")?.text()?.trim().orEmpty().ifBlank { element.text().trim() })
+        }.distinctBy { it.first }.apmap { (url, translator) ->
             safeApiCall {
                 app.get(
                     url,
@@ -251,9 +296,13 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").apmap { video ->
+                    Jsoup.parse(it).select("[video], a[video]").mapNotNull { video ->
+                        val videoUrl = video.attr("video").trim().ifBlank { video.attr("data-video").trim() }
+                        if (videoUrl.isBlank()) return@mapNotNull null
+                        videoUrl
+                    }.apmap { videoUrl ->
                         app.get(
-                            video.attr("video"),
+                            videoUrl,
                             referer = data,
                             headers = mapOf(
                                 "Accept" to "application/json, text/javascript, */*; q=0.01",
@@ -264,6 +313,9 @@ class Anizm : MainAPI() {
                                 when {
                                     link.startsWith(mainServer) -> {
                                         invokeLokalSource(link, translator, callback)
+                                    }
+                                    link.contains("sistenn.uns.bio", ignoreCase = true) -> {
+                                        invokeSistennSource(link, translator, callback)
                                     }
                                     else -> {
                                         loadExtractor(
