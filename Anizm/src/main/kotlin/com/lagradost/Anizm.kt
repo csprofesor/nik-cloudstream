@@ -386,55 +386,128 @@ class Anizm : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
+        val document = app.get(
+            data,
+            headers = mapOf(
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+            )
+        ).document
 
-        document.select("[translator]").mapNotNull { element ->
-            val url = element.attr("translator").trim()
-            if (url.isBlank()) return@mapNotNull null
-            Pair(url, element.selectFirst(".title, .translatorCompactBox")?.text()?.trim().orEmpty().ifBlank { element.text().trim() })
-        }.distinctBy { it.first }.forEach { (url, translator) ->
+        // Anizm has used several different attributes for translator/player
+        // links over time. Collect all known variants instead of depending on
+        // one exact DOM attribute.
+        val translatorElements = document.select(
+            "[translator], [data-translator], a[href*="translator"], a[href*="/video/"]"
+        )
+
+        val translatorLinks = translatorElements.mapNotNull { element ->
+            val url = sequenceOf(
+                element.attr("translator"),
+                element.attr("data-translator"),
+                element.attr("data-url"),
+                element.attr("href")
+            ).map { it.trim() }.firstOrNull { it.isNotBlank() }
+                ?: return@mapNotNull null
+
+            val absolute = fixUrl(url)
+            val name = element.selectFirst(".title, .translatorCompactBox, .translatorName, .name")
+                ?.text()?.trim()
+                .orEmpty()
+                .ifBlank { element.text().trim() }
+
+            Pair(absolute, name)
+        }.distinctBy { it.first }
+
+        translatorLinks.forEach { (url, translator) ->
             safeApiCall {
-                app.get(
+                val response = app.get(
                     url,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("[video], a[video]").mapNotNull { video ->
-                        val videoUrl = video.attr("video").trim().ifBlank { video.attr("data-video").trim() }
-                        if (videoUrl.isBlank()) return@mapNotNull null
-                        videoUrl
-                    }.forEach { videoUrl ->
-                        app.get(
+                )
+
+                val translatorData = response.parsedSafe<Translators>()?.data
+                    ?: response.text.takeIf { it.contains("video", ignoreCase = true) }
+
+                if (translatorData.isNullOrBlank()) return@safeApiCall
+
+                val translatorDocument = Jsoup.parse(translatorData)
+
+                // Accept video/data-video/data-src/href so a provider changing
+                // its markup doesn't make every source disappear.
+                val videoUrls = translatorDocument.select(
+                    "[video], [data-video], [data-src], a[href]"
+                ).mapNotNull { video ->
+                    sequenceOf(
+                        video.attr("video"),
+                        video.attr("data-video"),
+                        video.attr("data-src"),
+                        video.attr("href")
+                    ).map { it.trim() }
+                        .firstOrNull { it.isNotBlank() }
+                        ?.let { fixUrl(it) }
+                }.filter {
+                    it.contains("/video/") || it.contains("/player/") ||
+                        it.contains("http", ignoreCase = true)
+                }.distinct()
+
+                videoUrls.forEach { videoUrl ->
+                    safeApiCall {
+                        val playerResponse = app.get(
                             videoUrl,
                             referer = data,
                             headers = mapOf(
                                 "Accept" to "application/json, text/javascript, */*; q=0.01",
                                 "X-Requested-With" to "XMLHttpRequest"
                             )
-                        ).parsedSafe<Videos>()?.player?.let { iframe ->
-                            Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
-                                when {
-                                    link.startsWith(mainServer) -> {
-                                        invokeLokalSource(link, translator, callback)
-                                    }
-                                    link.contains("sistenn.uns.bio", ignoreCase = true) -> {
-                                        invokeSistennSource(link, translator, callback)
-                                    }
-                                    else -> {
-                                        val fixedLink = fixUrl(link)
-                                        if (!invokeKnownExtractor(
-                                                fixedLink,
-                                                "$mainUrl/",
-                                                subtitleCallback,
-                                                callback
-                                            )
-                                        ) {
+                        )
+
+                        val iframeHtml = playerResponse.parsedSafe<Videos>()?.player
+                            ?: playerResponse.text
+
+                        if (iframeHtml.isNullOrBlank()) return@safeApiCall
+
+                        val playerDocument = Jsoup.parse(iframeHtml)
+
+                        // Some versions return iframe src, others data-src,
+                        // embed/src or the provider URL directly.
+                        val links = playerDocument.select(
+                            "iframe, video, source, a"
+                        ).flatMap { node ->
+                            listOf(
+                                node.attr("src"),
+                                node.attr("data-src"),
+                                node.attr("data-video"),
+                                node.attr("href")
+                            )
+                        }.map { it.trim() }
+                            .filter { it.isNotBlank() }
+                            .map { fixUrl(it) }
+                            .distinct()
+
+                        links.forEach { link ->
+                            when {
+                                link.startsWith(mainServer, ignoreCase = true) -> {
+                                    invokeLokalSource(link, translator, callback)
+                                }
+                                link.contains("sistenn.uns.bio", ignoreCase = true) -> {
+                                    invokeSistennSource(link, translator, callback)
+                                }
+                                else -> {
+                                    if (!invokeKnownExtractor(
+                                            link,
+                                            data,
+                                            subtitleCallback,
+                                            callback
+                                        )
+                                    ) {
+                                        safeApiCall {
                                             loadExtractor(
-                                                fixedLink,
-                                                "$mainUrl/",
+                                                link,
+                                                data,
                                                 subtitleCallback,
                                                 callback
                                             )
@@ -447,6 +520,7 @@ class Anizm : MainAPI() {
                 }
             }
         }
+
         return true
     }
 
