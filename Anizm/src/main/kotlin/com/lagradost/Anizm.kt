@@ -289,7 +289,7 @@ class Anizm : MainAPI() {
             val url = element.attr("translator").trim()
             if (url.isBlank()) return@mapNotNull null
             Pair(url, element.selectFirst(".title, .translatorCompactBox")?.text()?.trim().orEmpty().ifBlank { element.text().trim() })
-        }.distinctBy { it.first }.apmap { (url, translator) ->
+        }.distinctBy { it.first }.forEach { (url, translator) ->
             safeApiCall {
                 app.get(
                     url,
@@ -303,7 +303,7 @@ class Anizm : MainAPI() {
                         val videoUrl = video.attr("video").trim().ifBlank { video.attr("data-video").trim() }
                         if (videoUrl.isBlank()) return@mapNotNull null
                         videoUrl
-                    }.apmap { videoUrl ->
+                    }.forEach { videoUrl ->
                         app.get(
                             videoUrl,
                             referer = data,
