@@ -375,7 +375,7 @@ class Anizm : MainAPI() {
         runCatching {
             extractor.getUrl(link, referer, subtitleCallback, callback)
         }.onFailure {
-            Log.d("Anizm", "Extractor \${extractor.name} failed for \$link: \${it.message}")
+            Log.d("Anizm", "Extractor ${extractor.name} failed for $link: ${it.message}")
         }
         return true
     }
@@ -397,7 +397,7 @@ class Anizm : MainAPI() {
         // links over time. Collect all known variants instead of depending on
         // one exact DOM attribute.
         val translatorElements = document.select(
-            "[translator], [data-translator], a[href*="translator"], a[href*="/video/"]"
+            "[translator], [data-translator], a[href*='translator'], a[href*='/video/']"
         )
 
         val translatorLinks = translatorElements.mapNotNull { element ->
@@ -418,7 +418,7 @@ class Anizm : MainAPI() {
             Pair(absolute, name)
         }.distinctBy { it.first }
 
-        translatorLinks.forEach { (url, translator) ->
+        for ((url, translator) in translatorLinks) {
             safeApiCall {
                 val response = app.get(
                     url,
@@ -454,7 +454,7 @@ class Anizm : MainAPI() {
                         it.contains("http", ignoreCase = true)
                 }.distinct()
 
-                videoUrls.forEach { videoUrl ->
+                for (videoUrl in videoUrls) {
                     safeApiCall {
                         val playerResponse = app.get(
                             videoUrl,
@@ -488,7 +488,7 @@ class Anizm : MainAPI() {
                             .map { fixUrl(it) }
                             .distinct()
 
-                        links.forEach { link ->
+                        for (link in links) {
                             when {
                                 link.startsWith(mainServer, ignoreCase = true) -> {
                                     invokeLokalSource(link, translator, callback)
