@@ -45,6 +45,8 @@ class Anizm : MainAPI() {
             .filter { link ->
                 val href = link.attr("href")
                 href.isNotBlank() &&
+                    href != mainUrl &&
+                    href != "$mainUrl/" &&
                     !href.contains("/kategoriler/") &&
                     !href.contains("/anime-izle") &&
                     !href.contains("/fullViewSearch") &&
