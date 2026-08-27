@@ -270,7 +270,7 @@ class Anizm : MainAPI() {
         // and its own page as referer to CloudStream's extractor registry.
         loadExtractor(
             playerUrl,
-            playerUrl.substringBeforeLast("/") + "/",
+            "$mainUrl/",
             subtitleCallback,
             callback
         )
@@ -283,7 +283,7 @@ class Anizm : MainAPI() {
             } else {
                 loadExtractor(
                     nested,
-                    playerUrl.substringBeforeLast("/") + "/",
+                    "$mainUrl/",
                     subtitleCallback,
                     callback
                 )
@@ -313,7 +313,7 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let { translatorData ->
-                    Jsoup.parse(translatorData).select("a[video]").forEach { video ->
+                    Jsoup.parse(translatorData).select("a[video], a").forEach { video ->
                         val videoUrl = absoluteUrl(video.attr("video"), translatorUrl) ?: return@forEach
 
                         app.get(
