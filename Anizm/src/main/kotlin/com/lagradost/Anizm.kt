@@ -252,47 +252,56 @@ class Anizm : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(data).document
+        val document = app.get(data, referer = "$mainUrl/").document
 
-        for (fansec in document.select("div.episodeTranslators div#fansec")) {
-            val url = fansec.select("a").attr("translator")
-            val translator = fansec.select("div.title").text()
+        // Current Anizm flow:
+        // episode -> /fansec -> translator endpoint -> videoPlayerButtons -> host URL.
+        // The local AnizmPlayer URL must first be converted from /video/ to /player/
+        // and then followed without redirects so the real /video/<hash>/ URL can be
+        // used for the securedLink API request.
+        val fansubLinks = document.select("div#fansec > a")
+
+        if (fansubLinks.isEmpty()) {
+            Log.d("Anizm", "fansec bulunamadı: $data")
+            return true
+        }
+
+        for (fansub in fansubLinks) {
+            val translatorUrl = fansub.attr("translator").takeIf { it.isNotBlank() } ?: continue
+            val translator = fansub.text().trim().ifBlank { "Anizm" }
 
             safeApiCall {
-                app.get(
-                    url,
+                val translatorResponse = app.get(
+                    fixUrl(translatorUrl),
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let { translatorData ->
-                    for (video in Jsoup.parse(translatorData).select("a")) {
-                        app.get(
-                            video.attr("video"),
-                            referer = data,
-                            headers = mapOf(
-                                "Accept" to "application/json, text/javascript, */*; q=0.01",
-                                "X-Requested-With" to "XMLHttpRequest"
-                            )
-                        ).parsedSafe<Videos>()?.player?.let { iframe ->
-                            val link = Jsoup.parse(iframe).select("iframe").attr("src")
-                            if (link.isBlank()) return@let
+                ).parsedSafe<Translators>() ?: return@safeApiCall
 
-                            when {
-                                link.startsWith(mainServer) -> {
-                                    invokeLokalSource(link.replace("/video/", "/player/"), translator, callback)
-                                }
-                                else -> {
-                                    loadExtractor(
-                                        fixUrl(link),
-                                        "$mainUrl/",
-                                        subtitleCallback,
-                                        callback
-                                    )
-                                }
-                            }
-                        }
+                val playerButtons = Jsoup.parse(translatorResponse.data.orEmpty())
+                    .select("a.videoPlayerButtons")
+
+                Log.d(
+                    "Anizm",
+                    "translator=" + translator + " buttons=" + playerButtons.size
+                )
+
+                for (button in playerButtons) {
+                    val videoUrl = button.attr("video").trim()
+                    if (videoUrl.isBlank()) continue
+
+                    if (videoUrl.contains(mainServer)) {
+                        val playerUrl = videoUrl.replace("/video/", "/player/")
+                        invokeLokalSource(playerUrl, translator, callback)
+                    } else {
+                        loadExtractor(
+                            fixUrl(videoUrl),
+                            "$mainUrl/",
+                            subtitleCallback,
+                            callback
+                        )
                     }
                 }
             }
@@ -300,6 +309,7 @@ class Anizm : MainAPI() {
 
         return true
     }
+
     data class Source(@JsonProperty("securedLink") val securedLink: String?)
     data class Videos(@JsonProperty("player") val player: String?)
     data class Translators(@JsonProperty("data") val data: String?)
