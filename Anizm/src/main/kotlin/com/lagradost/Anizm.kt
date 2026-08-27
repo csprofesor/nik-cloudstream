@@ -271,13 +271,15 @@ class Anizm : MainAPI() {
             ).forEach(sourceCallback)
         }
 
-        val infoResponse = runCatching {
+        val infoResponse = try {
             app.get(
                 "$base/api/v1/info?id=$videoId",
                 referer = iframeUrl,
                 headers = mapOf("Accept" to "application/json, text/plain, */*")
             ).text
-        }.getOrNull() ?: return
+        } catch (_: Exception) {
+            return
+        }
 
         findM3u8(infoResponse)?.let { emit(it); return }
 
@@ -285,13 +287,15 @@ class Anizm : MainAPI() {
             .find(infoResponse)?.groupValues?.getOrNull(1)
 
         val playerResponse = if (!token.isNullOrBlank()) {
-            runCatching {
+            try {
                 app.get(
                     "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
                     referer = iframeUrl,
                     headers = mapOf("Accept" to "application/json, text/plain, */*")
                 ).text
-            }.getOrNull().orEmpty()
+            } catch (_: Exception) {
+                ""
+            }
         } else {
             ""
         }
@@ -310,13 +314,15 @@ class Anizm : MainAPI() {
         )
 
         for (endpoint in videoResponses) {
-            val response = runCatching {
+            val response = try {
                 app.get(
                     endpoint,
                     referer = iframeUrl,
                     headers = mapOf("Accept" to "application/json, text/plain, */*")
                 ).text
-            }.getOrNull() ?: continue
+            } catch (_: Exception) {
+                continue
+            }
 
             findM3u8(response)?.let { emit(it); return }
 
@@ -372,10 +378,10 @@ class Anizm : MainAPI() {
             else -> return false
         }
 
-        runCatching {
+        try {
             extractor.getUrl(link, referer, subtitleCallback, callback)
-        }.onFailure {
-            Log.d("Anizm", "Extractor ${extractor.name} failed for $link: ${it.message}")
+        } catch (e: Exception) {
+            Log.d("Anizm", "Extractor ${extractor.name} failed for $link: ${e.message}")
         }
         return true
     }
