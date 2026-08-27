@@ -6,6 +6,16 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.extractors.ByseSX
+import com.lagradost.cloudstream3.extractors.DoodLaExtractor
+import com.lagradost.cloudstream3.extractors.FilemoonV2
+import com.lagradost.cloudstream3.extractors.Gdriveplayer
+import com.lagradost.cloudstream3.extractors.Odnoklassniki
+import com.lagradost.cloudstream3.extractors.StreamWishExtractor
+import com.lagradost.cloudstream3.extractors.UpstreamExtractor
+import com.lagradost.cloudstream3.extractors.Vidoza
+import com.lagradost.cloudstream3.extractors.Vidmoly
+import com.lagradost.cloudstream3.extractors.Voe
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
@@ -324,6 +334,43 @@ class Anizm : MainAPI() {
         }
     }
 
+    private suspend fun invokeKnownExtractor(
+        link: String,
+        referer: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val host = runCatching {
+            java.net.URI(link).host?.lowercase()?.removePrefix("www.")
+        }.getOrNull() ?: return false
+
+        val extractor: ExtractorApi = when {
+            host == "voe.sx" || host.endsWith(".voe.sx") -> Voe()
+            host == "vidmoly.me" || host == "vidmoly.to" || host == "vidmoly.biz" ||
+                host == "vidmoly.net" -> Vidmoly()
+            host.contains("gdriveplayer") || host == "databasegdriveplayer.co" ||
+                host == "gdriveplayer.to" -> Gdriveplayer()
+            host == "ok.ru" || host.endsWith(".ok.ru") ||
+                host == "odnoklassniki.ru" || host.endsWith(".odnoklassniki.ru") -> Odnoklassniki()
+            host == "filemoon.to" || host == "filemoon.in" || host == "filemoon.sx" -> FilemoonV2()
+            host == "byse.sx" || host.endsWith(".byse.sx") -> ByseSX()
+            host.contains("streamwish") || host.contains("embedwish") ||
+                host.contains("dwish.") || host.contains("mwish.") -> StreamWishExtractor()
+            host.contains("dood.") || host.contains("doodstream") -> DoodLaExtractor()
+            host == "vidoza.net" || host.endsWith(".vidoza.net") ||
+                host == "videzz.net" -> Vidoza()
+            host == "upstream.to" || host.endsWith(".upstream.to") -> UpstreamExtractor()
+            else -> return false
+        }
+
+        runCatching {
+            extractor.getUrl(link, referer, subtitleCallback, callback)
+        }.onFailure {
+            Log.d("Anizm", "Extractor \${extractor.name} failed for \$link: \${it.message}")
+        }
+        return true
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -368,12 +415,21 @@ class Anizm : MainAPI() {
                                         invokeSistennSource(link, translator, callback)
                                     }
                                     else -> {
-                                        loadExtractor(
-                                            fixUrl(link),
-                                            "$mainUrl/",
-                                            subtitleCallback,
-                                            callback
-                                        )
+                                        val fixedLink = fixUrl(link)
+                                        if (!invokeKnownExtractor(
+                                                fixedLink,
+                                                "$mainUrl/",
+                                                subtitleCallback,
+                                                callback
+                                            )
+                                        ) {
+                                            loadExtractor(
+                                                fixedLink,
+                                                "$mainUrl/",
+                                                subtitleCallback,
+                                                callback
+                                            )
+                                        }
                                     }
                                 }
                             }
