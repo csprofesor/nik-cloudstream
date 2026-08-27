@@ -236,10 +236,10 @@ class Anizm : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        document.select("div.episodeTranslators div#fansec").apmap { translatorBlock ->
+        document.select("div.episodeTranslators div#fansec").forEach { translatorBlock ->
             val translatorUrl = translatorBlock.selectFirst("a")?.attr("translator").orEmpty()
             val translator = translatorBlock.selectFirst("div.title")?.text()?.trim().orEmpty()
-            if (translatorUrl.isBlank()) return@apmap
+            if (translatorUrl.isBlank()) return@forEach
 
             safeApiCall {
                 app.get(
@@ -250,9 +250,9 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let { html ->
-                    Jsoup.parse(html).select("a").apmap { video ->
+                    Jsoup.parse(html).select("a").forEach { video ->
                         val videoUrl = video.attr("video").trim()
-                        if (videoUrl.isBlank()) return@apmap
+                        if (videoUrl.isBlank()) return@forEach
 
                         safeApiCall {
                             app.get(
