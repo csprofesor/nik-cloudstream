@@ -102,38 +102,30 @@ class Anizm : MainAPI() {
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
-        val hash = app.get(url, referer = "$mainUrl/").document
-            .select("script")
-            .find { it.data().contains("eval(function(p,a,c,k,e,d)") }
-            ?.let { getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",") }
-            ?.trim()
-            ?: return
-
-        if (hash.isBlank()) return
-
-        val referer = "$mainServer/video/$hash"
-        val link = "$mainServer/player/index.php?data=$hash&do=getVideo"
-
-        app.post(
-            link,
-            data = mapOf(
-                "hash" to hash,
-                "r" to "$mainUrl/"
-            ),
-            referer = referer,
-            headers = mapOf(
-                "Accept" to "*/*",
-                "Origin" to mainServer,
-                "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
-                "X-Requested-With" to "XMLHttpRequest"
-            )
-        ).parsedSafe<Source>()?.let { source ->
-            val m3uLink = source.securedLink ?: source.videoSource ?: return@let
-            M3u8Helper.generateM3u8(
-                "${this.name} ($translator)",
-                m3uLink,
-                referer
-            ).forEach(sourceCallback)
+        app.get(url, referer = "$mainUrl/").document.select("script").find { script ->
+            script.data().contains("eval(function(p,a,c,k,e,d)")
+        }?.let {
+            val key = getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",")
+            val referer = "$mainServer/video/$key"
+            val link = "$mainServer/player/index.php?data=$key&do=getVideo"
+            Log.i("hexated", link)
+            app.post(
+                link,
+                data = mapOf("hash" to key, "r" to "$mainUrl/"),
+                referer = referer,
+                headers = mapOf(
+                    "Accept" to "*/*",
+                    "Origin" to mainServer,
+                    "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
+                    "X-Requested-With" to "XMLHttpRequest"
+                )
+            ).parsedSafe<Source>()?.videoSource?.let { m3uLink ->
+                M3u8Helper.generateM3u8(
+                    "${this.name} ($translator)",
+                    m3uLink,
+                    referer
+                ).forEach(sourceCallback)
+            }
         }
     }
 
@@ -146,7 +138,7 @@ class Anizm : MainAPI() {
         val document = app.get(data).document
         document.select("div.episodeTranslators div#fansec").map {
             Pair(it.select("a").attr("translator"), it.select("div.title").text())
-        }.map { (url, translator) ->
+        }.apmap { (url, translator) ->
             safeApiCall {
                 app.get(
                     url,
@@ -156,7 +148,7 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").map { video ->
+                    Jsoup.parse(it).select("a").apmap { video ->
                         app.get(
                             video.attr("video"),
                             referer = data,
