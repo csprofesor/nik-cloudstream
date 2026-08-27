@@ -190,22 +190,15 @@ class Anizm : MainAPI() {
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
-        val page = app.get(url, referer = "$mainUrl/").document
-        val packed = page.select("script").firstOrNull {
-            it.data().contains("eval(function(p,a,c,k,e,d)") ||
-                it.data().contains("eval(function(p,a,c,k,e,d,")
-        } ?: return
+        val hash = url.substringAfterLast("/video/").substringBefore("/").takeIf { it.isNotBlank() }
+            ?: return
 
-        val unpacked = getAndUnpack(packed.data())
-        val key = Regex("""FirePlayer\(["']([^"']+)["']""")
-            .find(unpacked)?.groupValues?.getOrNull(1) ?: return
+        val referer = if (url.contains("/video/")) url else "$mainServer/video/$hash"
+        val apiUrl = "$mainServer/player/index.php?data=$hash&do=getVideo"
 
-        val referer = "$mainServer/video/$key"
-        val apiUrl = "$mainServer/player/index.php?data=$key&do=getVideo"
-
-        val response = app.post(
+        app.post(
             apiUrl,
-            data = mapOf("hash" to key, "r" to "$mainUrl/"),
+            data = mapOf("hash" to hash, "r" to "$mainUrl/"),
             referer = referer,
             headers = mapOf(
                 "Accept" to "*/*",
@@ -213,81 +206,12 @@ class Anizm : MainAPI() {
                 "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                 "X-Requested-With" to "XMLHttpRequest"
             )
-        ).parsedSafe<Source>() ?: return
-
-        response.videoSource?.takeIf { it.isNotBlank() }?.let { m3uLink ->
+        ).parsedSafe<Source>()?.securedLink?.takeIf { it.isNotBlank() }?.let { m3uLink ->
             M3u8Helper.generateM3u8(
-                "${this.name} ($translator)", m3uLink, referer,
-                headers = mapOf("Origin" to mainServer, "Referer" to referer)
+                "${this.name} ($translator)",
+                m3uLink,
+                referer
             ).forEach(sourceCallback)
-        }
-
-        response.securedLink?.takeIf { it.isNotBlank() }?.let { securedLink ->
-            val playlist = app.post(
-                securedLink, referer = referer,
-                headers = mapOf(
-                    "Accept" to "*/*", "Origin" to mainServer,
-                    "X-Requested-With" to "XMLHttpRequest"
-                )
-            ).text
-
-            val pattern = Regex("""#EXT-X-STREAM-INF:[^\r\n]*?(?:RESOLUTION=\d+x(\d+))?[^\r\n]*\r?\n([^\r\n#]+)""")
-            pattern.findAll(playlist).forEach { match ->
-                val quality = match.groupValues.getOrNull(1)?.toIntOrNull() ?: Qualities.Unknown.value
-                val stream = match.groupValues.getOrNull(2)?.trim().orEmpty()
-                val absolute = absoluteUrl(stream, securedLink) ?: return@forEach
-                sourceCallback(newExtractorLink(
-                    "${this.name} ($translator)",
-                    "${this.name} ($translator) " + if (quality > 0) "${quality}p" else "",
-                    absolute, ExtractorLinkType.M3U8
-                ) {
-                    this.referer = referer
-                    this.quality = quality
-                    headers = mapOf("Origin" to mainServer, "Referer" to referer)
-                })
-            }
-        }
-    }
-
-    private suspend fun loadPlayer(
-        playerUrl: String,
-        pageReferer: String,
-        translator: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ) {
-        val playerPage = runCatching {
-            app.get(playerUrl, referer = pageReferer).text
-        }.getOrNull() ?: return
-
-        val localHost = runCatching { URI(playerUrl).host }.getOrNull()
-        if (localHost == URI(mainServer).host) {
-            invokeLokalSource(playerUrl, translator, callback)
-            return
-        }
-
-        // Preserve the provider/player relationship: give the exact player URL
-        // and its own page as referer to CloudStream's extractor registry.
-        loadExtractor(
-            playerUrl,
-            "$mainUrl/",
-            subtitleCallback,
-            callback
-        )
-
-        // Some providers return a wrapper page rather than the actual extractor URL.
-        // Try nested iframes as a fallback without replacing the original player flow.
-        iframeSources(playerPage, playerUrl).filter { it != playerUrl }.forEach { nested ->
-            if (nested.startsWith(mainServer)) {
-                invokeLokalSource(nested, translator, callback)
-            } else {
-                loadExtractor(
-                    nested,
-                    "$mainUrl/",
-                    subtitleCallback,
-                    callback
-                )
-            }
         }
     }
 
@@ -313,28 +237,44 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let { translatorData ->
-                    Jsoup.parse(translatorData).select("a[video], a").forEach { video ->
-                        val videoUrl = absoluteUrl(video.attr("video"), translatorUrl) ?: return@forEach
+                    Jsoup.parse(translatorData)
+                        .select("a.videoPlayerButtons, a[video]")
+                        .forEach { video ->
+                            val rawVideoUrl = video.attr("video").trim()
+                            if (rawVideoUrl.isBlank()) return@forEach
 
-                        app.get(
-                            videoUrl,
-                            referer = data,
-                            headers = mapOf(
-                                "Accept" to "application/json, text/javascript, */*; q=0.01",
-                                "X-Requested-With" to "XMLHttpRequest"
-                            )
-                        ).parsedSafe<Videos>()?.player?.let { playerHtml ->
-                            iframeSources(playerHtml, videoUrl).forEach { playerUrl ->
-                                loadPlayer(
+                            val playerUrl = absoluteUrl(
+                                rawVideoUrl.replace("/video/", "/player/"),
+                                translatorUrl
+                            ) ?: return@forEach
+
+                            val redirectedUrl = runCatching {
+                                app.get(
                                     playerUrl,
-                                    videoUrl,
-                                    translator,
-                                    subtitleCallback,
-                                    callback
-                                )
+                                    referer = data,
+                                    allowRedirects = false,
+                                    headers = mapOf(
+                                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                        "X-Requested-With" to "XMLHttpRequest"
+                                    )
+                                ).headers["Location"]
+                            }.getOrNull() ?: return@forEach
+
+                            when {
+                                redirectedUrl.contains("anizmplayer.com/video/") -> {
+                                    invokeLokalSource(redirectedUrl, translator, callback)
+                                }
+
+                                redirectedUrl.isNotBlank() -> {
+                                    loadExtractor(
+                                        redirectedUrl,
+                                        "$mainUrl/",
+                                        subtitleCallback,
+                                        callback
+                                    )
+                                }
                             }
                         }
-                    }
                 }
             }
         }
