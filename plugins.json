@@ -48,7 +48,7 @@
         "authors": [
             "csprofesor"
         ],
-        "fileSize": 26554,
+        "fileSize": 25149,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -58,7 +58,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=anizm.net&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-d1abb9de6e3cf73518f05f427a6ec964c41d9a4eeb2b547ea7e89417a6efc18e"
+        "fileHash": "sha256-56fbe59ca7add0e44b2ae243c8303278411d38f48c57635de878d8f09c49c73a"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AsyaAnimeleri.cs3",
