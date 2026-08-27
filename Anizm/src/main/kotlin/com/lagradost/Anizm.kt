@@ -223,12 +223,66 @@ class Anizm : MainAPI() {
                     "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                     "X-Requested-With" to "XMLHttpRequest"
                 )
-            ).parsedSafe<Source>()?.securedLink?.let { m3uLink ->
-                M3u8Helper.generateM3u8(
-                    "${this.name} ($translator)",
-                    m3uLink,
-                    referer
-                ).forEach(sourceCallback)
+            ).parsedSafe<Source>()?.let { source ->
+                source.videoSource?.let { m3uLink ->
+                    M3u8Helper.generateM3u8(
+                        "${this.name} ($translator)",
+                        m3uLink,
+                        referer,
+                        headers = mapOf(
+                            "Origin" to mainServer,
+                            "Referer" to referer
+                        )
+                    ).forEach(sourceCallback)
+                }
+
+                source.securedLink?.let { securedLink ->
+                    val playlist = app.post(
+                        securedLink,
+                        referer = referer,
+                        headers = mapOf(
+                            "Accept" to "*/*",
+                            "Origin" to mainServer,
+                            "X-Requested-With" to "XMLHttpRequest"
+                        )
+                    ).text
+
+                    val pattern = Regex(
+                        """#EXT-X-STREAM-INF:[^\\n]*?(?:RESOLUTION=\\d+x(\\d+))?[^\\n]*\\n([^\\n#]+)"""
+                    )
+
+                    pattern.findAll(playlist).forEach { match ->
+                        val quality = match.groupValues.getOrNull(1)
+                            ?.toIntOrNull()
+                            ?: Qualities.Unknown.value
+                        val stream = match.groupValues[2].trim()
+
+                        if (stream.isNotBlank()) {
+                            val absolute = try {
+                                java.net.URI(securedLink).resolve(stream).toString()
+                            } catch (_: Throwable) {
+                                stream
+                            }
+
+                            sourceCallback(
+                                newExtractorLink(
+                                    "${this.name} ($translator)",
+                                    "${this.name} ($translator) " +
+                                        if (quality > 0) "${quality}p" else "",
+                                    absolute,
+                                    ExtractorLinkType.M3U8
+                                ) {
+                                    this.referer = referer
+                                    this.quality = quality
+                                    this.headers = mapOf(
+                                        "Origin" to mainServer,
+                                        "Referer" to referer
+                                    )
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
