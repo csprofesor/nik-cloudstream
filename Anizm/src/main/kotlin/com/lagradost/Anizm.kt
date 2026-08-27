@@ -102,11 +102,12 @@ class Anizm : MainAPI() {
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
-        val hash = when {
-            url.contains("/video/") -> url.substringAfter("/video/").substringBefore("/")
-            url.contains("/player/") -> url.substringAfter("/player/").substringBefore("/")
-            else -> url.substringAfterLast("/").substringBefore("?")
-        }.trim()
+        val hash = app.get(url, referer = "$mainUrl/").document
+            .select("script")
+            .find { it.data().contains("eval(function(p,a,c,k,e,d)") }
+            ?.let { getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",") }
+            ?.trim()
+            ?: return
 
         if (hash.isBlank()) return
 
