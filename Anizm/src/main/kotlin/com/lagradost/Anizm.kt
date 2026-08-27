@@ -25,17 +25,17 @@ class Anizm : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler",
-        "$mainUrl/kategoriler/1" to Macera",
-        "$mainUrl/kategoriler/2" to Aksiyon",
-        "$mainUrl/kategoriler/3" to Komedi",
-        "$mainUrl/kategoriler/4" to Dram",
-        "$mainUrl/kategoriler/5" to Romantizm",
-        "$mainUrl/kategoriler/8" to Bilim-Kurgu",
-        "$mainUrl/kategoriler/13" to Fantastik",
-        "$mainUrl/kategoriler/20" to Korku",
-        "$mainUrl/kategoriler/22" to Filmler",
-        "$mainUrl/kategoriler/26" to Okul",
-        "$mainUrl/kategoriler/34" to Shounen",
+        "$mainUrl/kategoriler/1" to "Macera",
+        "$mainUrl/kategoriler/2" to "Aksiyon",
+        "$mainUrl/kategoriler/3" to "Komedi",
+        "$mainUrl/kategoriler/4" to "Dram",
+        "$mainUrl/kategoriler/5" to "Romantizm",
+        "$mainUrl/kategoriler/8" to "Bilim-Kurgu",
+        "$mainUrl/kategoriler/13" to "Fantastik",
+        "$mainUrl/kategoriler/20" to "Korku",
+        "$mainUrl/kategoriler/22" to "Filmler",
+        "$mainUrl/kategoriler/26" to "Okul",
+        "$mainUrl/kategoriler/34" to "Shounen",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
