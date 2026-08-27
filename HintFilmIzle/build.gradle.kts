@@ -8,3 +8,5 @@ cloudstream {
     tvTypes = listOf("Movie", "TvSeries")
     iconUrl = "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%"
 }
+
+// Published in the main repository plugin list
