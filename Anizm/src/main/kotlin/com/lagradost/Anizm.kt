@@ -242,37 +242,89 @@ class Anizm : MainAPI() {
         val videoId = iframeUrl.substringAfter("#", "").trim()
         if (videoId.isBlank()) return
 
-        val info = app.get(
+        val extractM3u8: (String) -> String? = { body ->
+            Regex(
+                """(?:https?:)?//[^"'\\s]+\\.m3u8(?:\\?[^"'\\s]+)?|/hlsmod/[^"'\\s]+"""
+            ).find(body)?.value?.let { found ->
+                when {
+                    found.startsWith("//") -> "https:$found"
+                    found.startsWith("/") -> "$base$found"
+                    else -> found
+                }
+            }
+        }
+
+        val infoResponse = app.get(
             "$base/api/v1/info?id=$videoId",
             referer = iframeUrl,
-            headers = mapOf("Accept" to "application/json, text/plain, */*")
+            headers = mapOf(
+                "Accept" to "application/json, text/plain, */*"
+            )
         ).text
 
-        val direct = Regex("""https?://[^\"'\s]+\.m3u8(?:\?[^\"'\s]+)?""", RegexOption.IGNORE_CASE)
-            .find(info)?.value
+        val token = Regex(
+            """\"(?:t|token)\":\s*\"([^\"]+)\""""
+        ).find(infoResponse)?.groupValues?.getOrNull(1)
 
-        if (!direct.isNullOrBlank()) {
-            M3u8Helper.generateM3u8("\${this.name} (\$translator)", direct, iframeUrl)
-                .forEach(sourceCallback)
+        extractM3u8(infoResponse)?.let { direct ->
+            M3u8Helper.generateM3u8(
+                "${this.name} ($translator)",
+                direct,
+                iframeUrl
+            ).forEach(sourceCallback)
             return
         }
 
-        val token = Regex("""\"(?:t|token)\"\s*:\s*\"([^\"]+)\"""")
-            .find(info)?.groupValues?.getOrNull(1)
+        if (token.isNullOrBlank()) return
 
-        if (!token.isNullOrBlank()) {
-            val player = app.get(
-                "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
-                referer = iframeUrl,
-                headers = mapOf("Accept" to "application/json, text/plain, */*")
-            ).text
+        val playerResponse = app.get(
+            "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
+            referer = iframeUrl,
+            headers = mapOf(
+                "Accept" to "application/json, text/plain, */*"
+            )
+        ).text
 
-            val playerDirect = Regex("""https?://[^\"'\s]+\.m3u8(?:\?[^\"'\s]+)?""", RegexOption.IGNORE_CASE)
-                .find(player)?.value
+        extractM3u8(playerResponse)?.let { direct ->
+            M3u8Helper.generateM3u8(
+                "${this.name} ($translator)",
+                direct,
+                iframeUrl
+            ).forEach(sourceCallback)
+            return
+        }
 
-            if (!playerDirect.isNullOrBlank()) {
-                M3u8Helper.generateM3u8("\${this.name} (\$translator)", playerDirect, iframeUrl)
-                    .forEach(sourceCallback)
+        val kx = Regex(
+            """\"kx\":\s*\"([^\"]+)\""""
+        ).find(playerResponse)?.groupValues?.getOrNull(1)
+
+        if (kx.isNullOrBlank()) return
+
+        val encodedKx = java.net.URLEncoder.encode(kx, "UTF-8")
+        val candidates = listOf(
+            "$base/api/v1/download?id=$encodedKx",
+            "$base/api/v1/info?id=$encodedKx",
+            "$base/api/v1/folder?id=$encodedKx"
+        )
+
+        for (endpoint in candidates) {
+            val response = runCatching {
+                app.get(
+                    endpoint,
+                    referer = iframeUrl,
+                    headers = mapOf(
+                        "Accept" to "application/json, text/plain, */*"
+                    )
+                ).text
+            }.getOrNull() ?: continue
+
+            extractM3u8(response)?.let { direct ->
+                M3u8Helper.generateM3u8(
+                    "${this.name} ($translator)",
+                    direct,
+                    iframeUrl
+                ).forEach(sourceCallback)
+                return
             }
         }
     }
