@@ -1,21 +1,10 @@
 package com.lagradost
 
-import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.extractors.ByseSX
-import com.lagradost.cloudstream3.extractors.DoodLaExtractor
-import com.lagradost.cloudstream3.extractors.FilemoonV2
-import com.lagradost.cloudstream3.extractors.Gdriveplayer
-import com.lagradost.cloudstream3.extractors.Odnoklassniki
-import com.lagradost.cloudstream3.extractors.StreamWishExtractor
-import com.lagradost.cloudstream3.extractors.UpstreamExtractor
-import com.lagradost.cloudstream3.extractors.Vidoza
-import com.lagradost.cloudstream3.extractors.Vidmoly
-import com.lagradost.cloudstream3.extractors.Voe
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
@@ -245,96 +234,6 @@ class Anizm : MainAPI() {
     }
 
 
-    private suspend fun invokeSistennSource(
-        iframeUrl: String,
-        translator: String,
-        sourceCallback: (ExtractorLink) -> Unit
-    ) {
-        val base = "https://sistenn.uns.bio"
-        val videoId = iframeUrl.substringAfter("#", "").substringBefore("?").trim()
-        if (videoId.isBlank()) return
-
-        suspend fun emit(url: String) {
-            if (!url.startsWith("http")) return
-            runCatching {
-                M3u8Helper.generateM3u8("${this.name} (${translator})", url, iframeUrl)
-                    .forEach(sourceCallback)
-            }
-        }
-
-        fun findM3u8(body: String): String? {
-            val normalized = body.replace("\\\\/", "/").replace("\\\\u0026", "&")
-            return Regex("""(?:https?:)?//[^"\\s]+\\.m3u8(?:\\?[^"\\s]+)?|/hlsmod/[^"\\s]+""")
-                .find(normalized)?.value?.let { found ->
-                    when {
-                        found.startsWith("//") -> "https:$found"
-                        found.startsWith("/") -> "$base$found"
-                        else -> found
-                    }
-                }
-        }
-
-        // Current Sistenn player requests this endpoint directly.
-        val videoResponse = runCatching {
-            app.get(
-                "$base/api/v1/video?id=$videoId&w=1536&h=864&r=",
-                referer = iframeUrl,
-                headers = mapOf("Accept" to "*/*", "Origin" to base)
-            ).text
-        }.getOrDefault("")
-
-        findM3u8(videoResponse)?.let { emit(it); return }
-
-        // Handle JSON responses that contain the HLS URL.
-        Regex("""[A-Za-z]+["']?\\s*[:=]\\s*["']([^"']+\\.m3u8[^"']*)""")
-            .find(videoResponse)?.groupValues?.getOrNull(1)?.let {
-                emit(it.replace("\\\\/", "/"))
-                return
-            }
-
-        // Fallback to the player bootstrap.
-        val info = runCatching {
-            app.get(
-                "$base/api/v1/info?id=$videoId",
-                referer = iframeUrl,
-                headers = mapOf("Accept" to "application/json, text/plain, */*")
-            ).text
-        }.getOrDefault("")
-
-        val token = Regex("""["'](?:t|token)["']\\s*:\\s*["']([^"']+)["']""")
-            .find(info)?.groupValues?.getOrNull(1)
-
-        if (!token.isNullOrBlank()) {
-            val player = runCatching {
-                app.get(
-                    "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
-                    referer = iframeUrl,
-                    headers = mapOf("Accept" to "application/json, text/plain, */*")
-                ).text
-            }.getOrDefault("")
-
-            findM3u8(player)?.let { emit(it); return }
-        }
-    }
-
-    private suspend fun invokeProviderLink(
-        link: String,
-        referer: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ) {
-        val fixedLink = fixUrl(link)
-        if (fixedLink.isBlank()) return
-
-        // Follow the exact CloudStream pattern used by AsyaWatch:
-        // provider -> iframe/player -> loadExtractor.
-        if (fixedLink.contains("sistenn.uns.bio", ignoreCase = true)) {
-            invokeSistennSource(fixedLink, "Provider", callback)
-        } else {
-            loadExtractor(fixedLink, referer, subtitleCallback, callback)
-        }
-    }
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -343,58 +242,54 @@ class Anizm : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        val translators = document.select("div.episodeTranslators div#fansec")
-            .map {
-                Pair(it.select("a").attr("translator"), it.select("div.title").text())
-            }
-
-        for ((url, translator) in translators) {
+        document.select("div.episodeTranslators div#fansec").map {
+            Pair(it.select("a").attr("translator"), it.select("div.title").text())
+        }.forEach { (url, translator) ->
             safeApiCall {
-                val translatorResponse = app.get(
+                app.get(
                     url,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>() ?: return@safeApiCall
+                ).parsedSafe<Translators>()?.data?.let { translatorData ->
+                    Jsoup.parse(translatorData).select("a").forEach { video ->
+                        app.get(
+                            video.attr("video"),
+                            referer = data,
+                            headers = mapOf(
+                                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                                "X-Requested-With" to "XMLHttpRequest"
+                            )
+                        ).parsedSafe<Videos>()?.player?.let { playerHtml ->
+                            val link = Jsoup.parse(playerHtml)
+                                .select("iframe[src]")
+                                .attr("src")
 
-                val videos = Jsoup.parse(translatorResponse.data.orEmpty()).select("a")
-                for (video in videos) {
-                    val videoUrl = video.attr("video")
-                    if (videoUrl.isBlank()) continue
+                            if (link.isBlank()) return@let
 
-                    val videoResponse = app.get(
-                        videoUrl,
-                        referer = data,
-                        headers = mapOf(
-                            "Accept" to "application/json, text/javascript, */*; q=0.01",
-                            "X-Requested-With" to "XMLHttpRequest"
-                        )
-                    ).parsedSafe<Videos>() ?: continue
-
-                    val playerHtml = videoResponse.player.orEmpty()
-                    val playerDoc = Jsoup.parse(playerHtml)
-
-                    // Follow the provider -> player -> extractor chain.
-                    val players = playerDoc
-                        .select("iframe[src], iframe[data-src], video[src], source[src], a[href]")
-                        .mapNotNull { el ->
-                            val value = when {
-                                el.hasAttr("src") -> el.attr("src")
-                                el.hasAttr("data-src") -> el.attr("data-src")
-                                else -> el.attr("href")
+                            when {
+                                link.startsWith(mainServer) -> {
+                                    invokeLokalSource(link, translator, callback)
+                                }
+                                else -> {
+                                    // CloudStream's central extractor registry resolves the
+                                    // provider/player host to the matching extractor.
+                                    loadExtractor(
+                                        fixUrl(link),
+                                        "$mainUrl/",
+                                        subtitleCallback,
+                                        callback
+                                    )
+                                }
                             }
-                            value.takeIf { it.isNotBlank() }
                         }
-                        .distinct()
-
-                    for (player in players) {
-                        invokeProviderLink(player, data, subtitleCallback, callback)
                     }
                 }
             }
         }
+
         return true
     }
 
