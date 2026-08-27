@@ -182,9 +182,12 @@ class Anizm : MainAPI() {
                 val href = a.attr("href").trim()
                 if (href.isBlank() || !href.contains("-bolum", ignoreCase = true)) return@mapNotNull null
                 if (!name.contains("Bölüm", ignoreCase = true)) return@mapNotNull null
-                newEpisode(fixUrl(href)) { this.name = name }
+                Pair(fixUrl(href), name)
             }
-            .distinctBy { it.url }
+            .distinctBy { it.first }
+            .map { (href, name) ->
+                newEpisode(href) { this.name = name }
+            }
 
         val type = if (episodes.isEmpty()) TvType.Movie else TvType.Anime
         val trailer = document.selectFirst("iframe")?.attr("src")
