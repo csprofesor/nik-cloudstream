@@ -41,8 +41,21 @@ class Anizm : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else request.data + "?page=" + page
         val document = app.get(url).document
-        val home = document.select("div.restrictedWidth div#episodesMiddle")
+        val home = document.select("a[href]")
+            .filter { link ->
+                val href = link.attr("href")
+                href.isNotBlank() &&
+                    !href.contains("/kategoriler/") &&
+                    !href.contains("/anime-izle") &&
+                    !href.contains("/fullViewSearch") &&
+                    !href.contains("/takvim") &&
+                    !href.contains("/giris") &&
+                    !href.contains("/kayit") &&
+                    !href.contains("/favori") &&
+                    !href.contains("/liste")
+            }
             .mapNotNull { it.toSearchResult() }
+            .filter { it.url.startsWith(mainUrl) }
             .distinctBy { it.url }
         val hasNext = document.selectFirst(
             "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
