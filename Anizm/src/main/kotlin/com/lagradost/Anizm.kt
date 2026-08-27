@@ -263,7 +263,7 @@ class Anizm : MainAPI() {
                 }
         }
 
-        fun emit(url: String) {
+        suspend fun emit(url: String) {
             M3u8Helper.generateM3u8(
                 "${this.name} ($translator)",
                 url,
