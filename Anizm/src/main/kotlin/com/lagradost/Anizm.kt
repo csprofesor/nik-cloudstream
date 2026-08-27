@@ -243,18 +243,28 @@ class Anizm : MainAPI() {
         }
     }
 
+
     private suspend fun invokeSistennSource(
         iframeUrl: String,
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
         val base = "https://sistenn.uns.bio"
-        val videoId = iframeUrl.substringAfter("#", "").trim()
+        val videoId = iframeUrl.substringAfter("#", "").substringBefore("?").trim()
         if (videoId.isBlank()) return
 
+        suspend fun emit(url: String) {
+            if (!url.startsWith("http")) return
+            runCatching {
+                M3u8Helper.generateM3u8("${this.name} (${translator})", url, iframeUrl)
+                    .forEach(sourceCallback)
+            }
+        }
+
         fun findM3u8(body: String): String? {
+            val normalized = body.replace("\\\\/", "/").replace("\\\\u0026", "&")
             return Regex("""(?:https?:)?//[^"\\s]+\\.m3u8(?:\\?[^"\\s]+)?|/hlsmod/[^"\\s]+""")
-                .find(body)?.value?.let { found ->
+                .find(normalized)?.value?.let { found ->
                     when {
                         found.startsWith("//") -> "https:$found"
                         found.startsWith("/") -> "$base$found"
@@ -263,89 +273,46 @@ class Anizm : MainAPI() {
                 }
         }
 
-        suspend fun emit(url: String) {
-            M3u8Helper.generateM3u8(
-                "${this.name} ($translator)",
-                url,
-                iframeUrl
-            ).forEach(sourceCallback)
-        }
+        // Current Sistenn player requests this endpoint directly.
+        val videoResponse = runCatching {
+            app.get(
+                "$base/api/v1/video?id=$videoId&w=1536&h=864&r=",
+                referer = iframeUrl,
+                headers = mapOf("Accept" to "*/*", "Origin" to base)
+            ).text
+        }.getOrDefault("")
 
-        val infoResponse = try {
+        findM3u8(videoResponse)?.let { emit(it); return }
+
+        // Handle JSON responses that contain the HLS URL.
+        Regex("""[A-Za-z]+["']?\\s*[:=]\\s*["']([^"']+\\.m3u8[^"']*)""")
+            .find(videoResponse)?.groupValues?.getOrNull(1)?.let {
+                emit(it.replace("\\\\/", "/"))
+                return
+            }
+
+        // Fallback to the player bootstrap.
+        val info = runCatching {
             app.get(
                 "$base/api/v1/info?id=$videoId",
                 referer = iframeUrl,
                 headers = mapOf("Accept" to "application/json, text/plain, */*")
             ).text
-        } catch (_: Exception) {
-            return
-        }
+        }.getOrDefault("")
 
-        findM3u8(infoResponse)?.let { emit(it); return }
+        val token = Regex("""["'](?:t|token)["']\\s*:\\s*["']([^"']+)["']""")
+            .find(info)?.groupValues?.getOrNull(1)
 
-        val token = Regex("""\"(?:t|token)\":\s*\"([^\"]+)\"""")
-            .find(infoResponse)?.groupValues?.getOrNull(1)
-
-        val playerResponse = if (!token.isNullOrBlank()) {
-            try {
+        if (!token.isNullOrBlank()) {
+            val player = runCatching {
                 app.get(
                     "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
                     referer = iframeUrl,
                     headers = mapOf("Accept" to "application/json, text/plain, */*")
                 ).text
-            } catch (_: Exception) {
-                ""
-            }
-        } else {
-            ""
-        }
+            }.getOrDefault("")
 
-        findM3u8(playerResponse)?.let { emit(it); return }
-
-        val kx = Regex("""\"kx\":\s*\"([^\"]+)\"""")
-            .find(playerResponse)?.groupValues?.getOrNull(1)
-            ?: return
-
-        val encodedKx = java.net.URLEncoder.encode(kx, "UTF-8")
-        val videoResponses = listOf(
-            "$base/api/v1/video?id=$encodedKx",
-            "$base/api/v1/download?id=$encodedKx",
-            "$base/api/v1/folder?id=$encodedKx"
-        )
-
-        for (endpoint in videoResponses) {
-            val response = try {
-                app.get(
-                    endpoint,
-                    referer = iframeUrl,
-                    headers = mapOf("Accept" to "application/json, text/plain, */*")
-                ).text
-            } catch (_: Exception) {
-                continue
-            }
-
-            findM3u8(response)?.let { emit(it); return }
-
-            val encrypted = response.trim().removePrefix("\"").removeSuffix("\"")
-            if (encrypted.length > 32 && encrypted.matches(Regex("[0-9a-fA-F]+"))) {
-                val decrypted = listOf("1234567890oiuytr", "0123456789abcdef").firstNotNullOfOrNull { iv ->
-                    runCatching {
-                        val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
-                        val keySpec = javax.crypto.spec.SecretKeySpec("kiemtienmua911ca".toByteArray(), "AES")
-                        val ivSpec = javax.crypto.spec.IvParameterSpec(iv.toByteArray())
-                        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, keySpec, ivSpec)
-                        val bytes = encrypted.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
-                        cipher.doFinal(bytes).toString(Charsets.UTF_8)
-                    }.getOrNull()
-                }
-                decrypted?.let { plain ->
-                    findM3u8(plain)?.let { emit(it); return }
-                    Regex("""\"source\":\"([^\"]+)\"""")
-                        .find(plain)?.groupValues?.getOrNull(1)
-                        ?.replace("\\/","/")
-                        ?.let { emit(it); return }
-                }
-            }
+            findM3u8(player)?.let { emit(it); return }
         }
     }
 
@@ -386,138 +353,52 @@ class Anizm : MainAPI() {
         return true
     }
 
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = app.get(
-            data,
-            headers = mapOf(
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-            )
-        ).document
+        val document = app.get(data).document
 
-        // Anizm has used several different attributes for translator/player
-        // links over time. Collect all known variants instead of depending on
-        // one exact DOM attribute.
-        val translatorElements = document.select(
-            "[translator], [data-translator], a[href*='translator'], a[href*='/video/']"
-        )
-
-        val translatorLinks = translatorElements.mapNotNull { element ->
-            val url = sequenceOf(
-                element.attr("translator"),
-                element.attr("data-translator"),
-                element.attr("data-url"),
-                element.attr("href")
-            ).map { it.trim() }.firstOrNull { it.isNotBlank() }
-                ?: return@mapNotNull null
-
-            val absolute = fixUrl(url)
-            val name = element.selectFirst(".title, .translatorCompactBox, .translatorName, .name")
-                ?.text()?.trim()
-                .orEmpty()
-                .ifBlank { element.text().trim() }
-
-            Pair(absolute, name)
-        }.distinctBy { it.first }
-
-        for ((url, translator) in translatorLinks) {
+        document.select("div.episodeTranslators div#fansec").map {
+            Pair(it.select("a").attr("translator"), it.select("div.title").text())
+        }.apmap { (url, translator) ->
             safeApiCall {
-                val response = app.get(
+                app.get(
                     url,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                )
-
-                val translatorData = response.parsedSafe<Translators>()?.data
-                    ?: response.text.takeIf { it.contains("video", ignoreCase = true) }
-
-                if (translatorData.isNullOrBlank()) return@safeApiCall
-
-                val translatorDocument = Jsoup.parse(translatorData)
-
-                // Accept video/data-video/data-src/href so a provider changing
-                // its markup doesn't make every source disappear.
-                val videoUrls = translatorDocument.select(
-                    "[video], [data-video], [data-src], a[href]"
-                ).mapNotNull { video ->
-                    sequenceOf(
-                        video.attr("video"),
-                        video.attr("data-video"),
-                        video.attr("data-src"),
-                        video.attr("href")
-                    ).map { it.trim() }
-                        .firstOrNull { it.isNotBlank() }
-                        ?.let { fixUrl(it) }
-                }.filter {
-                    it.contains("/video/") || it.contains("/player/") ||
-                        it.contains("http", ignoreCase = true)
-                }.distinct()
-
-                for (videoUrl in videoUrls) {
-                    safeApiCall {
-                        val playerResponse = app.get(
-                            videoUrl,
+                ).parsedSafe<Translators>()?.data?.let {
+                    Jsoup.parse(it).select("a").apmap { video ->
+                        app.get(
+                            video.attr("video"),
                             referer = data,
                             headers = mapOf(
                                 "Accept" to "application/json, text/javascript, */*; q=0.01",
                                 "X-Requested-With" to "XMLHttpRequest"
                             )
-                        )
-
-                        val iframeHtml = playerResponse.parsedSafe<Videos>()?.player
-                            ?: playerResponse.text
-
-                        if (iframeHtml.isNullOrBlank()) return@safeApiCall
-
-                        val playerDocument = Jsoup.parse(iframeHtml)
-
-                        // Some versions return iframe src, others data-src,
-                        // embed/src or the provider URL directly.
-                        val links = playerDocument.select(
-                            "iframe, video, source, a"
-                        ).flatMap { node ->
-                            listOf(
-                                node.attr("src"),
-                                node.attr("data-src"),
-                                node.attr("data-video"),
-                                node.attr("href")
-                            )
-                        }.map { it.trim() }
-                            .filter { it.isNotBlank() }
-                            .map { fixUrl(it) }
-                            .distinct()
-
-                        for (link in links) {
-                            when {
-                                link.startsWith(mainServer, ignoreCase = true) -> {
-                                    invokeLokalSource(link, translator, callback)
-                                }
-                                link.contains("sistenn.uns.bio", ignoreCase = true) -> {
-                                    invokeSistennSource(link, translator, callback)
-                                }
-                                else -> {
-                                    if (!invokeKnownExtractor(
-                                            link,
-                                            data,
+                        ).parsedSafe<Videos>()?.player?.let { iframe ->
+                            Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
+                                val fixedLink = fixUrl(link)
+                                when {
+                                    fixedLink.startsWith(mainServer) -> {
+                                        invokeLokalSource(fixedLink, translator, callback)
+                                    }
+                                    fixedLink.contains("sistenn.uns.bio", ignoreCase = true) -> {
+                                        invokeSistennSource(fixedLink, translator, callback)
+                                    }
+                                    else -> {
+                                        loadExtractor(
+                                            fixedLink,
+                                            "$mainUrl/",
                                             subtitleCallback,
                                             callback
                                         )
-                                    ) {
-                                        safeApiCall {
-                                            loadExtractor(
-                                                link,
-                                                data,
-                                                subtitleCallback,
-                                                callback
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -526,7 +407,6 @@ class Anizm : MainAPI() {
                 }
             }
         }
-
         return true
     }
 
