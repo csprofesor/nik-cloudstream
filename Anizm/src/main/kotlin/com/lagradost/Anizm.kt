@@ -11,9 +11,6 @@ import com.lagradost.cloudstream3.mvvm.safeApiCall
 import com.lagradost.cloudstream3.utils.*
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
 
 class Anizm : MainAPI() {
     override var mainUrl = "https://anizm.net"
@@ -245,12 +242,12 @@ class Anizm : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val document = app.get(data).document
-        coroutineScope {
-            document.select("div.episodeTranslators div#fansec").map {
-                Pair(it.select("a").attr("translator"), it.select("div.title").text())
-            }.map { (url, translator) ->
-                launch {
-                    safeApiCall {
+
+        for (fansec in document.select("div.episodeTranslators div#fansec")) {
+            val url = fansec.select("a").attr("translator")
+            val translator = fansec.select("div.title").text()
+
+            safeApiCall {
                 app.get(
                     url,
                     referer = data,
@@ -258,37 +255,38 @@ class Anizm : MainAPI() {
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").map { video ->
-                        launch {
-                            app.get(
+                ).parsedSafe<Translators>()?.data?.let { translatorData ->
+                    for (video in Jsoup.parse(translatorData).select("a")) {
+                        app.get(
                             video.attr("video"),
                             referer = data,
                             headers = mapOf(
                                 "Accept" to "application/json, text/javascript, */*; q=0.01",
                                 "X-Requested-With" to "XMLHttpRequest"
                             )
-                            ).parsedSafe<Videos>()?.player?.let { iframe ->
-                                Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
-                                when {
-                                    link.startsWith(mainServer) -> {
-                                        invokeLokalSource(link, translator, callback)
-                                    }
-                                    else -> {
-                                        loadExtractor(
-                                            fixUrl(link),
-                                            "$mainUrl/",
-                                            subtitleCallback,
-                                            callback
-                                        )
-                                    }
+                        ).parsedSafe<Videos>()?.player?.let { iframe ->
+                            val link = Jsoup.parse(iframe).select("iframe").attr("src")
+                            if (link.isBlank()) return@let
+
+                            when {
+                                link.startsWith(mainServer) -> {
+                                    invokeLokalSource(link, translator, callback)
+                                }
+                                else -> {
+                                    loadExtractor(
+                                        fixUrl(link),
+                                        "$mainUrl/",
+                                        subtitleCallback,
+                                        callback
+                                    )
                                 }
                             }
                         }
                     }
                 }
-            }.joinAll()
+            }
         }
+
         return true
     }
     data class Source(@JsonProperty("videoSource") val videoSource: String?)
