@@ -93,7 +93,7 @@ class Anizm : MainAPI() {
             Pair(it.select("a").attr("translator"), it.select("div.title").text())
         }.map { (url, translator) -> safeApiCall {
             app.get(url, referer = data, headers = mapOf("Accept" to "application/json, text/javascript, */*; q=0.01", "X-Requested-With" to "XMLHttpRequest"))
-                .parsedSafe<Translators>()?.data?.let { html -> Jsoup.parse(html).select("a").apmap { video ->
+                .parsedSafe<Translators>()?.data?.let { html -> Jsoup.parse(html).select("a[video]").map { video ->
                     app.get(video.attr("video"), referer = data, headers = mapOf("Accept" to "application/json, text/javascript, */*; q=0.01", "X-Requested-With" to "XMLHttpRequest"))
                         .parsedSafe<Videos>()?.player?.let { iframe ->
                             Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
