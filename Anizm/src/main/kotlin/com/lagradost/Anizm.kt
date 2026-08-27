@@ -138,7 +138,7 @@ class Anizm : MainAPI() {
         val document = app.get(data).document
         document.select("div.episodeTranslators div#fansec").map {
             Pair(it.select("a").attr("translator"), it.select("div.title").text())
-        }.apmap { (url, translator) ->
+        }.map { (url, translator) ->
             safeApiCall {
                 app.get(
                     url,
@@ -148,7 +148,7 @@ class Anizm : MainAPI() {
                         "X-Requested-With" to "XMLHttpRequest"
                     )
                 ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").apmap { video ->
+                    Jsoup.parse(it).select("a").map { video ->
                         app.get(
                             video.attr("video"),
                             referer = data,
