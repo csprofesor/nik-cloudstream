@@ -252,69 +252,64 @@ class Anizm : MainAPI() {
         val videoId = iframeUrl.substringAfter("#", "").trim()
         if (videoId.isBlank()) return
 
-        val extractM3u8: (String) -> String? = { body ->
-            Regex(
-                """(?:https?:)?//[^"\s]+\.m3u8(?:\?[^"\s]+)?|/hlsmod/[^"\s]+"""
-            ).find(body)?.value?.let { found ->
-                when {
-                    found.startsWith("//") -> "https:$found"
-                    found.startsWith("/") -> "$base$found"
-                    else -> found
+        fun findM3u8(body: String): String? {
+            return Regex("""(?:https?:)?//[^"\\s]+\\.m3u8(?:\\?[^"\\s]+)?|/hlsmod/[^"\\s]+""")
+                .find(body)?.value?.let { found ->
+                    when {
+                        found.startsWith("//") -> "https:$found"
+                        found.startsWith("/") -> "$base$found"
+                        else -> found
+                    }
                 }
-            }
         }
 
-        val infoResponse = app.get(
-            "$base/api/v1/info?id=$videoId",
-            referer = iframeUrl,
-            headers = mapOf("Accept" to "application/json, text/plain, */*")
-        ).text
-
-        val token = Regex(
-            """\"(?:t|token)\":\s*\"([^\"]+)\""""
-        ).find(infoResponse)?.groupValues?.getOrNull(1)
-
-        extractM3u8(infoResponse)?.let { direct ->
+        fun emit(url: String) {
             M3u8Helper.generateM3u8(
-                "\${this.name} ($translator)",
-                direct,
+                "${this.name} ($translator)",
+                url,
                 iframeUrl
             ).forEach(sourceCallback)
-            return
         }
 
-        if (token.isNullOrBlank()) return
+        val infoResponse = runCatching {
+            app.get(
+                "$base/api/v1/info?id=$videoId",
+                referer = iframeUrl,
+                headers = mapOf("Accept" to "application/json, text/plain, */*")
+            ).text
+        }.getOrNull() ?: return
 
-        val encodedToken = java.net.URLEncoder.encode(token, "UTF-8")
-        val playerResponse = app.get(
-            "$base/api/v1/player?t=$encodedToken",
-            referer = iframeUrl,
-            headers = mapOf("Accept" to "application/json, text/plain, */*")
-        ).text
+        findM3u8(infoResponse)?.let { emit(it); return }
 
-        extractM3u8(playerResponse)?.let { direct ->
-            M3u8Helper.generateM3u8(
-                "\${this.name} ($translator)",
-                direct,
-                iframeUrl
-            ).forEach(sourceCallback)
-            return
+        val token = Regex("""\"(?:t|token)\":\s*\"([^\"]+)\"""")
+            .find(infoResponse)?.groupValues?.getOrNull(1)
+
+        val playerResponse = if (!token.isNullOrBlank()) {
+            runCatching {
+                app.get(
+                    "$base/api/v1/player?t=${java.net.URLEncoder.encode(token, "UTF-8")}",
+                    referer = iframeUrl,
+                    headers = mapOf("Accept" to "application/json, text/plain, */*")
+                ).text
+            }.getOrNull().orEmpty()
+        } else {
+            ""
         }
 
-        val kx = Regex(
-            """\"kx\":\s*\"([^\"]+)\""""
-        ).find(playerResponse)?.groupValues?.getOrNull(1)
+        findM3u8(playerResponse)?.let { emit(it); return }
 
-        if (kx.isNullOrBlank()) return
+        val kx = Regex("""\"kx\":\s*\"([^\"]+)\"""")
+            .find(playerResponse)?.groupValues?.getOrNull(1)
+            ?: return
 
         val encodedKx = java.net.URLEncoder.encode(kx, "UTF-8")
-        val candidates = listOf(
+        val videoResponses = listOf(
+            "$base/api/v1/video?id=$encodedKx",
             "$base/api/v1/download?id=$encodedKx",
-            "$base/api/v1/info?id=$encodedKx",
             "$base/api/v1/folder?id=$encodedKx"
         )
 
-        for (endpoint in candidates) {
+        for (endpoint in videoResponses) {
             val response = runCatching {
                 app.get(
                     endpoint,
@@ -323,13 +318,27 @@ class Anizm : MainAPI() {
                 ).text
             }.getOrNull() ?: continue
 
-            extractM3u8(response)?.let { direct ->
-                M3u8Helper.generateM3u8(
-                    "\${this.name} ($translator)",
-                    direct,
-                    iframeUrl
-                ).forEach(sourceCallback)
-                return
+            findM3u8(response)?.let { emit(it); return }
+
+            val encrypted = response.trim().removePrefix("\"").removeSuffix("\"")
+            if (encrypted.length > 32 && encrypted.matches(Regex("[0-9a-fA-F]+"))) {
+                val decrypted = listOf("1234567890oiuytr", "0123456789abcdef").firstNotNullOfOrNull { iv ->
+                    runCatching {
+                        val cipher = javax.crypto.Cipher.getInstance("AES/CBC/PKCS5Padding")
+                        val keySpec = javax.crypto.spec.SecretKeySpec("kiemtienmua911ca".toByteArray(), "AES")
+                        val ivSpec = javax.crypto.spec.IvParameterSpec(iv.toByteArray())
+                        cipher.init(javax.crypto.Cipher.DECRYPT_MODE, keySpec, ivSpec)
+                        val bytes = encrypted.chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+                        cipher.doFinal(bytes).toString(Charsets.UTF_8)
+                    }.getOrNull()
+                }
+                decrypted?.let { plain ->
+                    findM3u8(plain)?.let { emit(it); return }
+                    Regex("""\"source\":\"([^\"]+)\"""")
+                        .find(plain)?.groupValues?.getOrNull(1)
+                        ?.replace("\\/","/")
+                        ?.let { emit(it); return }
+                }
             }
         }
     }
