@@ -236,41 +236,31 @@ class Anizm : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
 
-        document.select("div.episodeTranslators div#fansec").forEach { translatorBlock ->
-            val translatorUrl = translatorBlock.selectFirst("a")?.attr("translator").orEmpty()
-            val translator = translatorBlock.selectFirst("div.title")?.text()?.trim().orEmpty()
-            if (translatorUrl.isBlank()) return@forEach
-
+        document.select("div.episodeTranslators div#fansec").map {
+            Pair(
+                it.select("a").attr("translator"),
+                it.select("div.title").text()
+            )
+        }.apmap { (url, translator) ->
             safeApiCall {
                 app.get(
-                    fixUrl(translatorUrl),
+                    url,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let { html ->
-                    Jsoup.parse(html).select("a").forEach { video ->
-                        val videoUrl = video.attr("video").trim()
-                        if (videoUrl.isBlank()) return@forEach
-
-                        safeApiCall {
-                            app.get(
-                                fixUrl(videoUrl),
-                                referer = data,
-                                headers = mapOf(
-                                    "Accept" to "application/json, text/javascript, */*; q=0.01",
-                                    "X-Requested-With" to "XMLHttpRequest"
-                                )
-                            ).parsedSafe<Videos>()?.player?.let { playerHtml ->
-                                val link = Jsoup.parse(playerHtml)
-                                    .selectFirst("iframe")
-                                    ?.attr("src")
-                                    ?.trim()
-                                    .orEmpty()
-
-                                if (link.isBlank()) return@let
-
+                ).parsedSafe<Translators>()?.data?.let {
+                    Jsoup.parse(it).select("a").apmap { video ->
+                        app.get(
+                            video.attr("video"),
+                            referer = data,
+                            headers = mapOf(
+                                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                                "X-Requested-With" to "XMLHttpRequest"
+                            )
+                        ).parsedSafe<Videos>()?.player?.let { iframe ->
+                            Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
                                 when {
                                     link.startsWith(mainServer) -> {
                                         invokeLokalSource(link, translator, callback)
@@ -290,12 +280,10 @@ class Anizm : MainAPI() {
                 }
             }
         }
-
         return true
     }
 
     data class Source(
-        @JsonProperty("securedLink") val securedLink: String?,
         @JsonProperty("videoSource") val videoSource: String?,
     )
 
