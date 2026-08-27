@@ -1,3 +1,4 @@
 Trigger build after DiziGom Kotlin compatibility fix.
 
 Anizm Sistenn update 2026-08-27T09:55Z
+Anizm extractor integration 2026-08-27T10:20Z
