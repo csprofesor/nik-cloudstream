@@ -316,43 +316,23 @@ class Anizm : MainAPI() {
         }
     }
 
-    private suspend fun invokeKnownExtractor(
+    private suspend fun invokeProviderLink(
         link: String,
         referer: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        val host = runCatching {
-            java.net.URI(link).host?.lowercase()?.removePrefix("www.")
-        }.getOrNull() ?: return false
+    ) {
+        val fixedLink = fixUrl(link)
+        if (fixedLink.isBlank()) return
 
-        val extractor: ExtractorApi = when {
-            host == "voe.sx" || host.endsWith(".voe.sx") -> Voe()
-            host == "vidmoly.me" || host == "vidmoly.to" || host == "vidmoly.biz" ||
-                host == "vidmoly.net" -> Vidmoly()
-            host.contains("gdriveplayer") || host == "databasegdriveplayer.co" ||
-                host == "gdriveplayer.to" -> Gdriveplayer()
-            host == "ok.ru" || host.endsWith(".ok.ru") ||
-                host == "odnoklassniki.ru" || host.endsWith(".odnoklassniki.ru") -> Odnoklassniki()
-            host == "filemoon.to" || host == "filemoon.in" || host == "filemoon.sx" -> FilemoonV2()
-            host == "byse.sx" || host.endsWith(".byse.sx") -> ByseSX()
-            host.contains("streamwish") || host.contains("embedwish") ||
-                host.contains("dwish.") || host.contains("mwish.") -> StreamWishExtractor()
-            host.contains("dood.") || host.contains("doodstream") -> DoodLaExtractor()
-            host == "vidoza.net" || host.endsWith(".vidoza.net") ||
-                host == "videzz.net" -> Vidoza()
-            host == "upstream.to" || host.endsWith(".upstream.to") -> UpstreamExtractor()
-            else -> return false
+        // Follow the exact CloudStream pattern used by AsyaWatch:
+        // provider -> iframe/player -> loadExtractor.
+        if (fixedLink.contains("sistenn.uns.bio", ignoreCase = true)) {
+            invokeSistennSource(fixedLink, "Provider", callback)
+        } else {
+            loadExtractor(fixedLink, referer, subtitleCallback, callback)
         }
-
-        try {
-            extractor.getUrl(link, referer, subtitleCallback, callback)
-        } catch (e: Exception) {
-            Log.d("Anizm", "Extractor ${extractor.name} failed for $link: ${e.message}")
-        }
-        return true
     }
-
 
     override suspend fun loadLinks(
         data: String,
@@ -366,43 +346,48 @@ class Anizm : MainAPI() {
             Pair(it.select("a").attr("translator"), it.select("div.title").text())
         }.apmap { (url, translator) ->
             safeApiCall {
-                app.get(
+                val translatorResponse = app.get(
                     url,
                     referer = data,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
                     )
-                ).parsedSafe<Translators>()?.data?.let {
-                    Jsoup.parse(it).select("a").apmap { video ->
-                        app.get(
-                            video.attr("video"),
-                            referer = data,
-                            headers = mapOf(
-                                "Accept" to "application/json, text/javascript, */*; q=0.01",
-                                "X-Requested-With" to "XMLHttpRequest"
-                            )
-                        ).parsedSafe<Videos>()?.player?.let { iframe ->
-                            Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
-                                val fixedLink = fixUrl(link)
-                                when {
-                                    fixedLink.startsWith(mainServer) -> {
-                                        invokeLokalSource(fixedLink, translator, callback)
-                                    }
-                                    fixedLink.contains("sistenn.uns.bio", ignoreCase = true) -> {
-                                        invokeSistennSource(fixedLink, translator, callback)
-                                    }
-                                    else -> {
-                                        loadExtractor(
-                                            fixedLink,
-                                            "$mainUrl/",
-                                            subtitleCallback,
-                                            callback
-                                        )
-                                    }
-                                }
+                ).parsedSafe<Translators>() ?: return@safeApiCall
+
+                Jsoup.parse(translatorResponse.data.orEmpty()).select("a").apmap { video ->
+                    val videoUrl = video.attr("video")
+                    if (videoUrl.isBlank()) return@apmap
+
+                    val videoResponse = app.get(
+                        videoUrl,
+                        referer = data,
+                        headers = mapOf(
+                            "Accept" to "application/json, text/javascript, */*; q=0.01",
+                            "X-Requested-With" to "XMLHttpRequest"
+                        )
+                    ).parsedSafe<Videos>() ?: return@apmap
+
+                    val playerHtml = videoResponse.player.orEmpty()
+                    val playerDoc = Jsoup.parse(playerHtml)
+
+                    // AsyaWatch-style provider/player relationship:
+                    // obtain every iframe/player source and hand it to
+                    // CloudStream's extractor framework instead of guessing
+                    // a provider from the host.
+                    val players = playerDoc.select("iframe[src], iframe[data-src], video[src], source[src], a[href]")
+                        .mapNotNull { el ->
+                            val value = when {
+                                el.hasAttr("src") -> el.attr("src")
+                                el.hasAttr("data-src") -> el.attr("data-src")
+                                else -> el.attr("href")
                             }
+                            value.takeIf { it.isNotBlank() }
                         }
+                        .distinct()
+
+                    players.forEach { player ->
+                        invokeProviderLink(player, data, subtitleCallback, callback)
                     }
                 }
             }
