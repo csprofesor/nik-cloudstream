@@ -287,14 +287,14 @@
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3",
         "status": 1,
-        "version": 56,
+        "version": 57,
         "name": "DiziMom",
         "internalName": "DiziMom",
         "authors": [
             "csprofesor"
         ],
         "description": "Binlerce yerli yabanc\u0131 dizi ar\u015fivi, t\u00fcm sezonlar, kesintisiz b\u00f6l\u00fcmler. Sadece dizi izle, Dizimom heryerde seninle!",
-        "fileSize": 34844,
+        "fileSize": 34842,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -302,7 +302,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.plus&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-cada7dde976ccbe3d28d6d3c525893c8e4267c1aa0d35b6a2cef0daf864874b3"
+        "fileHash": "sha256-410707792f79dad393acfd7672ff99a9b83db62827c76a0b60e19b14f0685288"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3",
@@ -640,7 +640,7 @@
             "csprofesor"
         ],
         "description": "HintFilmizle.com Hint filmleri, yabanc\u0131 filmler ve diziler",
-        "fileSize": 22049,
+        "fileSize": 23339,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "tr",
         "tvTypes": [
@@ -649,7 +649,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-3298a819f1994a031facec54d920ca4a3c4926ebc79619a564f1de349af2b6de"
+        "fileHash": "sha256-e32acbb6e99dc02ac8fb8bc610439598d6fafa60bbda84cfb5a4c5580770872f"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3",
