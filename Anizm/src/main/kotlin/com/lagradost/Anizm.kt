@@ -87,9 +87,13 @@ class Anizm : MainAPI() {
             .replace("http://anizm.tv", mainUrl)
     }
 
-    private fun getProperAnimeLink(uri: String): String = if (uri.contains("-bolum")) {
-        "$mainUrl/${uri.substringAfter("$mainUrl/").replace(Regex("-[0-9]+-bolum.*"), "")}"
-    } else uri
+    private fun getProperAnimeLink(uri: String): String {
+        val normalized = normalizeUrl(uri)
+        return if (normalized.contains("-bolum")) {
+            val basePart = normalized.substringAfter("$mainUrl/").replace(Regex("-[0-9]+-bolum.*"), "")
+            "$mainUrl/$basePart"
+        } else normalized
+    }
 
     private fun Element.toSearchResult(): AnimeSearchResponse? {
         val link = if (tagName() == "a") this else selectFirst("a") ?: return null
@@ -198,7 +202,8 @@ class Anizm : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse {
-        val document = app.get(url).document
+        val normalizedUrl = normalizeUrl(url)
+        val document = app.get(normalizedUrl, headers = browserHeaders).document
 
         val title = document.selectFirst("h2.anizm_pageTitle a, h2.anizm_pageTitle, h1.anizm_pageTitle, h1")?.text()?.trim()
             ?.takeIf { it.isNotBlank() }
@@ -234,7 +239,7 @@ class Anizm : MainAPI() {
 
         val imdbId = extractImdbId(document)
 
-        return newAnimeLoadResponse(title, url, type) {
+        return newAnimeLoadResponse(title, normalizedUrl, type) {
             posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img, div.infoPosterImg img")?.let {
                 it.attr("data-src").ifBlank {
                     it.attr("data-original").ifBlank { it.attr("src") }
@@ -351,8 +356,9 @@ class Anizm : MainAPI() {
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d("Anizm", "loadLinks data=$data")
-        val document = app.get(data, referer = "$mainUrl/").document
+        Log.d(logTag, "loadLinks data=$normalizedData")
+        val normalizedData = normalizeUrl(data)
+        val document = app.get(normalizedData, referer = "$mainUrl/", headers = browserHeaders + mapOf("Referer" to "$mainUrl/")).document
 
         val translatorItems = document.select(
             "div.episodeTranslators div#fansec, div.episodeTranslators [translator], a[translator]"
@@ -378,7 +384,7 @@ class Anizm : MainAPI() {
 
                 val translatorResponse = app.get(
                     translatorUrl,
-                    referer = data,
+                    referer = normalizedData,
                     headers = mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
                         "X-Requested-With" to "XMLHttpRequest"
