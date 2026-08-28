@@ -254,6 +254,7 @@ class Anizm : MainAPI() {
     private suspend fun invokeLokalSource(
         url: String,
         translator: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
         val normalizedUrl = normalizeUrl(url)
@@ -279,7 +280,7 @@ class Anizm : MainAPI() {
                 !innerUrl.contains("anizm.net") &&
                 !innerUrl.contains("anizm.tv")
             ) {
-                loadExtractor(innerUrl, normalizedUrl, { }, sourceCallback)
+                loadExtractor(innerUrl, normalizedUrl, subtitleCallback, sourceCallback)
                 return
             }
         }
@@ -517,7 +518,7 @@ class Anizm : MainAPI() {
                                 loadExtractor(fixedLink, data, subtitleCallback, callback)
                             }
                         } else if (fixedLink.startsWith(mainServer)) {
-                            invokeLokalSource(fixedLink, translator, callback)
+                            invokeLokalSource(fixedLink, translator, subtitleCallback, callback)
                         } else {
                             loadExtractor(fixedLink, data, subtitleCallback, callback)
                         }
