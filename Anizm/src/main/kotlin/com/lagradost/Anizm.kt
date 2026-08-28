@@ -256,31 +256,95 @@ class Anizm : MainAPI() {
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
-        app.get(url, referer = "$mainUrl/").document.select("script").find { script ->
-            script.data().contains("eval(function(p,a,c,k,e,d)")
-        }?.let {
-            val key = getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",")
-            val referer = "$mainServer/video/$key"
-            val link = "$mainServer/player/index.php?data=$key&do=getVideo"
-            Log.i("hexated", link)
-            app.post(
-                link,
-                data = mapOf("hash" to key, "r" to "$mainUrl/"),
-                referer = referer,
-                headers = mapOf(
-                    "Accept" to "*/*",
-                    "Origin" to mainServer,
-                    "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
-                    "X-Requested-With" to "XMLHttpRequest"
-                )
-            ).parsedSafe<Source>()?.let { source ->
-            val m3uLink = source.videoSource ?: source.securedLink
-            if (m3uLink != null) {
+        val normalizedUrl = normalizeUrl(url)
+        val playerDocument = runCatching {
+            app.get(
+                normalizedUrl,
+                referer = "$mainUrl/",
+                headers = browserHeaders + mapOf("Referer" to "$mainUrl/")
+            ).document
+        }.getOrNull() ?: return
+
+        val playerHtml = playerDocument.html()
+
+        playerDocument.selectFirst("iframe, embed")?.let { inner ->
+            val innerUrl = fixUrl(
+                inner.attr("src").ifBlank {
+                    inner.attr("data-src").ifBlank { inner.attr("data-lazy-src") }
+                }
+            )
+            if (innerUrl.startsWith("http") &&
+                !innerUrl.contains("anizmplayer.com") &&
+                !innerUrl.contains("anizm.com.tr") &&
+                !innerUrl.contains("anizm.net") &&
+                !innerUrl.contains("anizm.tv")
+            ) {
+                loadExtractor(innerUrl, normalizedUrl, { }, sourceCallback)
+                return
+            }
+        }
+
+        playerDocument.select("script").firstOrNull {
+            it.data().contains("eval(function(p,a,c,k,e,d)")
+        }?.let { packed ->
+            val unpacked = runCatching { getAndUnpack(packed.data()) }.getOrNull() ?: ""
+            val key = Regex("""FirePlayer\s*\(\s*["']([^"']+)["']""")
+                .find(unpacked)?.groupValues?.getOrNull(1)
+                ?: Regex("""/video/([A-Za-z0-9_-]+)""").find(unpacked)?.groupValues?.getOrNull(1)
+
+            if (!key.isNullOrBlank()) {
+                val referer = "$mainServer/video/$key"
+                val apiUrl = "$mainServer/player/index.php?data=$key&do=getVideo"
+                val source = runCatching {
+                    app.post(
+                        apiUrl,
+                        data = mapOf("hash" to key, "r" to "$mainUrl/"),
+                        referer = referer,
+                        headers = browserHeaders + mapOf(
+                            "Accept" to "*/*",
+                            "Origin" to mainServer,
+                            "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
+                            "X-Requested-With" to "XMLHttpRequest"
+                        )
+                    ).parsedSafe<Source>()
+                }.getOrNull()
+
+                val m3uLink = source?.videoSource ?: source?.securedLink
+                if (!m3uLink.isNullOrBlank()) {
+                    M3u8Helper.generateM3u8(
+                        "${this.name} ($translator)",
+                        m3uLink,
+                        referer
+                    ).forEach(sourceCallback)
+                    return
+                }
+            }
+        }
+
+        val mediaUrl = Regex("""(?:const|var|let)\s+url\s*=\s*["']([^"']+)["']""")
+            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\\/", "/")
+            ?: Regex("""file:\s*["']([^"']+)["']""")
+                .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\\/", "/")
+
+        if (!mediaUrl.isNullOrBlank() && mediaUrl.startsWith("http")) {
+            if (mediaUrl.contains(".m3u8", ignoreCase = true)) {
                 M3u8Helper.generateM3u8(
                     "${this.name} ($translator)",
-                    m3uLink,
-                    referer
+                    mediaUrl,
+                    normalizedUrl
                 ).forEach(sourceCallback)
+            } else {
+                sourceCallback(
+                    newExtractorLink(
+                        source = this.name,
+                        name = "${this.name} ($translator)",
+                        url = mediaUrl,
+                        type = INFER_TYPE
+                    ) {
+                        this.referer = normalizedUrl
+                        this.quality = Qualities.P1080.value
+                    }
+                )
             }
         }
     }
