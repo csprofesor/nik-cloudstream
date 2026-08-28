@@ -40,7 +40,7 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=0389bfd8dfc2",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=61084a5f82fb",
     "status": 1,
     "version": 1,
     "name": "Anizm",
@@ -48,7 +48,7 @@
     "authors": [
       "csprofesor"
     ],
-    "fileSize": 32516,
+    "fileSize": 32751,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -58,7 +58,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=anizm.com.tr&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-ba86582d4477e40735ccc29db5d0772f11c350b2c812e535799563d7df91f321"
+    "fileHash": "sha256-2b0026616e44d93231771fc5b5a25a294a7681516e626b83ee5cd98c93b15a25"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AsyaAnimeleri.cs3",
@@ -631,7 +631,7 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=0389bfd8dfc2",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=61084a5f82fb",
     "status": 1,
     "version": 1,
     "name": "HintFilmİzle",
