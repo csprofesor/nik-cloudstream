@@ -465,15 +465,30 @@ class HintFilmIzle : MainAPI() {
                         app.get(player, referer = data).text
                     }.getOrNull().orEmpty()
 
+                    val kinescopeVideoId = Regex(
+                        """https?://[^/]+/(\\d+)/embed/\\d+""",
+                        RegexOption.IGNORE_CASE
+                    ).find(player)?.groupValues?.getOrNull(1)
+
+                    // Kinescope player.js may generate the signed CDN manifest only
+                    // after the player starts. Prefer a manifest exposed in the embed
+                    // HTML, then fall back to Kinescope's documented direct HLS endpoint.
                     val kinescopeStream = extractKinescopeHls(playerHtml)
                         ?: directLinks(
                             playerHtml
                                 .replace("\\u0026", "&")
-                                .replace("\\/", "/")
+                                .replace("\\/","/")
                         ).firstOrNull { it.contains(".m3u8", true) }
+                        ?: kinescopeVideoId?.let {
+                            "https://kinescope.io/$it/master.m3u8"
+                        }
 
                     if (kinescopeStream != null) {
                         found = true
+                        val playerOrigin = runCatching {
+                            URI(player).let { "${it.scheme}://${it.host}" }
+                        }.getOrDefault("https://kinescope.io")
+
                         callback(newExtractorLink(
                             source = name,
                             name = "HintFilmİzle Kinescope",
@@ -481,6 +496,10 @@ class HintFilmIzle : MainAPI() {
                             type = ExtractorLinkType.M3U8
                         ) {
                             referer = player
+                            headers = mapOf(
+                                "Referer" to player,
+                                "Origin" to playerOrigin
+                            )
                             quality = getQualityFromName(kinescopeStream)
                         })
                     }
