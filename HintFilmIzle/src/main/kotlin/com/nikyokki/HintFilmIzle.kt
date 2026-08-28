@@ -364,9 +364,9 @@ class HintFilmIzle : MainAPI() {
             .replace("\\/","/")
 
         val patterns = listOf(
-            Regex("""["']hls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
-            Regex("""["']shakahls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
-            Regex("""["']contentUrl["']\\s*:\\s*["']([^"']+\\.m3u8[^"']*)""", RegexOption.IGNORE_CASE)
+            Regex("""["']hls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
+            Regex("""["']shakahls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
+            Regex("""["']contentUrl["']\s*:\s*["']([^"']+\.m3u8[^"']*)""", RegexOption.IGNORE_CASE)
         )
 
         return patterns.asSequence()
