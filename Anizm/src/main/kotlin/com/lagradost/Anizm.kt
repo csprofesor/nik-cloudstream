@@ -124,8 +124,10 @@ class Anizm : MainAPI() {
             ?: link.text().trim().takeIf { it.isNotBlank() }
             ?: return null
 
+        val posterElement = card.selectFirst("img") ?: return null
+
         val posterUrl = fixUrlNull(
-            card.selectFirst("img")?.let { image ->
+            posterElement.let { image ->
                 image.attr("data-src").ifBlank {
                     image.attr("data-original").ifBlank {
                         image.attr("data-lazy-src").ifBlank { image.attr("src") }
