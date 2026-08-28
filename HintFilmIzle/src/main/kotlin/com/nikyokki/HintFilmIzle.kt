@@ -25,6 +25,7 @@ import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
+import java.net.URI
 
 class HintFilmIzle : MainAPI() {
     override var mainUrl = "https://www.hintfilmizle.com"
@@ -51,60 +52,72 @@ class HintFilmIzle : MainAPI() {
         "$mainUrl/netflix-izle" to "Netflix"
     )
 
-    private fun cleanUrl(value: String?): String? = value
-        ?.replace("\\\\/", "/")
-        ?.replace("\\\\u0026", "&")
-        ?.trim()
-        ?.takeIf { it.isNotBlank() }
-        ?.let { if (it.startsWith("//")) "https:$it" else it }
-        ?.let { fixUrlNull(it) }
+    private fun cleanUrl(value: String?, base: String = mainUrl): String? {
+        val raw = value
+            ?.replace("\\\\/", "/")
+            ?.replace("\\\\u0026", "&")
+            ?.trim()
+            ?.substringBefore(" ")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+
+        return runCatching {
+            when {
+                raw.startsWith("//") -> "https:$raw"
+                raw.startsWith("http://", true) || raw.startsWith("https://", true) -> raw
+                raw.startsWith("/") -> "$mainUrl$raw"
+                else -> URI(base).resolve(raw).toString()
+            }
+        }.getOrNull()?.takeIf { it.startsWith("http", true) }
+    }
 
     private fun Element.posterUrl(): String? {
-        // HintFilmIzle posterleri zaman zaman img src yerine lazy-load/data-srcset
-        // veya CSS background-image ile veriyor. CloudStream kartta gri placeholder
-        // göstermesin diye bütün yaygın kaynakları sırayla kontrol ediyoruz.
+        fun valid(value: String?): String? {
+            val url = cleanUrl(value)
+            return url?.takeIf {
+                !it.startsWith("data:image", true) &&
+                !it.contains("placeholder", true) &&
+                !it.contains("spacer", true) &&
+                !it.contains("blank.", true)
+            }
+        }
+
         val attrs = listOf(
             "data-src", "data-lazy-src", "data-original", "data-image",
-            "data-poster", "data-thumb", "data-url", "data-image-url", "src"
+            "data-poster", "data-thumb", "data-thumbnail",
+            "data-url", "data-image-url", "data-bg", "src"
         )
 
-        fun valid(value: String?): String? =
-            cleanUrl(value)
-                ?.substringBefore(" ")
-                ?.takeIf {
-                    it.isNotBlank() &&
-                    !it.startsWith("data:image", true) &&
-                    !it.contains("placeholder", true) &&
-                    (it.startsWith("http://", true) || it.startsWith("https://", true) || it.startsWith("//"))
-                }
+        select("img, picture source").asSequence().forEach { image ->
+            attrs.asSequence().mapNotNull { valid(image.attr(it)) }.firstOrNull()?.let { return it }
 
-        // Önce img etiketlerindeki lazy-load alanlarını dene.
-        select("img").asSequence().forEach { img ->
-            attrs.asSequence().mapNotNull { valid(img.attr(it)) }.firstOrNull()?.let { return it }
-
-            // srcset / data-srcset içindeki son gerçek URL'yi al.
             listOf("data-srcset", "data-lazy-srcset", "srcset").forEach { attr ->
-                val candidate = img.attr(attr)
+                val candidate = image.attr(attr)
                     .split(",")
-                    .map { it.trim().substringBefore(" ").trim() }
                     .asReversed()
                     .asSequence()
+                    .map { it.trim().substringBefore(" ").trim() }
                     .mapNotNull { valid(it) }
                     .firstOrNull()
                 if (candidate != null) return candidate
             }
         }
 
-        // Bazı kartlarda poster doğrudan CSS background-image olarak tutuluyor.
-        val styleCandidates = select("[style]").asSequence()
+        select("[style]").asSequence()
             .map { it.attr("style") }
             .flatMap { style ->
-                Regex("""background-image\s*:\s*url\((['"]?)(.*?)\1\)""", RegexOption.IGNORE_CASE)
+                Regex("""(?:background-image|background)\s*:[^;]*url\((['"]?)(.*?)\1\)""", RegexOption.IGNORE_CASE)
                     .findAll(style)
                     .map { it.groupValues[2] }
             }
             .mapNotNull { valid(it) }
-        return styleCandidates.firstOrNull()
+            .firstOrNull()
+            ?.let { return it }
+
+        return listOf("data-poster", "data-image", "data-thumb", "data-src")
+            .asSequence()
+            .mapNotNull { valid(attr(it)) }
+            .firstOrNull()
     }
 
     private fun Element.cardTitle(): String? =
