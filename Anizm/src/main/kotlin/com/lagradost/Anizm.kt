@@ -62,10 +62,16 @@ class Anizm : MainAPI() {
         val document = app.get(targetUrl, headers = browserHeaders).document
         val home = document.select("a[href]")
             .filter { link ->
-                val href = link.attr("href")
-                href.isNotBlank() &&
-                    href != mainUrl &&
-                    href != "$mainUrl/" &&
+                val rawHref = link.attr("href").trim()
+                if (rawHref.isBlank()) return@filter false
+
+                // The site has several SEO/footer links which all point to the
+                // homepage (sometimes with a trailing slash or legacy domain).
+                // They must never become fake "Anizm" cards in CloudStream.
+                val href = normalizeUrl(fixUrl(rawHref)).trimEnd('/')
+                val root = mainUrl.trimEnd('/')
+
+                href != root &&
                     !href.contains("/kategoriler/") &&
                     !href.contains("/anime-izle") &&
                     !href.contains("/fullViewSearch") &&
@@ -79,7 +85,7 @@ class Anizm : MainAPI() {
                     !href.contains("/tavsiyeRobotu")
             }
             .mapNotNull { it.toSearchResult() }
-            .filter { it.url.startsWith(mainUrl) }
+            .filter { it.url.startsWith(mainUrl) && it.url.trimEnd('/') != mainUrl.trimEnd('/') }
             .filterNot { it.name.equals("Logo", ignoreCase = true) }
             .distinctBy { it.url }
         val hasNext = document.selectFirst(
