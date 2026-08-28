@@ -50,10 +50,21 @@ class Anizm : MainAPI() {
     )
 
     private fun normalizeUrl(url: String): String {
-        return url.replace("https://anizm.net", mainUrl)
+        return url.trim()
+            .replace("https://www.anizm.net", mainUrl)
+            .replace("http://www.anizm.net", mainUrl)
+            .replace("https://anizm.net", mainUrl)
             .replace("http://anizm.net", mainUrl)
+            .replace("https://www.anizm.tv", mainUrl)
+            .replace("http://www.anizm.tv", mainUrl)
             .replace("https://anizm.tv", mainUrl)
             .replace("http://anizm.tv", mainUrl)
+    }
+
+    private fun isHomepageUrl(url: String): Boolean {
+        val normalized = normalizeUrl(url).trimEnd('/')
+        val root = mainUrl.trimEnd('/')
+        return normalized.equals(root, ignoreCase = true)
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
@@ -69,9 +80,8 @@ class Anizm : MainAPI() {
                 // homepage (sometimes with a trailing slash or legacy domain).
                 // They must never become fake "Anizm" cards in CloudStream.
                 val href = normalizeUrl(fixUrl(rawHref)).trimEnd('/')
-                val root = mainUrl.trimEnd('/')
 
-                href != root &&
+                !isHomepageUrl(href) &&
                     !href.contains("/kategoriler/") &&
                     !href.contains("/anime-izle") &&
                     !href.contains("/fullViewSearch") &&
@@ -85,8 +95,11 @@ class Anizm : MainAPI() {
                     !href.contains("/tavsiyeRobotu")
             }
             .mapNotNull { it.toSearchResult() }
-            .filter { it.url.startsWith(mainUrl) && it.url.trimEnd('/') != mainUrl.trimEnd('/') }
+            // Footer SEO links can still be exposed by the site with a legacy
+            // hostname. Remove them after parsing as a second, authoritative guard.
+            .filter { !isHomepageUrl(it.url) }
             .filterNot { it.name.equals("Logo", ignoreCase = true) }
+            .filterNot { it.name.trim().startsWith("Anizm", ignoreCase = true) }
             .distinctBy { it.url }
         val hasNext = document.selectFirst(
             "div.nextBeforeButtons > div.ui > a.right:not(.disabled), " +
@@ -109,7 +122,7 @@ class Anizm : MainAPI() {
     private fun Element.toSearchResult(): AnimeSearchResponse? {
         val link = if (tagName() == "a") this else selectFirst("a") ?: return null
         val href = getProperAnimeLink(fixUrl(link.attr("href")))
-        if (href.isBlank()) return null
+        if (href.isBlank() || isHomepageUrl(href)) return null
 
         var card: Element = this
         if (tagName() == "a") {
@@ -146,7 +159,10 @@ class Anizm : MainAPI() {
         val episode = Regex("""([0-9]+).?s?Bölüm""", RegexOption.IGNORE_CASE)
             .find(episodeText)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
-        if (title.equals("Logo", ignoreCase = true)) return null
+        if (title.equals("Logo", ignoreCase = true) ||
+            title.trim().startsWith("Anizm", ignoreCase = true) ||
+            isHomepageUrl(href)
+        ) return null
 
         return newAnimeSearchResponse(title, href, TvType.Anime) {
             this.posterUrl = posterUrl
