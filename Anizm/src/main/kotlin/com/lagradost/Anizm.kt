@@ -240,7 +240,7 @@ class Anizm : MainAPI() {
             "div.yt-hd-thumbnail-inner-container iframe, iframe[src*='youtube.com'], iframe[src*='youtu.be']"
         )?.attr("src")
 
-        val year = Regex("""(19|20)d{2}""").find(
+        val year = Regex("""\b(19|20)\d{2}\b""").find(
             document.select("div.infoSta li, div.anizm_boxContent li.dataRow")
                 .joinToString(" ") { it.text() }
         )?.value?.toIntOrNull()
@@ -296,7 +296,7 @@ class Anizm : MainAPI() {
 
         if (packedScript != null) {
             val unpacked = getAndUnpack(packedScript.data())
-            val key = unpacked.substringAfter("FirePlayer("").substringBefore("",")
+            val key = unpacked.substringAfter("FirePlayer(\"").substringBefore("\",")
             if (key.isNotBlank() && !unpacked.startsWith(key)) {
                 val referer = "$mainServer/video/$key"
                 val link = "$mainServer/player/index.php?data=$key&do=getVideo"
@@ -332,10 +332,10 @@ class Anizm : MainAPI() {
             }
         }
 
-        val directUrlMatch = Regex("""(?:const|var|let)s+urls*=s*["']([^"']+)["']""")
-            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\/", "/")
-        val fileMatch = Regex("""file:s*["']([^"']+)["']""")
-            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\/", "/")
+        val directUrlMatch = Regex("""(?:const|var|let)\s+url\s*=\s*[\"']([^\"']+)[\"']""")
+            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\\/", "/")
+        val fileMatch = Regex("""file:\s*[\"']([^\"']+)[\"']""")
+            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\\/", "/")
         val mediaUrl = directUrlMatch ?: fileMatch
 
         if (!mediaUrl.isNullOrBlank() && mediaUrl.startsWith("http")) {
