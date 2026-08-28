@@ -123,14 +123,22 @@ class HintFilmIzle : MainAPI() {
 
     private fun Element.cardTitle(): String? =
         sequenceOf(
-            selectFirst("h2")?.text(), selectFirst("h3")?.text(),
-            selectFirst(".title")?.text(), selectFirst(".name")?.text(),
-            selectFirst(".film-title")?.text(), selectFirst(".movie-title")?.text(),
+            selectFirst(".film-title")?.text(),
+            selectFirst(".movie-title")?.text(),
             selectFirst(".entry-title")?.text(),
-            selectFirst("img")?.attr("alt"), selectFirst("img")?.attr("title"),
-            attr("title"), text()
-        ).mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
-            .firstOrNull()
+            selectFirst(".card-title")?.text(),
+            selectFirst("h2")?.text(),
+            selectFirst("h3")?.text(),
+            selectFirst(".title")?.text(),
+            selectFirst(".name")?.text(),
+            selectFirst("img")?.attr("alt"),
+            selectFirst("img")?.attr("title"),
+            attr("title")
+        ).mapNotNull { value ->
+            value?.trim()
+                ?.replace(Regex("\\s+"), " ")
+                ?.takeIf { it.isNotBlank() && !it.equals("image", true) }
+        }.firstOrNull()
 
     // Link ve poster aynı elementte olmayabilir; posteri gerçek kart konteynerinden al.
     private fun Element.toSearchResult(card: Element = this): SearchResponse? {
@@ -145,7 +153,13 @@ class HintFilmIzle : MainAPI() {
             ?.trim()
             ?.removeSuffix(" izle")
             ?.trim()
-            ?: return null
+            ?.takeIf { it.isNotBlank() }
+            ?: path.substringAfterLast("/")
+                .replace(Regex("[-_]+"), " ")
+                .replace(Regex("\\b\\w"), { it.value.uppercase() })
+                .trim()
+                .takeIf { it.isNotBlank() }
+                ?: return null
 
         if (title.length > 180 ||
             title.equals("film", true) ||
