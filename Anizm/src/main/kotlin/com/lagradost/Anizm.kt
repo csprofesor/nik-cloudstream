@@ -310,7 +310,43 @@ class Anizm : MainAPI() {
                         val fixedLink = fixUrl(link)
                         Log.d("Anizm", "resolved link=$fixedLink")
 
-                        if (fixedLink.startsWith(mainServer)) {
+                        // Anizm.net yeni player yapısında doğrudan /player/{id} iframe döndürüyor.
+                        // Bu URL'yi extractor'a bırakmadan önce player sayfasından gerçek medya
+                        // URL'sini ve olası HLS manifestini bulmayı deniyoruz.
+                        if (fixedLink.contains("/player/")) {
+                            val playerDocument = app.get(
+                                fixedLink,
+                                referer = data,
+                                headers = mapOf(
+                                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                                    "User-Agent" to "Mozilla/5.0"
+                                )
+                            ).document
+
+                            val mediaCandidates = buildList {
+                                addAll(playerDocument.select("video source[src]").map { it.attr("src") })
+                                addAll(playerDocument.select("video[src]").map { it.attr("src") })
+                                addAll(playerDocument.select("source[src]").map { it.attr("src") })
+                                addAll(playerDocument.select("a[href]").map { it.attr("href") })
+                            }.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }
+                                .map(::fixUrl)
+                                .distinct()
+
+                            mediaCandidates.forEach { media ->
+                                if (media.contains(".m3u8", ignoreCase = true)) {
+                                    M3u8Helper.generateM3u8(
+                                        "Anizm ($translator)",
+                                        media,
+                                        fixedLink
+                                    ).forEach(callback)
+                                } else if (media.startsWith("http")) {
+                                    loadExtractor(media, fixedLink, subtitleCallback, callback)
+                                }
+                            }
+
+                            // Player sayfası JS ile oluşturuluyorsa genel extractor'a da bırak.
+                            loadExtractor(fixedLink, data, subtitleCallback, callback)
+                        } else if (fixedLink.startsWith(mainServer)) {
                             invokeLokalSource(fixedLink, translator, callback)
                         } else {
                             loadExtractor(fixedLink, data, subtitleCallback, callback)
