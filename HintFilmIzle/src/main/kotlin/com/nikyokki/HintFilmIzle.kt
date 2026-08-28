@@ -83,9 +83,10 @@ class HintFilmIzle : MainAPI() {
         }
 
         val attrs = listOf(
-            "data-src", "data-lazy-src", "data-original", "data-image",
-            "data-poster", "data-thumb", "data-thumbnail",
-            "data-url", "data-image-url", "data-bg", "src"
+            "data-src", "data-lazy-src", "data-lazy", "data-original",
+            "data-original-src", "data-image", "data-poster", "data-poster-url",
+            "data-thumb", "data-thumbnail", "data-fsrc", "data-url",
+            "data-image-url", "data-bg", "data-background-image", "src"
         )
 
         select("img, picture source").asSequence().forEach { image ->
@@ -124,38 +125,59 @@ class HintFilmIzle : MainAPI() {
         sequenceOf(
             selectFirst("h2")?.text(), selectFirst("h3")?.text(),
             selectFirst(".title")?.text(), selectFirst(".name")?.text(),
+            selectFirst(".film-title")?.text(), selectFirst(".movie-title")?.text(),
+            selectFirst(".entry-title")?.text(),
             selectFirst("img")?.attr("alt"), selectFirst("img")?.attr("title"),
             attr("title"), text()
         ).mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }
             .firstOrNull()
 
-    private fun Element.toSearchResult(): SearchResponse? {
+    // Link ve poster aynı elementte olmayabilir; posteri gerçek kart konteynerinden al.
+    private fun Element.toSearchResult(card: Element = this): SearchResponse? {
         val href = cleanUrl(attr("href")) ?: return null
         if (!href.startsWith(mainUrl)) return null
+
         val path = href.removePrefix(mainUrl).substringBefore("?").trimEnd('/')
         if (!path.startsWith("/film/") && !path.startsWith("/dizi/")) return null
 
-        val title = cardTitle()?.replace(Regex("\\s+"), " ")?.trim() ?: return null
-        if (title.length > 180 || title.equals("film", true) || title.equals("dizi", true)) return null
+        val title = card.cardTitle()
+            ?.replace(Regex("\s+"), " ")
+            ?.trim()
+            ?.removeSuffix(" izle")
+            ?.trim()
+            ?: return null
 
-        val poster = posterUrl()
+        if (title.length > 180 ||
+            title.equals("film", true) ||
+            title.equals("dizi", true) ||
+            title.equals("filmler", true)
+        ) return null
+
+        val poster = card.posterUrl() ?: posterUrl()
+
         return if (path.startsWith("/dizi/")) {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster }
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                posterUrl = poster
+            }
         } else {
-            newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster }
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                posterUrl = poster
+            }
         }
     }
 
     private fun extractResults(document: org.jsoup.nodes.Document): List<SearchResponse> {
-        return document.select("a[href*='/film/'], a[href*='/dizi/']").mapNotNull { anchor ->
-            val parent = anchor.parents().firstOrNull {
-                it.selectFirst("img") != null && it.text().length < 500
-            } ?: anchor
-            (if (parent !== anchor) parent else anchor).let { card ->
-                val link = card.selectFirst("a[href*='/film/'], a[href*='/dizi/']") ?: anchor
-                link.toSearchResult()
+        return document.select("a[href*='/film/'], a[href*='/dizi/']")
+            .mapNotNull { anchor ->
+                val card = anchor.parents().firstOrNull {
+                    val image = it.selectFirst("img, picture source, [style*='background']")
+                    val links = it.select("a[href*='/film/'], a[href*='/dizi/']")
+                    image != null && links.size <= 3 && it.text().length < 800
+                } ?: anchor
+
+                anchor.toSearchResult(card)
             }
-        }.distinctBy { it.url }
+            .distinctBy { it.url }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
