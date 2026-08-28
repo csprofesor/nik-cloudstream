@@ -201,22 +201,37 @@ class Anizm : MainAPI() {
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
-        app.get(url, referer = "$mainUrl/").document.select("script").find { script ->
-            script.data().contains("eval(function(p,a,c,k,e,d)")
-        }?.let {
-            val unpacked = getAndUnpack(it.data())
-            val key = unpacked.substringAfter("FirePlayer(\"").substringBefore("\",")
-            if (key.isBlank() || key == unpacked) {
-                Log.d("Anizm", "FirePlayer key not found")
-                return@let
+        val document = runCatching {
+            app.get(url, referer = "$mainUrl/").document
+        }.getOrNull() ?: return
+
+        var key: String? = null
+        for (script in document.select("script")) {
+            val raw = script.data().ifBlank { script.html() }
+            if (raw.isBlank()) continue
+            val unpacked = if (raw.contains("eval(function(p,a,c,k,e,d)")) {
+                runCatching { getAndUnpack(raw) }.getOrDefault(raw)
+            } else raw
+
+            key = Regex("""FirePlayer\\s*\\(\\s*["']([^"']+)["']""")
+                .find(unpacked)?.groupValues?.getOrNull(1)
+            if (key.isNullOrBlank()) {
+                key = Regex("""/video/([A-Za-z0-9_-]+)""")
+                    .find(unpacked)?.groupValues?.getOrNull(1)
             }
+            if (!key.isNullOrBlank()) break
+        }
 
-            val referer = "$mainServer/video/$key"
-            val link = "$mainServer/player/index.php?data=$key&do=getVideo"
-            Log.d("Anizm", "AnizmPlayer api=$link")
+        if (key.isNullOrBlank()) {
+            key = Regex("""/video/([A-Za-z0-9_-]+)""").find(url)?.groupValues?.getOrNull(1)
+        }
+        if (key.isNullOrBlank()) return
 
+        val referer = "$mainServer/video/$key"
+        val apiUrl = "$mainServer/player/index.php?data=$key&do=getVideo"
+        val response = runCatching {
             app.post(
-                link,
+                apiUrl,
                 data = mapOf("hash" to key, "r" to "$mainUrl/"),
                 referer = referer,
                 headers = mapOf(
@@ -225,15 +240,21 @@ class Anizm : MainAPI() {
                     "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                     "X-Requested-With" to "XMLHttpRequest"
                 )
-            ).parsedSafe<Source>()?.videoSource?.let { m3uLink ->
-                Log.d("Anizm", "AnizmPlayer videoSource=$m3uLink")
-                M3u8Helper.generateM3u8(
-                    "${this.name} ($translator)",
-                    m3uLink,
-                    referer
-                ).forEach(sourceCallback)
-            }
-        }
+            )
+        }.getOrNull() ?: return
+
+        val body = response.text
+        val m3uLink = runCatching { response.parsedSafe<Source>()?.videoSource }.getOrNull()
+            ?: Regex("""https?://[^""\\s]+\\.m3u8[^""\\s]*""", RegexOption.IGNORE_CASE)
+                .find(body)?.value
+
+        if (m3uLink.isNullOrBlank()) return
+
+        M3u8Helper.generateM3u8(
+            "${this.name} ($translator)",
+            m3uLink,
+            referer
+        ).forEach(sourceCallback)
     }
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("Anizm", "loadLinks data=$data")
