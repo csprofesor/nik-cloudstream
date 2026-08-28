@@ -314,38 +314,87 @@ class Anizm : MainAPI() {
                         // Bu URL'yi extractor'a bırakmadan önce player sayfasından gerçek medya
                         // URL'sini ve olası HLS manifestini bulmayı deniyoruz.
                         if (fixedLink.contains("/player/")) {
-                            val playerDocument = app.get(
+                            val playerResponse = app.get(
                                 fixedLink,
                                 referer = data,
                                 headers = mapOf(
                                     "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                                     "User-Agent" to "Mozilla/5.0"
                                 )
-                            ).document
+                            )
+                            val playerHtml = playerResponse.text
 
-                            val mediaCandidates = buildList {
-                                addAll(playerDocument.select("video source[src]").map { it.attr("src") })
-                                addAll(playerDocument.select("video[src]").map { it.attr("src") })
-                                addAll(playerDocument.select("source[src]").map { it.attr("src") })
-                                addAll(playerDocument.select("a[href]").map { it.attr("href") })
-                            }.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }
-                                .map(::fixUrl)
+                            // Puffy medya adresi player JavaScript kodunun içinde oluşuyor.
+                            val directMediaUrls = Regex(
+                                """https?://[^\s"'<>\\]+(?:\.m3u8|\.mp4|\.mkv|\.xml)(?:\?[^\s"'<>\\]+)?""",
+                                RegexOption.IGNORE_CASE
+                            ).findAll(playerHtml)
+                                .map { it.value.replace("&amp;", "&") }
                                 .distinct()
+                                .toList()
 
-                            mediaCandidates.forEach { media ->
+                            Log.d("Anizm", "player direct media urls=${directMediaUrls.size}")
+
+                            directMediaUrls.forEach { media ->
                                 if (media.contains(".m3u8", ignoreCase = true)) {
                                     M3u8Helper.generateM3u8(
                                         "Anizm ($translator)",
                                         media,
                                         fixedLink
                                     ).forEach(callback)
-                                } else if (media.startsWith("http")) {
-                                    loadExtractor(media, fixedLink, subtitleCallback, callback)
+                                } else {
+                                    callback(
+                                        newExtractorLink(
+                                            source = "Anizm",
+                                            name = "Anizm ($translator)",
+                                            url = media,
+                                            type = ExtractorLinkType.VIDEO
+                                        ) {
+                                            this.referer = fixedLink
+                                            this.quality = when {
+                                                Regex("""/1080(?:/|\?)""").containsMatchIn(media) -> Qualities.P1080.value
+                                                Regex("""/720(?:/|\?)""").containsMatchIn(media) -> Qualities.P720.value
+                                                Regex("""/480(?:/|\?)""").containsMatchIn(media) -> Qualities.P480.value
+                                                else -> Qualities.Unknown.value
+                                            }
+                                            this.headers = mapOf("User-Agent" to "Mozilla/5.0")
+                                        }
+                                    )
                                 }
                             }
 
-                            // Player sayfası JS ile oluşturuluyorsa genel extractor'a da bırak.
-                            loadExtractor(fixedLink, data, subtitleCallback, callback)
+                            val mediaCandidates = buildList {
+                                addAll(playerResponse.document.select("video source[src]").map { it.attr("src") })
+                                addAll(playerResponse.document.select("video[src]").map { it.attr("src") })
+                                addAll(playerResponse.document.select("source[src]").map { it.attr("src") })
+                                addAll(playerResponse.document.select("a[href]").map { it.attr("href") })
+                            }.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }
+                                .map(::fixUrl)
+                                .distinct()
+
+                            mediaCandidates
+                                .filterNot { candidate -> directMediaUrls.contains(candidate) }
+                                .forEach { media ->
+                                    if (media.contains(".m3u8", ignoreCase = true)) {
+                                        M3u8Helper.generateM3u8("Anizm ($translator)", media, fixedLink).forEach(callback)
+                                    } else if (media.startsWith("http")) {
+                                        callback(
+                                            newExtractorLink(
+                                                source = "Anizm",
+                                                name = "Anizm ($translator)",
+                                                url = media,
+                                                type = ExtractorLinkType.VIDEO
+                                            ) {
+                                                this.referer = fixedLink
+                                                this.quality = Qualities.Unknown.value
+                                            }
+                                        )
+                                    }
+                                }
+
+                            if (directMediaUrls.isEmpty() && mediaCandidates.isEmpty()) {
+                                loadExtractor(fixedLink, data, subtitleCallback, callback)
+                            }
                         } else if (fixedLink.startsWith(mainServer)) {
                             invokeLokalSource(fixedLink, translator, callback)
                         } else {
