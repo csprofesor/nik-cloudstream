@@ -373,17 +373,49 @@ class HintFilmIzle : MainAPI() {
         // HintFilmİzle playeri yalnızca iframe olarak değil, video/source ve
         // data-* alanlarında da verebiliyor.
         document.select(
-            "iframe[src], iframe[data-src], frame[src], " +
-                "video[src], video[data-src], video source[src], video source[data-src]"
+            "iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], " +
+                "frame[src], video[src], video[data-src], video[data-url], " +
+                "video source[src], video source[data-src], video source[data-url]"
         ).forEach { element ->
-            val value = element.attr("src").ifBlank {
-                element.attr("data-src")
+            listOf(
+                element.attr("src"),
+                element.attr("data-src"),
+                element.attr("data-url"),
+                element.attr("data-iframe"),
+                element.attr("data-video"),
+                element.attr("data-player")
+            ).forEach { value ->
+                playerUrl(value, data)?.let { playerUrls.add(it) }
             }
-            playerUrl(value, data)?.let { playerUrls.add(it) }
         }
 
-        // Bazı sayfalarda oynatıcı doğrudan harici sağlayıcı linki olarak
-        // bulunuyor; önceki kod bu bağlantıları hiç taramıyordu.
+        // HintFilmİzle'nin TEKPART düğmeleri bazı içeriklerde iframe'i
+        // doğrudan src yerine data-* veya onclick içinde tutabiliyor.
+        document.select("a[href], button, [onclick], [data-url], [data-embed], [data-video], [data-player]")
+            .forEach { element ->
+                listOf(
+                    element.attr("href"),
+                    element.attr("data-url"),
+                    element.attr("data-embed"),
+                    element.attr("data-video"),
+                    element.attr("data-player"),
+                    element.attr("onclick")
+                ).forEach { value ->
+                    val direct = playerUrl(value, data)
+                    if (direct != null && !direct.startsWith(mainUrl, true)) {
+                        playerUrls.add(direct)
+                    }
+
+                    Regex("""https?://[^"'\\s<>]+""")
+                        .findAll(value)
+                        .map { it.value.trimEnd('\\', '"', '\'', ')', ']') }
+                        .mapNotNull { playerUrl(it, data) }
+                        .filter { !it.startsWith(mainUrl, true) }
+                        .forEach { playerUrls.add(it) }
+                }
+            }
+
+        // Bilinen sağlayıcılar link olarak gelirse ayrıca koru.
         document.select("a[href]").forEach { link ->
             val href = playerUrl(link.attr("href"), data) ?: return@forEach
             if (!href.startsWith(mainUrl, true) && isKnownPlayer(href)) {
