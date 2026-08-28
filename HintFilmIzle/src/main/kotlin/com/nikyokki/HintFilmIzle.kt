@@ -141,7 +141,7 @@ class HintFilmIzle : MainAPI() {
         if (!path.startsWith("/film/") && !path.startsWith("/dizi/")) return null
 
         val title = card.cardTitle()
-            ?.replace(Regex("\s+"), " ")
+            ?.replace(Regex("\\s+"), " ")
             ?.trim()
             ?.removeSuffix(" izle")
             ?.trim()
