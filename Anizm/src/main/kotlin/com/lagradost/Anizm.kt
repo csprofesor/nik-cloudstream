@@ -13,7 +13,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 class Anizm : MainAPI() {
-    override var mainUrl = "https://anizm.net"
+    override var mainUrl = "https://anizm.com.tr"
     override var name = "Anizm"
     override val hasMainPage = true
     override var lang = "tr"
@@ -21,10 +21,21 @@ class Anizm : MainAPI() {
 
     override val supportedTypes = setOf(TvType.Anime, TvType.AnimeMovie, TvType.OVA)
 
-    companion object { private const val mainServer = "https://anizmplayer.com" }
+    companion object {
+        private const val logTag = "Anizm"
+        private const val mainServer = "https://anizmplayer.com"
+        private const val browserUserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        private val browserHeaders = mapOf(
+            "User-Agent" to browserUserAgent,
+            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+            "sec-ch-ua" to "\"Chromium\";v=\"124\", \"Google Chrome\";v=\"124\", \"Not-A.Brand\";v=\"99\"",
+            "sec-ch-ua-mobile" to "?0",
+            "sec-ch-ua-platform" to "\"Windows\""
+        )
+    }
 
     override val mainPage = mainPageOf(
-        "$mainUrl/anime-izle?sayfa=" to "Son Eklenen Animeler",
+        mainUrl to "Son Eklenen Animeler",
         "$mainUrl/kategoriler/1" to "Macera",
         "$mainUrl/kategoriler/2" to "Aksiyon",
         "$mainUrl/kategoriler/3" to "Komedi",
@@ -40,7 +51,7 @@ class Anizm : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else request.data + "?page=" + page
-        val document = app.get(url).document
+        val document = app.get(url, headers = browserHeaders).document
         val home = document.select("a[href]")
             .filter { link ->
                 val href = link.attr("href")
@@ -67,6 +78,13 @@ class Anizm : MainAPI() {
         ) != null
 
         return newHomePageResponse(request.name, home, hasNext = hasNext)
+    }
+
+    private fun normalizeUrl(url: String): String {
+        return url.replace("https://anizm.net", mainUrl)
+            .replace("http://anizm.net", mainUrl)
+            .replace("https://anizm.tv", mainUrl)
+            .replace("http://anizm.tv", mainUrl)
     }
 
     private fun getProperAnimeLink(uri: String): String = if (uri.contains("-bolum")) {
@@ -120,13 +138,50 @@ class Anizm : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
+        Log.d(logTag, "search: query = $query")
+        val searchJsonUrl = "$mainUrl/searchAnime?query=$query&page=1"
+        try {
+            val response = app.get(
+                searchJsonUrl,
+                headers = browserHeaders + mapOf(
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Referer" to "$mainUrl/"
+                )
+            ).parsedSafe<SearchAnimeResponse>()
+
+            val searchItems = response?.data
+            if (!searchItems.isNullOrEmpty()) {
+                val results = searchItems.mapNotNull { item: SearchAnimeItem ->
+                    val title = item.title?.trim() ?: return@mapNotNull null
+                    val slug = item.slug?.trim() ?: return@mapNotNull null
+                    val href = fixUrl("$mainUrl/$slug")
+                    val posterUrl = item.poster?.let { fixUrl("$mainUrl/storage/pcovers/$it") }
+
+                    newAnimeSearchResponse(title, href, TvType.Anime) {
+                        this.posterUrl = posterUrl
+                    }
+                }
+                if (results.isNotEmpty()) {
+                    Log.d(logTag, "search: JSON API returned ${results.size} results")
+                    return results.distinctBy { it.url }
+                }
+            }
+        } catch (e: Throwable) {
+            Log.e(logTag, "search: JSON API failed: ${e.message}")
+        }
+
         val document = app.get(
             "$mainUrl/fullViewSearch?search=$query&skip=0",
-            headers = mapOf("X-Requested-With" to "XMLHttpRequest")
+            headers = browserHeaders + mapOf(
+                "X-Requested-With" to "XMLHttpRequest",
+                "Referer" to "$mainUrl/"
+            )
         ).document
-        return document.select("div.searchResultItem, div.posterBlock")
+        val fallbackResults = document.select("div.searchResultItem, div.posterBlock")
             .mapNotNull { it.toSearchResult() }
             .distinctBy { it.url }
+        Log.d(logTag, "search: Fallback HTML returned ${fallbackResults.size} results")
+        return fallbackResults
     }
 
     private fun extractImdbId(document: org.jsoup.nodes.Document): String? {
@@ -218,7 +273,9 @@ class Anizm : MainAPI() {
                     "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
                     "X-Requested-With" to "XMLHttpRequest"
                 )
-            ).parsedSafe<Source>()?.videoSource?.let { m3uLink ->
+            ).parsedSafe<Source>()?.let { source ->
+            val m3uLink = source.videoSource ?: source.securedLink
+            if (m3uLink != null) {
                 M3u8Helper.generateM3u8(
                     "${this.name} ($translator)",
                     m3uLink,
@@ -407,7 +464,18 @@ class Anizm : MainAPI() {
 
         return true
     }
-    data class Source(@JsonProperty("videoSource") val videoSource: String?)
+    data class SearchAnimeResponse(
+        @JsonProperty("data") val data: List<SearchAnimeItem>? = null
+    )
+
+    data class SearchAnimeItem(
+        @JsonProperty("info_title") val title: String? = null,
+        @JsonProperty("info_slug") val slug: String? = null,
+        @JsonProperty("info_poster") val poster: String? = null,
+        @JsonProperty("info_year") val year: String? = null
+    )
+
+    data class Source(@JsonProperty("videoSource") val videoSource: String?, @JsonProperty("securedLink") val securedLink: String?)
     data class Videos(@JsonProperty("player") val player: String?)
     data class Translators(@JsonProperty("data") val data: String?)
 }
