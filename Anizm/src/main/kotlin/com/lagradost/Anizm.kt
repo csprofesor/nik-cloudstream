@@ -49,9 +49,17 @@ class Anizm : MainAPI() {
         "$mainUrl/kategoriler/34" to "Shounen",
     )
 
+    private fun normalizeUrl(url: String): String {
+        return url.replace("https://anizm.net", mainUrl)
+            .replace("http://anizm.net", mainUrl)
+            .replace("https://anizm.tv", mainUrl)
+            .replace("http://anizm.tv", mainUrl)
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val url = if (page <= 1) request.data else request.data + "?page=" + page
-        val document = app.get(url, headers = browserHeaders).document
+        val targetUrl = normalizeUrl(if (page <= 1) request.data else "${request.data}?page=$page")
+        Log.d(logTag, "getMainPage: targetUrl = $targetUrl")
+        val document = app.get(targetUrl, headers = browserHeaders).document
         val home = document.select("a[href]")
             .filter { link ->
                 val href = link.attr("href")
@@ -65,7 +73,10 @@ class Anizm : MainAPI() {
                     !href.contains("/giris") &&
                     !href.contains("/kayit") &&
                     !href.contains("/favori") &&
-                    !href.contains("/liste")
+                    !href.contains("/liste") &&
+                    !href.contains("/uyeol") &&
+                    !href.contains("/sasirt-beni") &&
+                    !href.contains("/tavsiyeRobotu")
             }
             .mapNotNull { it.toSearchResult() }
             .filter { it.url.startsWith(mainUrl) }
@@ -77,14 +88,8 @@ class Anizm : MainAPI() {
                 "a[rel=next]:not(.disabled)"
         ) != null
 
+        Log.d(logTag, "getMainPage: ${request.name} loaded ${home.size} items")
         return newHomePageResponse(request.name, home, hasNext = hasNext)
-    }
-
-    private fun normalizeUrl(url: String): String {
-        return url.replace("https://anizm.net", mainUrl)
-            .replace("http://anizm.net", mainUrl)
-            .replace("https://anizm.tv", mainUrl)
-            .replace("http://anizm.tv", mainUrl)
     }
 
     private fun getProperAnimeLink(uri: String): String {
@@ -97,7 +102,7 @@ class Anizm : MainAPI() {
 
     private fun Element.toSearchResult(): AnimeSearchResponse? {
         val link = if (tagName() == "a") this else selectFirst("a") ?: return null
-        val href = getProperAnimeLink(link.attr("href"))
+        val href = getProperAnimeLink(fixUrl(link.attr("href")))
         if (href.isBlank()) return null
 
         var card: Element = this
@@ -130,7 +135,7 @@ class Anizm : MainAPI() {
         )
 
         val episodeText = selectFirst("div.truncateText, div.episodeBlock")?.text() ?: link.text()
-        val episode = Regex("""([0-9]+)\.?\s?Bölüm""", RegexOption.IGNORE_CASE)
+        val episode = Regex("""([0-9]+).?s?Bölüm""", RegexOption.IGNORE_CASE)
             .find(episodeText)?.groupValues?.getOrNull(1)?.toIntOrNull()
 
         if (title.equals("Logo", ignoreCase = true)) return null
@@ -203,16 +208,17 @@ class Anizm : MainAPI() {
 
     override suspend fun load(url: String): LoadResponse {
         val normalizedUrl = normalizeUrl(url)
+        Log.d(logTag, "load: inputUrl = $url, normalizedUrl = $normalizedUrl")
         val document = app.get(normalizedUrl, headers = browserHeaders).document
 
         val title = document.selectFirst("h2.anizm_pageTitle a, h2.anizm_pageTitle, h1.anizm_pageTitle, h1")?.text()?.trim()
             ?.takeIf { it.isNotBlank() }
             ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.trim()
             ?.takeIf { it.isNotBlank() }
-            ?: return newAnimeLoadResponse("Anime", url, TvType.Anime)
+            ?: return newAnimeLoadResponse("Anime", normalizedUrl, TvType.Anime)
 
         val episodeElements = document.select(
-            "div.episodeListTabContent div > a, div.ui.grid div.four.wide"
+            "div.episodeListTabContent div > a, div.ui.grid div.four.wide a, .info_episodeList a, a[href*='-bolum-izle']"
         )
 
         val episodes = episodeElements.mapNotNull { element ->
@@ -222,17 +228,19 @@ class Anizm : MainAPI() {
                 ?: element.text().trim().takeIf { it.isNotBlank() }
                 ?: "Bölüm"
 
-            newEpisode(fixUrl(href)) {
+            newEpisode(normalizeUrl(fixUrl(href))) {
                 name = episodeName
             }
         }.distinctBy { it.data }
+
+        Log.d(logTag, "load: title = $title, episodesCount = ${episodes.size}")
 
         val type = if (episodes.size == 1) TvType.Movie else TvType.Anime
         val trailer = document.selectFirst(
             "div.yt-hd-thumbnail-inner-container iframe, iframe[src*='youtube.com'], iframe[src*='youtu.be']"
         )?.attr("src")
 
-        val year = Regex("""\b(19|20)\d{2}\b""").find(
+        val year = Regex("""(19|20)d{2}""").find(
             document.select("div.infoSta li, div.anizm_boxContent li.dataRow")
                 .joinToString(" ") { it.text() }
         )?.value?.toIntOrNull()
@@ -259,67 +267,64 @@ class Anizm : MainAPI() {
     private suspend fun invokeLokalSource(
         url: String,
         translator: String,
+        sourceName: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
         val normalizedUrl = normalizeUrl(url)
-        val playerDocument = runCatching {
-            app.get(
-                normalizedUrl,
-                referer = "$mainUrl/",
-                headers = browserHeaders + mapOf("Referer" to "$mainUrl/")
-            ).document
-        }.getOrNull() ?: return
+        Log.d(logTag, "invokeLokalSource: fetching player page = $normalizedUrl ($sourceName - $translator)")
+        val playerDocument = app.get(
+            normalizedUrl,
+            referer = "$mainUrl/",
+            headers = browserHeaders + mapOf("Referer" to "$mainUrl/")
+        ).document
 
         val playerHtml = playerDocument.html()
 
-        playerDocument.selectFirst("iframe, embed")?.let { inner ->
-            val innerUrl = fixUrl(
-                inner.attr("src").ifBlank {
-                    inner.attr("data-src").ifBlank { inner.attr("data-lazy-src") }
-                }
-            )
-            if (innerUrl.startsWith("http") &&
-                !innerUrl.contains("anizmplayer.com") &&
-                !innerUrl.contains("anizm.com.tr") &&
-                !innerUrl.contains("anizm.net") &&
-                !innerUrl.contains("anizm.tv")
-            ) {
-                loadExtractor(innerUrl, normalizedUrl, subtitleCallback, sourceCallback)
+        playerDocument.selectFirst("iframe")?.attr("src")?.takeIf { it.isNotBlank() }?.let { innerIframe ->
+            val fixedInner = fixUrl(innerIframe)
+            if (!fixedInner.contains("anizmplayer.com") && !fixedInner.contains("anizm.com.tr") && !fixedInner.contains("anizm.net") && !fixedInner.contains("anizm.tv")) {
+                Log.d(logTag, "invokeLokalSource: loading external extractor = $fixedInner")
+                loadExtractor(fixedInner, normalizedUrl, subtitleCallback, sourceCallback)
                 return
             }
         }
 
-        playerDocument.select("script").firstOrNull {
-            it.data().contains("eval(function(p,a,c,k,e,d)")
-        }?.let { packed ->
-            val unpacked = runCatching { getAndUnpack(packed.data()) }.getOrNull() ?: ""
-            val key = Regex("""FirePlayer\s*\(\s*["']([^"']+)["']""")
-                .find(unpacked)?.groupValues?.getOrNull(1)
-                ?: Regex("""/video/([A-Za-z0-9_-]+)""").find(unpacked)?.groupValues?.getOrNull(1)
+        val packedScript = playerDocument.select("script").firstOrNull { script ->
+            script.data().contains("eval(function(p,a,c,k,e,d)")
+        }
 
-            if (!key.isNullOrBlank()) {
+        if (packedScript != null) {
+            val unpacked = getAndUnpack(packedScript.data())
+            val key = unpacked.substringAfter("FirePlayer("").substringBefore("",")
+            if (key.isNotBlank() && !unpacked.startsWith(key)) {
                 val referer = "$mainServer/video/$key"
-                val apiUrl = "$mainServer/player/index.php?data=$key&do=getVideo"
-                val source = runCatching {
-                    app.post(
-                        apiUrl,
-                        data = mapOf("hash" to key, "r" to "$mainUrl/"),
-                        referer = referer,
-                        headers = browserHeaders + mapOf(
-                            "Accept" to "*/*",
-                            "Origin" to mainServer,
-                            "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
-                            "X-Requested-With" to "XMLHttpRequest"
-                        )
-                    ).parsedSafe<Source>()
-                }.getOrNull()
+                val link = "$mainServer/player/index.php?data=$key&do=getVideo"
+                Log.d(logTag, "invokeLokalSource: resolved FirePlayer key = $key, requesting $link")
+                val response = app.post(
+                    link,
+                    data = mapOf("hash" to key, "r" to "$mainUrl/"),
+                    referer = referer,
+                    headers = mapOf(
+                        "Accept" to "*/*",
+                        "Origin" to mainServer,
+                        "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "User-Agent" to browserUserAgent
+                    )
+                ).parsedSafe<Source>()
 
-                val m3uLink = source?.videoSource ?: source?.securedLink
-                if (!m3uLink.isNullOrBlank()) {
+                val videoSource = response?.videoSource ?: response?.securedLink
+                if (!videoSource.isNullOrBlank()) {
+                    Log.d(logTag, "invokeLokalSource: found FirePlayer stream = $videoSource")
+                    val displayName = if (sourceName.isNotBlank() && sourceName != translator) {
+                        "${this.name} - $sourceName ($translator)"
+                    } else {
+                        "${this.name} ($translator)"
+                    }
                     M3u8Helper.generateM3u8(
-                        "${this.name} ($translator)",
-                        m3uLink,
+                        displayName,
+                        videoSource,
                         referer
                     ).forEach(sourceCallback)
                     return
@@ -327,102 +332,145 @@ class Anizm : MainAPI() {
             }
         }
 
-        val mediaUrl = Regex("""(?:const|var|let)\s+url\s*=\s*["']([^"']+)["']""")
-            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\\/", "/")
-            ?: Regex("""file:\s*["']([^"']+)["']""")
-                .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\\/", "/")
+        val directUrlMatch = Regex("""(?:const|var|let)s+urls*=s*["']([^"']+)["']""")
+            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\/", "/")
+        val fileMatch = Regex("""file:s*["']([^"']+)["']""")
+            .find(playerHtml)?.groupValues?.getOrNull(1)?.replace("\/", "/")
+        val mediaUrl = directUrlMatch ?: fileMatch
 
         if (!mediaUrl.isNullOrBlank() && mediaUrl.startsWith("http")) {
-            if (mediaUrl.contains(".m3u8", ignoreCase = true)) {
-                M3u8Helper.generateM3u8(
-                    "${this.name} ($translator)",
-                    mediaUrl,
-                    normalizedUrl
-                ).forEach(sourceCallback)
-            } else {
-                sourceCallback(
-                    newExtractorLink(
-                        source = this.name,
-                        name = "${this.name} ($translator)",
-                        url = mediaUrl,
-                        type = INFER_TYPE
-                    ) {
-                        this.referer = normalizedUrl
-                        this.quality = Qualities.P1080.value
-                    }
-                )
+            val isMedia = mediaUrl.contains(".m3u8") ||
+                mediaUrl.contains(".mp4") ||
+                mediaUrl.contains("/storage/uploads/") ||
+                mediaUrl.contains("/cdn/hls/")
+            val isStaticAsset = mediaUrl.endsWith(".js") ||
+                mediaUrl.endsWith(".css") ||
+                mediaUrl.endsWith(".png") ||
+                mediaUrl.endsWith(".jpg") ||
+                mediaUrl.endsWith(".jpeg") ||
+                mediaUrl.endsWith(".webp") ||
+                mediaUrl.endsWith(".gif") ||
+                mediaUrl.endsWith(".svg")
+
+            if (isMedia && !isStaticAsset) {
+                Log.d(logTag, "invokeLokalSource: found direct media URL = $mediaUrl")
+                val displayName = if (sourceName.isNotBlank() && sourceName != translator) {
+                    "${this.name} - $sourceName ($translator)"
+                } else {
+                    "${this.name} ($translator)"
+                }
+
+                if (mediaUrl.contains(".m3u8")) {
+                    M3u8Helper.generateM3u8(
+                        displayName,
+                        mediaUrl,
+                        normalizedUrl
+                    ).forEach(sourceCallback)
+                } else {
+                    sourceCallback(
+                        newExtractorLink(
+                            source = this.name,
+                            name = displayName,
+                            url = mediaUrl,
+                            type = INFER_TYPE
+                        ) {
+                            this.referer = normalizedUrl
+                            this.quality = Qualities.P1080.value
+                        }
+                    )
+                }
             }
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        Log.d(logTag, "loadLinks data=$normalizedData")
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         val normalizedData = normalizeUrl(data)
-        val document = app.get(normalizedData, referer = "$mainUrl/", headers = browserHeaders + mapOf("Referer" to "$mainUrl/")).document
+        Log.d(logTag, "loadLinks: episodeUrl = $normalizedData")
+        val document = app.get(
+            normalizedData,
+            referer = "$mainUrl/",
+            headers = browserHeaders + mapOf("Referer" to "$mainUrl/")
+        ).document
 
         val translatorItems = document.select(
-            "div.episodeTranslators div#fansec, div.episodeTranslators [translator], a[translator]"
-        ).distinctBy { it.selectFirst("a[translator]")?.attr("translator") ?: it.attr("translator") }
+            "div.episodeTranslators div#fansec, div.episodeTranslators [translator], a[translator], [data-translatorclick]"
+        ).distinctBy {
+            it.selectFirst("a[translator]")?.attr("translator")
+                ?: it.attr("translator")
+                ?: it.attr("href")
+        }
 
-        Log.d("Anizm", "translator items=${translatorItems.size}")
+        Log.d(logTag, "loadLinks: found ${translatorItems.size} translators")
 
         translatorItems.forEach { item ->
             safeApiCall {
                 val translatorAnchor = item.selectFirst("a[translator]") ?: item.takeIf { it.hasAttr("translator") }
-                val translatorUrl = translatorAnchor?.attr("translator")?.let(::fixUrl).orEmpty()
+                val translatorUrlRaw = translatorAnchor?.attr("translator")?.let(::fixUrl).orEmpty()
                     .ifBlank { translatorAnchor?.attr("href")?.let(::fixUrl).orEmpty() }
-                val translator = item.selectFirst("div.title")?.text()?.trim()
+                val translatorUrl = normalizeUrl(translatorUrlRaw)
+                val translator = item.selectFirst("div.title, span")?.text()?.trim()
                     ?.takeIf { it.isNotBlank() }
                     ?: translatorAnchor?.text()?.trim().orEmpty()
 
-                if (translatorUrl.isBlank()) {
-                    Log.d("Anizm", "translator URL missing: $translator")
+                if (translatorUrl.isBlank() || translatorUrl == "#") {
                     return@safeApiCall
                 }
 
-                Log.d("Anizm", "translator=$translator url=$translatorUrl")
+                Log.d(logTag, "loadLinks: translator = $translator, url = $translatorUrl")
 
                 val translatorResponse = app.get(
                     translatorUrl,
                     referer = normalizedData,
-                    headers = mapOf(
+                    headers = browserHeaders + mapOf(
                         "Accept" to "application/json, text/javascript, */*; q=0.01",
-                        "X-Requested-With" to "XMLHttpRequest"
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "Referer" to normalizedData,
+                        "sec-fetch-dest" to "empty",
+                        "sec-fetch-mode" to "cors",
+                        "sec-fetch-site" to "same-origin"
                     )
                 ).parsedSafe<Translators>()
 
                 val translatorHtml = translatorResponse?.data
                 if (translatorHtml.isNullOrBlank()) {
-                    Log.d("Anizm", "translator response/data empty")
                     return@safeApiCall
                 }
 
                 val videoLinks = Jsoup.parse(translatorHtml).select("a[video]")
-                Log.d("Anizm", "video links=${videoLinks.size}")
+                Log.d(logTag, "loadLinks: translator $translator has ${videoLinks.size} video buttons")
 
                 videoLinks.forEach { video ->
-                    val videoUrl = video.attr("video").let(::fixUrl)
-                    if (videoUrl.isBlank()) return@forEach
-
-                    Log.d("Anizm", "video url=$videoUrl")
+                    val videoUrlRaw = video.attr("video").let(::fixUrl)
+                    if (videoUrlRaw.isBlank()) return@forEach
+                    val videoUrl = normalizeUrl(videoUrlRaw)
+                    val videoSourceName = video.attr("data-video-name").ifBlank { video.text().trim() }
 
                     safeApiCall {
+                        Log.d(logTag, "loadLinks: requesting video button = $videoUrl ($videoSourceName)")
                         val player = app.get(
                             videoUrl,
-                            referer = data,
-                            headers = mapOf(
+                            referer = normalizedData,
+                            headers = browserHeaders + mapOf(
                                 "Accept" to "application/json, text/javascript, */*; q=0.01",
-                                "X-Requested-With" to "XMLHttpRequest"
+                                "X-Requested-With" to "XMLHttpRequest",
+                                "Referer" to normalizedData,
+                                "sec-fetch-dest" to "empty",
+                                "sec-fetch-mode" to "cors",
+                                "sec-fetch-site" to "same-origin"
                             )
                         ).parsedSafe<Videos>()?.player
 
                         if (player.isNullOrBlank()) {
-                            Log.d("Anizm", "player response empty")
                             return@safeApiCall
                         }
 
                         val parsed = Jsoup.parse(player)
-                        val iframeElement = parsed.selectFirst("iframe")
+                        val iframeElement = parsed.selectFirst("iframe, embed")
                         val link = (
                             iframeElement?.attr("src")
                                 ?: iframeElement?.attr("data-src")
@@ -431,102 +479,16 @@ class Anizm : MainAPI() {
                             ?: player.trim().takeIf { it.startsWith("http") }
 
                         if (link.isNullOrBlank()) {
-                            Log.d("Anizm", "iframe/player URL missing")
                             return@safeApiCall
                         }
 
-                        val fixedLink = fixUrl(link)
-                        Log.d("Anizm", "resolved link=$fixedLink")
+                        val fixedLink = normalizeUrl(fixUrl(link))
+                        Log.d(logTag, "loadLinks: resolved player link = $fixedLink ($videoSourceName)")
 
-                        // Anizm.net yeni player yapısında doğrudan /player/{id} iframe döndürüyor.
-                        // Bu URL'yi extractor'a bırakmadan önce player sayfasından gerçek medya
-                        // URL'sini ve olası HLS manifestini bulmayı deniyoruz.
-                        if (fixedLink.contains("/player/")) {
-                            val playerResponse = app.get(
-                                fixedLink,
-                                referer = data,
-                                headers = mapOf(
-                                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                                    "User-Agent" to "Mozilla/5.0"
-                                )
-                            )
-                            val playerHtml = playerResponse.text
-
-                            // Puffy medya adresi player JavaScript kodunun içinde oluşuyor.
-                            val directMediaUrls = Regex(
-                                """https?://[^\s"'<>\\]+(?:\.m3u8|\.mp4|\.mkv|\.xml)(?:\?[^\s"'<>\\]+)?""",
-                                RegexOption.IGNORE_CASE
-                            ).findAll(playerHtml)
-                                .map { it.value.replace("&amp;", "&") }
-                                .distinct()
-                                .toList()
-
-                            Log.d("Anizm", "player direct media urls=${directMediaUrls.size}")
-
-                            directMediaUrls.forEach { media ->
-                                if (media.contains(".m3u8", ignoreCase = true)) {
-                                    M3u8Helper.generateM3u8(
-                                        "Anizm ($translator)",
-                                        media,
-                                        fixedLink
-                                    ).forEach(callback)
-                                } else {
-                                    callback(
-                                        newExtractorLink(
-                                            source = "Anizm",
-                                            name = "Anizm ($translator)",
-                                            url = media,
-                                            type = ExtractorLinkType.VIDEO
-                                        ) {
-                                            this.referer = fixedLink
-                                            this.quality = when {
-                                                Regex("""/1080(?:/|\?)""").containsMatchIn(media) -> Qualities.P1080.value
-                                                Regex("""/720(?:/|\?)""").containsMatchIn(media) -> Qualities.P720.value
-                                                Regex("""/480(?:/|\?)""").containsMatchIn(media) -> Qualities.P480.value
-                                                else -> Qualities.Unknown.value
-                                            }
-                                            this.headers = mapOf("User-Agent" to "Mozilla/5.0")
-                                        }
-                                    )
-                                }
-                            }
-
-                            val mediaCandidates = buildList {
-                                addAll(playerResponse.document.select("video source[src]").map { it.attr("src") })
-                                addAll(playerResponse.document.select("video[src]").map { it.attr("src") })
-                                addAll(playerResponse.document.select("source[src]").map { it.attr("src") })
-                                addAll(playerResponse.document.select("a[href]").map { it.attr("href") })
-                            }.mapNotNull { it.trim().takeIf { value -> value.isNotBlank() } }
-                                .map(::fixUrl)
-                                .distinct()
-
-                            mediaCandidates
-                                .filterNot { candidate -> directMediaUrls.contains(candidate) }
-                                .forEach { media ->
-                                    if (media.contains(".m3u8", ignoreCase = true)) {
-                                        M3u8Helper.generateM3u8("Anizm ($translator)", media, fixedLink).forEach(callback)
-                                    } else if (media.startsWith("http")) {
-                                        callback(
-                                            newExtractorLink(
-                                                source = "Anizm",
-                                                name = "Anizm ($translator)",
-                                                url = media,
-                                                type = ExtractorLinkType.VIDEO
-                                            ) {
-                                                this.referer = fixedLink
-                                                this.quality = Qualities.Unknown.value
-                                            }
-                                        )
-                                    }
-                                }
-
-                            if (directMediaUrls.isEmpty() && mediaCandidates.isEmpty()) {
-                                loadExtractor(fixedLink, data, subtitleCallback, callback)
-                            }
-                        } else if (fixedLink.startsWith(mainServer)) {
-                            invokeLokalSource(fixedLink, translator, subtitleCallback, callback)
+                        if (fixedLink.contains("anizmplayer.com") || fixedLink.contains("anizm.com.tr/player/") || fixedLink.contains("anizm.net/player/") || fixedLink.contains("anizm.tv/player/")) {
+                            invokeLokalSource(fixedLink, translator, videoSourceName, subtitleCallback, callback)
                         } else {
-                            loadExtractor(fixedLink, data, subtitleCallback, callback)
+                            loadExtractor(fixedLink, normalizedData, subtitleCallback, callback)
                         }
                     }
                 }
@@ -535,6 +497,7 @@ class Anizm : MainAPI() {
 
         return true
     }
+
     data class SearchAnimeResponse(
         @JsonProperty("data") val data: List<SearchAnimeItem>? = null
     )
@@ -546,7 +509,16 @@ class Anizm : MainAPI() {
         @JsonProperty("info_year") val year: String? = null
     )
 
-    data class Source(@JsonProperty("videoSource") val videoSource: String?, @JsonProperty("securedLink") val securedLink: String?)
-    data class Videos(@JsonProperty("player") val player: String?)
-    data class Translators(@JsonProperty("data") val data: String?)
+    data class Source(
+        @JsonProperty("videoSource") val videoSource: String? = null,
+        @JsonProperty("securedLink") val securedLink: String? = null
+    )
+
+    data class Videos(
+        @JsonProperty("player") val player: String? = null
+    )
+
+    data class Translators(
+        @JsonProperty("data") val data: String? = null
+    )
 }
