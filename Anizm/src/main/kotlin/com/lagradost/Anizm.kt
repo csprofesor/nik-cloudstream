@@ -201,6 +201,114 @@ class Anizm : MainAPI() {
         translator: String,
         sourceCallback: (ExtractorLink) -> Unit
     ) {
+        app.get(url, referer = "$mainUrl/").document.select("script").find { script ->
+            script.data().contains("eval(function(p,a,c,k,e,d)")
+        }?.let {
+            val key = getAndUnpack(it.data()).substringAfter("FirePlayer(\"").substringBefore("\",")
+            val referer = "$mainServer/video/$key"
+            val link = "$mainServer/player/index.php?data=$key&do=getVideo"
+            Log.i("hexated", link)
+            app.post(
+                link,
+                data = mapOf("hash" to key, "r" to "$mainUrl/"),
+                referer = referer,
+                headers = mapOf(
+                    "Accept" to "*/*",
+                    "Origin" to mainServer,
+                    "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
+                    "X-Requested-With" to "XMLHttpRequest"
+                )
+            ).parsedSafe<Source>()?.videoSource?.let { m3uLink ->
+                M3u8Helper.generateM3u8(
+                    "${this.name} ($translator)",
+                    m3uLink,
+                    referer
+                ).forEach(sourceCallback)
+            }
+        }
+    }
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val document = app.get(data).document
+        document.select("div.episodeTranslators div#fansec").map {
+            Pair(it.select("a").attr("translator"), it.select("div.title").text())
+        }.apmap { (url, translator) ->
+            safeApiCall {
+                app.get(
+                    url,
+                    referer = data,
+                    headers = mapOf(
+                        "Accept" to "application/json, text/javascript, */*; q=0.01",
+                        "X-Requested-With" to "XMLHttpRequest"
+                    )
+                ).parsedSafe<Translators>()?.data?.let {
+                    Jsoup.parse(it).select("a").apmap { video ->
+                        app.get(
+                            video.attr("video"),
+                            referer = data,
+                            headers = mapOf(
+                                "Accept" to "application/json, text/javascript, */*; q=0.01",
+                                "X-Requested-With" to "XMLHttpRequest"
+                            )
+                        ).parsedSafe<Videos>()?.player?.let { iframe ->
+                            Jsoup.parse(iframe).select("iframe").attr("src").let { link ->
+                                when {
+                                    link.startsWith(mainServer) -> {
+                                        invokeLokalSource(link, translator, callback)
+                                    }
+                                    else -> {
+                                        loadExtractor(
+                                            fixUrl(link),
+                                            "$mainUrl/",
+                                            subtitleCallback,
+                                            callback
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return true
+    }
+e.com'], iframe[src*='youtu.be']"
+        )?.attr("src")
+
+        val year = Regex("""\b(19|20)\d{2}\b""").find(
+            document.select("div.infoSta li, div.anizm_boxContent li.dataRow")
+                .joinToString(" ") { it.text() }
+        )?.value?.toIntOrNull()
+
+        val imdbId = extractImdbId(document)
+
+        return newAnimeLoadResponse(title, url, type) {
+            posterUrl = fixUrlNull(document.selectFirst("div.infoPosterImg > img, div.infoPosterImg img")?.let {
+                it.attr("data-src").ifBlank {
+                    it.attr("data-original").ifBlank { it.attr("src") }
+                }
+            })
+            this.year = year
+            addEpisodes(DubStatus.Subbed, episodes)
+            plot = document.selectFirst("div.infoDesc")?.text()?.trim()
+            tags = document.select(
+                "span.dataValue > span.tag > span.label, span.dataValue span.ui.label"
+            ).map { it.text() }.distinct()
+            imdbId?.let { addImdbId(it) }
+            trailer?.let { addTrailer(it) }
+        }
+    }
+
+    private suspend fun invokeLokalSource(
+        url: String,
+        translator: String,
+        sourceCallback: (ExtractorLink) -> Unit
+    ) {
         val document = runCatching {
             app.get(url, referer = "$mainUrl/").document
         }.getOrNull() ?: return
