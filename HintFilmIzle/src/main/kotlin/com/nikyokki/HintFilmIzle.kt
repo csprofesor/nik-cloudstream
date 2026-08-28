@@ -328,14 +328,18 @@ class HintFilmIzle : MainAPI() {
         }
     }
 
-    private fun directLinks(html: String): List<String> =
-        Regex(
+    private fun directLinks(html: String): List<String> {
+        val regex = Regex(
             """https?://[^"'\\s<>]+(?:\\.(?:m3u8|mp4)(?:\\?[^"'\\s<>]*)?|/manifest(?:\\?[^"'\\s<>]*)?)""",
             RegexOption.IGNORE_CASE
-        ).findAll(html)
-            .mapNotNull { cleanUrl(it.value.trimEnd('\\', '"', '\\'', ')', ']')) }
+        )
+        return regex.findAll(html)
+            .mapNotNull { match ->
+                cleanUrl(match.value.trimEnd('\\', '"', '\'', ')', ']'))
+            }
             .distinct()
             .toList()
+    }
 
     private fun playerUrl(value: String?, baseUrl: String): String? {
         val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
