@@ -81,6 +81,7 @@ class Anizm : MainAPI() {
 
                 !isHomepageUrl(href) &&
                     !href.contains("/kategoriler/") &&
+                    !href.contains("/temalar/") &&
                     !href.contains("/anime-izle") &&
                     !href.contains("/fullViewSearch") &&
                     !href.contains("/takvim") &&
