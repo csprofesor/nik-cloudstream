@@ -329,8 +329,29 @@ class HintFilmIzle : MainAPI() {
     }
 
     private fun directLinks(html: String): List<String> =
-        Regex("""https?://[^"'\\s<>]+(?:\\.m3u8(?:\\?[^"'\\s<>]*)?|\\.mp4(?:\\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE)
-            .findAll(html).mapNotNull { cleanUrl(it.value) }.distinct().toList()
+        Regex(
+            """https?://[^"'\\s<>]+(?:\\.(?:m3u8|mp4)(?:\\?[^"'\\s<>]*)?|/manifest(?:\\?[^"'\\s<>]*)?)""",
+            RegexOption.IGNORE_CASE
+        ).findAll(html)
+            .mapNotNull { cleanUrl(it.value.trimEnd('\\', '"', '\\'', ')', ']')) }
+            .distinct()
+            .toList()
+
+    private fun playerUrl(value: String?, baseUrl: String): String? {
+        val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val url = cleanUrl(raw) ?: return null
+        if (url.startsWith("data:", true) || url.startsWith("javascript:", true)) return null
+        return if (url.startsWith("//")) "https:$url"
+        else if (url.startsWith("/")) "$mainUrl$url"
+        else url
+    }
+
+    private fun isKnownPlayer(url: String): Boolean =
+        listOf(
+            "vidmoly", "vidhide", "streamtape", "voe.sx", "voe.to",
+            "ok.ru", "dood", "filemoon", "mixdrop", "streamwish",
+            "filelions", "vidsrc", "embed", "player"
+        ).any { url.contains(it, true) }
 
     override suspend fun loadLinks(
         data: String,
@@ -338,37 +359,90 @@ class HintFilmIzle : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val document = runCatching { app.get(data, referer = "$mainUrl/").document }.getOrNull()
-            ?: return false
+        val document = runCatching {
+            app.get(data, referer = "$mainUrl/").document
+        }.getOrNull() ?: return false
 
         var found = false
-        val frames = document.select("iframe[src], frame[src]").mapNotNull { cleanUrl(it.attr("src")) }.distinct()
+        val playerUrls = linkedSetOf<String>()
 
-        for (frame in frames) {
-            val nested = runCatching { app.get(frame, referer = data).text }.getOrDefault("")
-            for (stream in directLinks(nested)) {
-                found = true
-                callback(newExtractorLink(
-                    source = name, name = "HintFilmİzle", url = stream,
-                    type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                ) {
-                    referer = frame
-                    quality = getQualityFromName(stream)
-                })
+        // HintFilmİzle playeri yalnızca iframe olarak değil, video/source ve
+        // data-* alanlarında da verebiliyor.
+        document.select(
+            "iframe[src], iframe[data-src], frame[src], " +
+                "video[src], video[data-src], video source[src], video source[data-src]"
+        ).forEach { element ->
+            val value = element.attr("src").ifBlank {
+                element.attr("data-src")
             }
-            if (runCatching { loadExtractor(frame, data, subtitleCallback, callback) }.isSuccess) found = true
+            playerUrl(value, data)?.let { playerUrls.add(it) }
         }
 
-        for (stream in directLinks(document.html())) {
+        // Bazı sayfalarda oynatıcı doğrudan harici sağlayıcı linki olarak
+        // bulunuyor; önceki kod bu bağlantıları hiç taramıyordu.
+        document.select("a[href]").forEach { link ->
+            val href = playerUrl(link.attr("href"), data) ?: return@forEach
+            if (!href.startsWith(mainUrl, true) && isKnownPlayer(href)) {
+                playerUrls.add(href)
+            }
+        }
+
+        // HTML/JS içinde saklanan doğrudan video adreslerini de yakala.
+        directLinks(document.html()).forEach { stream ->
             found = true
             callback(newExtractorLink(
-                source = name, name = "HintFilmİzle Direct", url = stream,
+                source = name,
+                name = "HintFilmİzle Direct",
+                url = stream,
                 type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
             ) {
                 referer = data
                 quality = getQualityFromName(stream)
             })
         }
+
+        for (player in playerUrls) {
+            if (player.startsWith("http", true)) {
+                val result = runCatching {
+                    loadExtractor(player, data, subtitleCallback, callback)
+                }
+                if (result.isSuccess) found = true
+
+                // Bazı embed URL'leri ikinci bir iframe döndürüyor.
+                val nested = runCatching {
+                    app.get(player, referer = data).document
+                }.getOrNull()
+
+                nested?.select("iframe[src], iframe[data-src], video[src], video source[src]")
+                    ?.forEach { element ->
+                        val nestedUrl = playerUrl(
+                            element.attr("src").ifBlank { element.attr("data-src") },
+                            player
+                        ) ?: return@forEach
+
+                        if (nestedUrl != player) {
+                            runCatching {
+                                loadExtractor(nestedUrl, player, subtitleCallback, callback)
+                            }.onSuccess { found = true }
+                        }
+                    }
+
+                val nestedHtml = nested?.html().orEmpty()
+                for (stream in directLinks(nestedHtml)) {
+                    found = true
+                    callback(newExtractorLink(
+                        source = name,
+                        name = "HintFilmİzle Direct",
+                        url = stream,
+                        type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    ) {
+                        referer = player
+                        quality = getQualityFromName(stream)
+                    })
+                }
+            }
+        }
+
         return found
     }
 }
