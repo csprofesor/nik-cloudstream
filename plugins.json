@@ -40,7 +40,7 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=f518ca001a5c",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=ab994c02391b",
     "status": 1,
     "version": 1,
     "name": "Anizm",
@@ -48,7 +48,7 @@
     "authors": [
       "csprofesor"
     ],
-    "fileSize": 23709,
+    "fileSize": 26582,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -58,7 +58,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=anizm.net&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-0b75908336e6538bce2f9bee48c045103ea0310be5eed13206dba3506cada18d"
+    "fileHash": "sha256-331a0802a23d7d359fd7f91b80483ebbdd728d39a26a04a8cb94cf31db301467"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AsyaAnimeleri.cs3",
@@ -206,14 +206,14 @@
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=13",
     "status": 1,
-    "version": 13,
+    "version": 14,
     "name": "DiziGom",
     "internalName": "DiziGom",
     "authors": [
       "csprofesor"
     ],
     "description": "Türkçe altyazılı yabancı dizi izle, Tüm yabancı, kore, netflix dizilerin yeni ve eski sezonlarını orijinal dilinde dizigom1 alt yazılı film izleyebilir, sadece türkçe altyazılı en iyi yabancı diziler ve filmler hakkında yorum yapabilirsiniz.",
-    "fileSize": 23873,
+    "fileSize": 23865,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -221,7 +221,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-b6faefb9743b266d5b86fbbed323eae02e14746e3a47e3eddc1bbcd4a398ca68"
+    "fileHash": "sha256-ac9a04f4dde7762350009d9c5d4188006b7b5353567f523ab339b6dc58875fca"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
@@ -631,7 +631,7 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=f518ca001a5c",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=ab994c02391b",
     "status": 1,
     "version": 1,
     "name": "HintFilmİzle",
