@@ -465,11 +465,12 @@ class HintFilmIzle : MainAPI() {
                         app.get(player, referer = data).text
                     }.getOrNull().orEmpty()
 
+                    // Kinescope embed format is /embed/{VIDEO_ID}; the video ID
+                    // may be numeric or an opaque alphanumeric value.
                     val kinescopeVideoId = Regex(
-                        """https?://[^/]+/(\\d+)/embed/\\d+""",
+                        """https?://[^/]+/embed/([^/?#]+)""",
                         RegexOption.IGNORE_CASE
                     ).find(player)?.groupValues?.getOrNull(1)
-
                     // Kinescope player.js may generate the signed CDN manifest only
                     // after the player starts. Prefer a manifest exposed in the embed
                     // HTML, then fall back to Kinescope's documented direct HLS endpoint.
