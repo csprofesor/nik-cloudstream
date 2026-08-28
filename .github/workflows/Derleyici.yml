@@ -77,6 +77,64 @@ jobs:
           chmod +x gradlew
           shopt -s globstar
           ./gradlew make makePluginsJson --stacktrace
+
+          # Anizm ve HintFilmIzle için her derlemede yeni URL + sürüm bilgisi üret.
+          # Böylece CloudStream/CDN eski .cs3 dosyasını önbellekten kullanmaz.
+          python3 - <<'PY'
+          import json, re, os, subprocess
+          p = "build/plugins.json"
+          with open(p, encoding="utf-8") as f:
+              data = json.load(f)
+
+          commit_count = int(subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip())
+          sha = os.environ.get("GITHUB_SHA", "")[:12]
+
+          versions = {
+              "Anizm": commit_count,
+              "HintFilmIzle": commit_count,
+          }
+
+          files = {
+              "Anizm": "Anizm.cs3",
+              "HintFilmIzle": "HintFilmIzle.cs3",
+          }
+
+          for internal_name, filename in files.items():
+              entry = next((x for x in data if x.get("internalName") == internal_name), None)
+              if entry is None:
+                  entry = {
+                      "url": f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}",
+                      "status": 1,
+                      "version": versions[internal_name],
+                      "name": "HintFilmİzle" if internal_name == "HintFilmIzle" else "Anizm",
+                      "internalName": internal_name,
+                      "authors": ["csprofesor"],
+                      "language": "tr",
+                      "apiVersion": 1,
+                  }
+                  data.append(entry)
+
+              entry["version"] = versions[internal_name]
+              entry["url"] = f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}?v={sha}"
+          
+          # HintFilmIzle'nin özel metadata alanlarını koru.
+          hint = next(x for x in data if x.get("internalName") == "HintFilmIzle")
+          hint.update({
+              "status": 1,
+              "name": "HintFilmİzle",
+              "authors": ["csprofesor"],
+              "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
+              "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
+              "language": "tr",
+              "tvTypes": ["Movie", "TvSeries"],
+              "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
+              "apiVersion": 1,
+          })
+
+          with open(p, "w", encoding="utf-8") as f:
+              json.dump(data, f, ensure_ascii=False, indent=2)
+          PY
+
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=36"#' build/plugins.json
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=13"#' build/plugins.json
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84"#' build/plugins.json
