@@ -167,17 +167,31 @@ class HintFilmIzle : MainAPI() {
     }
 
     private fun extractResults(document: org.jsoup.nodes.Document): List<SearchResponse> {
-        return document.select("a[href*='/film/'], a[href*='/dizi/']")
-            .mapNotNull { anchor ->
-                val card = anchor.parents().firstOrNull {
-                    val image = it.selectFirst("img, picture source, [style*='background']")
-                    val links = it.select("a[href*='/film/'], a[href*='/dizi/']")
-                    image != null && links.size <= 3 && it.text().length < 800
-                } ?: anchor
+        // /film ve /trendler sayfalarında üstteki "Günün En İyileri"
+        // listesi de film linkleri içeriyor. Bunu tararsak tüm ana sayfa
+        // bölümleri aynı 10 filmle doluyor. Gerçek liste "Filmler"
+        // başlığından sonra başlıyor.
+        val exactFilmsHeading = document.select("h1, h2, h3, h4, h5, h6")
+            .firstOrNull { it.text().trim().equals("Filmler", true) }
 
-                anchor.toSearchResult(card)
-            }
-            .distinctBy { it.url }
+        val anchors = if (exactFilmsHeading != null) {
+            val container = exactFilmsHeading.parent()
+            val local = container.select("a[href*='/film/'], a[href*='/dizi/']")
+            if (local.isNotEmpty()) local
+            else container.parent()?.select("a[href*='/film/'], a[href*='/dizi/']") ?: emptyList()
+        } else {
+            document.select("a[href*='/film/'], a[href*='/dizi/']")
+        }
+
+        return anchors.mapNotNull { anchor ->
+            val card = anchor.parents().firstOrNull {
+                val image = it.selectFirst("img, picture source, [style*='background']")
+                val links = it.select("a[href*='/film/'], a[href*='/dizi/']")
+                image != null && links.size <= 3 && it.text().length < 800
+            } ?: anchor
+
+            anchor.toSearchResult(card)
+        }.distinctBy { it.url }
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
