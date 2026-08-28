@@ -60,11 +60,51 @@ class HintFilmIzle : MainAPI() {
         ?.let { fixUrlNull(it) }
 
     private fun Element.posterUrl(): String? {
-        val attrs = listOf("data-src", "data-lazy-src", "data-original", "data-image", "data-poster", "data-thumb", "src")
-        return select("img").asSequence()
-            .flatMap { img -> attrs.asSequence().map { img.attr(it) } }
-            .mapNotNull { cleanUrl(it) }
-            .firstOrNull { !it.startsWith("data:image", true) && !it.contains("placeholder", true) }
+        // HintFilmIzle posterleri zaman zaman img src yerine lazy-load/data-srcset
+        // veya CSS background-image ile veriyor. CloudStream kartta gri placeholder
+        // göstermesin diye bütün yaygın kaynakları sırayla kontrol ediyoruz.
+        val attrs = listOf(
+            "data-src", "data-lazy-src", "data-original", "data-image",
+            "data-poster", "data-thumb", "data-url", "data-image-url", "src"
+        )
+
+        fun valid(value: String?): String? =
+            cleanUrl(value)
+                ?.substringBefore(" ")
+                ?.takeIf {
+                    it.isNotBlank() &&
+                    !it.startsWith("data:image", true) &&
+                    !it.contains("placeholder", true) &&
+                    (it.startsWith("http://", true) || it.startsWith("https://", true) || it.startsWith("//"))
+                }
+
+        // Önce img etiketlerindeki lazy-load alanlarını dene.
+        select("img").asSequence().forEach { img ->
+            attrs.asSequence().mapNotNull { valid(img.attr(it)) }.firstOrNull()?.let { return it }
+
+            // srcset / data-srcset içindeki son gerçek URL'yi al.
+            listOf("data-srcset", "data-lazy-srcset", "srcset").forEach { attr ->
+                val candidate = img.attr(attr)
+                    .split(",")
+                    .map { it.trim().substringBefore(" ").trim() }
+                    .asReversed()
+                    .asSequence()
+                    .mapNotNull { valid(it) }
+                    .firstOrNull()
+                if (candidate != null) return candidate
+            }
+        }
+
+        // Bazı kartlarda poster doğrudan CSS background-image olarak tutuluyor.
+        val styleCandidates = select("[style]").asSequence()
+            .map { it.attr("style") }
+            .flatMap { style ->
+                Regex("""background-image\s*:\s*url\((['"]?)(.*?)\1\)""", RegexOption.IGNORE_CASE)
+                    .findAll(style)
+                    .map { it.groupValues[2] }
+            }
+            .mapNotNull { valid(it) }
+        return styleCandidates.firstOrNull()
     }
 
     private fun Element.cardTitle(): String? =
