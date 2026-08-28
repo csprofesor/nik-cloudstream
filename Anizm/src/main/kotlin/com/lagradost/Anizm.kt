@@ -43,8 +43,6 @@ class Anizm : MainAPI() {
         "$mainUrl/kategoriler/5" to "Romantizm",
         "$mainUrl/kategoriler/8" to "Bilim-Kurgu",
         "$mainUrl/kategoriler/13" to "Fantastik",
-        "$mainUrl/kategoriler/20" to "Korku",
-        "$mainUrl/kategoriler/22" to "Filmler",
         "$mainUrl/kategoriler/26" to "Okul",
         "$mainUrl/kategoriler/34" to "Shounen",
     )
