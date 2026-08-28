@@ -354,8 +354,26 @@ class HintFilmIzle : MainAPI() {
         listOf(
             "vidmoly", "vidhide", "streamtape", "voe.sx", "voe.to",
             "ok.ru", "dood", "filemoon", "mixdrop", "streamwish",
-            "filelions", "vidsrc", "embed", "player"
+            "filelions", "vidsrc", "embed", "player", "kinescope"
         ).any { url.contains(it, true) }
+
+
+    private fun extractKinescopeHls(html: String): String? {
+        val normalized = html
+            .replace("\\u0026", "&")
+            .replace("\\/","/")
+
+        val patterns = listOf(
+            Regex("""["']hls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
+            Regex("""["']shakahls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
+            Regex("""["']contentUrl["']\\s*:\\s*["']([^"']+\\.m3u8[^"']*)""", RegexOption.IGNORE_CASE)
+        )
+
+        return patterns.asSequence()
+            .mapNotNull { it.find(normalized)?.groupValues?.getOrNull(1) }
+            .mapNotNull { cleanUrl(it) }
+            .firstOrNull()
+    }
 
     override suspend fun loadLinks(
         data: String,
@@ -439,10 +457,39 @@ class HintFilmIzle : MainAPI() {
 
         for (player in playerUrls) {
             if (player.startsWith("http", true)) {
-                val result = runCatching {
-                    loadExtractor(player, data, subtitleCallback, callback)
+                // HintFilmİzle'nin TEKPART oynatıcısı Kinescope embed kullanıyor.
+                // Kinescope'un imzalı HLS adresi embed HTML içindeki playerOptions
+                // nesnesinde veriliyor; imza süreli olduğu için URL'yi sabit yazmıyoruz.
+                if (player.contains("kinescope", true)) {
+                    val playerHtml = runCatching {
+                        app.get(player, referer = data).text
+                    }.getOrNull().orEmpty()
+
+                    val kinescopeStream = extractKinescopeHls(playerHtml)
+                        ?: directLinks(
+                            playerHtml
+                                .replace("\\u0026", "&")
+                                .replace("\\/", "/")
+                        ).firstOrNull { it.contains(".m3u8", true) }
+
+                    if (kinescopeStream != null) {
+                        found = true
+                        callback(newExtractorLink(
+                            source = name,
+                            name = "HintFilmİzle Kinescope",
+                            url = kinescopeStream,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            referer = player
+                            quality = getQualityFromName(kinescopeStream)
+                        })
+                    }
+                } else {
+                    val result = runCatching {
+                        loadExtractor(player, data, subtitleCallback, callback)
+                    }
+                    if (result.isSuccess) found = true
                 }
-                if (result.isSuccess) found = true
 
                 // Bazı embed URL'leri ikinci bir iframe döndürüyor.
                 val nested = runCatching {
