@@ -166,22 +166,45 @@ class HintFilmIzle : MainAPI() {
         }
     }
 
-    private fun extractResults(document: org.jsoup.nodes.Document): List<SearchResponse> {
-        // /film ve /trendler sayfalarında üstteki "Günün En İyileri"
-        // listesi de film linkleri içeriyor. Bunu tararsak tüm ana sayfa
-        // bölümleri aynı 10 filmle doluyor. Gerçek liste "Filmler"
-        // başlığından sonra başlıyor.
-        val exactFilmsHeading = document.select("h1, h2, h3, h4, h5, h6")
-            .firstOrNull { it.text().trim().equals("Filmler", true) }
+    private fun extractResults(
+        document: org.jsoup.nodes.Document,
+        pageUrl: String? = null
+    ): List<SearchResponse> {
+        // Sayfadaki üst "Günün En İyileri / Beklenen Film-Diziler"
+        // kartlarını değil, sayfanın kendi sonuç bölümünü al.
+        // HintFilmİzle'nin kategori sayfalarında gerçek sonuç başlığı "Filmler",
+        // trend sayfasında ise "Haftanın Trendleri" olarak geliyor.
+        val preferredHeadings = when {
+            pageUrl?.contains("/trendler", true) == true ->
+                listOf("Haftanın Trendleri", "Filmler")
+            else ->
+                listOf("Filmler", "Netflix Filmleri", "Diziler")
+        }
 
-        val anchors = if (exactFilmsHeading != null) {
-            val container = exactFilmsHeading.parent()
-            val local = container.select("a[href*='/film/'], a[href*='/dizi/']")
-            if (local.isNotEmpty()) local
-            else container.parent()?.select("a[href*='/film/'], a[href*='/dizi/']") ?: emptyList()
+        val heading = document.select("h1, h2, h3, h4, h5, h6")
+            .firstOrNull { element ->
+                preferredHeadings.any { it.equals(element.text().trim(), true) }
+            }
+            ?: document.select("h1").firstOrNull()
+
+        val anchors = if (heading != null) {
+            // Başlığın bulunduğu içerik konteynerinde sonuç kartlarını ara.
+            // Üst carousel'ler genellikle heading'in dışında olduğundan artık
+            // bunlar sonuca karışmaz.
+            val candidates = listOfNotNull(
+                heading.parent(),
+                heading.parent()?.parent(),
+                heading.parent()?.parent()?.parent()
+            )
+
+            candidates.asSequence()
+                .map { it.select("a[href*='/film/'], a[href*='/dizi/']") }
+                .firstOrNull { it.isNotEmpty() }
+                ?: emptyList()
         } else {
             document.select("a[href*='/film/'], a[href*='/dizi/']")
         }
+
 
         return anchors.mapNotNull { anchor ->
             val card = anchor.parents().firstOrNull {
@@ -198,7 +221,7 @@ class HintFilmIzle : MainAPI() {
         val pageUrl = if (page <= 1) request.data else request.data.trimEnd('/') + "/page/" + page + "/"
         val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
             ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
-        val results = extractResults(document)
+        val results = extractResults(document, pageUrl)
         return newHomePageResponse(request.name, results, hasNext = results.isNotEmpty())
     }
 
@@ -206,7 +229,7 @@ class HintFilmIzle : MainAPI() {
         val encoded = query.trim().replace(" ", "+")
         val urls = listOf("$mainUrl/?s=$encoded", "$mainUrl/film?search=$encoded")
         for (url in urls) {
-            val results = runCatching { extractResults(app.get(url, referer = "$mainUrl/").document) }
+            val results = runCatching { extractResults(app.get(url, referer = "$mainUrl/").document, url) }
                 .getOrDefault(emptyList())
             if (results.isNotEmpty()) return results
         }
