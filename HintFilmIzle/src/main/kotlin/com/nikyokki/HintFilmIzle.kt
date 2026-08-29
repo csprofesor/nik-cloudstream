@@ -433,8 +433,12 @@ class HintFilmIzle : MainAPI() {
             URI(embedUrl).let { "${it.scheme}://${it.host}" }
         }.getOrDefault("https://kinescope.io")
 
+        // Native ExoPlayer requests are not browser CORS requests.
+        // Kinescope's browser trace contains Origin because fetch/XHR sends it,
+        // but the CDN does not require it for native HLS playback. Keeping only
+        // the browser-identical Referer + UA avoids making the signed CDN request
+        // look like an artificial cross-origin browser request.
         return mapOf(
-            "Origin" to origin,
             "Referer" to "$origin/",
             "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
             "Accept" to "*/*"
