@@ -491,10 +491,19 @@ class HintFilmIzle : MainAPI() {
         val candidates = linkedSetOf<String>()
 
         /*
-         * First target playerOptions directly. This is more reliable than
-         * looking for arbitrary m3u8 strings in the entire document because
-         * it follows Kinescope's actual player data model.
+         * IMPORTANT: Kinescope's own player response contains a JavaScript
+         * playerOptions object. Existing Kinescope resolvers first isolate this
+         * object and then read playlist[0].sources.hls.src (or shakahls.src).
+         * Do that before scanning the whole HTML so an ad/auxiliary m3u8 can
+         * never win just because it appears earlier in the document.
          */
+        val playerOptions = Regex(
+            """var\\s+playerOptions\\s*=\\s*(\\{.*?\\});\\s*(?:\\n|</script>)""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(normalized)?.groupValues?.getOrNull(1).orEmpty()
+
+        val playerOptionsNormalized = if (playerOptions.isNotBlank()) playerOptions else normalized
+
         val sourcePatterns = listOf(
             Regex(
                 """["']hls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)["']""",
@@ -515,7 +524,7 @@ class HintFilmIzle : MainAPI() {
         )
 
         sourcePatterns.forEach { regex ->
-            regex.findAll(normalized).forEach { match ->
+            regex.findAll(playerOptionsNormalized).forEach { match ->
                 match.groupValues.getOrNull(1)
                     ?.let(::decodeCandidate)
                     ?.takeIf { it.contains(".m3u8", true) }
@@ -524,6 +533,11 @@ class HintFilmIzle : MainAPI() {
         }
 
         /*
+         * Some current responses omit the literal "var playerOptions" wrapper
+         * or change whitespace/quoting. Also accept the same nested source
+         * structure without requiring the wrapper, but only after the scoped
+         * playerOptions attempt above.
+         */\n\n        /*
          * Fallback for player versions that serialize playerOptions slightly
          * differently. Search for every absolute HLS manifest, including
          * escaped JSON URLs.
