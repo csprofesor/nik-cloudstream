@@ -27,6 +27,7 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 import java.net.URI
 import java.net.URLDecoder
+import java.net.URLEncoder
 
 class HintFilmIzle : MainAPI() {
     override var mainUrl = "https://www.hintfilmizle.com"
@@ -185,47 +186,28 @@ class HintFilmIzle : MainAPI() {
         document: org.jsoup.nodes.Document,
         pageUrl: String? = null
     ): List<SearchResponse> {
-        // Sayfadaki üst "Günün En İyileri / Beklenen Film-Diziler"
-        // kartlarını değil, sayfanın kendi sonuç bölümünü al.
-        // HintFilmİzle'nin kategori sayfalarında gerçek sonuç başlığı "Filmler",
-        // trend sayfasında ise "Haftanın Trendleri" olarak geliyor.
-        val preferredHeadings = when {
-            pageUrl?.contains("/trendler", true) == true ->
-                listOf("Haftanın Trendleri", "Filmler")
-            else ->
-                listOf("Filmler", "Netflix Filmleri", "Diziler")
-        }
-
-        val heading = document.select("h1, h2, h3, h4, h5, h6")
-            .firstOrNull { element ->
-                preferredHeadings.any { it.equals(element.text().trim(), true) }
-            }
-            ?: document.select("h1").firstOrNull()
-
-        val anchors = if (heading != null) {
-            // Başlığın bulunduğu içerik konteynerinde sonuç kartlarını ara.
-            // Üst carousel'ler genellikle heading'in dışında olduğundan artık
-            // bunlar sonuca karışmaz.
-            val candidates = listOfNotNull(
-                heading.parent(),
-                heading.parent()?.parent(),
-                heading.parent()?.parent()?.parent()
-            )
-
-            candidates.asSequence()
-                .map { it.select("a[href*='/film/'], a[href*='/dizi/']") }
-                .firstOrNull { it.isNotEmpty() }
-                ?: emptyList()
-        } else {
-            document.select("a[href*='/film/'], a[href*='/dizi/']")
-        }
-
+        /*
+         * HintFilmIzle'nin HTML yapısı aynı sayfada birkaç farklı film listesi
+         * barındırıyor: Günün En İyileri, Beklenenler ve asıl sonuç listesi.
+         * Önceki sürüm heading'in 1-3 parent'ına güveniyordu. Site DOM'u
+         * değiştiğinde bu yüzden sonuçlar tamamen kaybolabiliyordu.
+         *
+         * Burada href'i gerçek /film/ veya /dizi/ sayfasına giden bütün kartları
+         * topluyoruz. Navigasyon linkleri zaten toSearchResult() içinde eleniyor.
+         * Böylece ana sayfa, kategori, trend, sayfalama ve arama sonuçları aynı
+         * extractor yolundan geçiyor.
+         */
+        val anchors = document.select(
+            "a[href*='/film/'], a[href*='/dizi/']"
+        )
 
         return anchors.mapNotNull { anchor ->
             val card = anchor.parents().firstOrNull {
-                val image = it.selectFirst("img, picture source, [style*='background']")
                 val links = it.select("a[href*='/film/'], a[href*='/dizi/']")
-                image != null && links.size <= 3 && it.text().length < 800
+                val image = it.selectFirst(
+                    "img, picture source, [style*='background'], [data-poster], [data-image]"
+                )
+                image != null && links.size <= 4 && it.text().length < 1200
             } ?: anchor
 
             anchor.toSearchResult(card)
@@ -241,13 +223,54 @@ class HintFilmIzle : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val encoded = query.trim().replace(" ", "+")
-        val urls = listOf("$mainUrl/?s=$encoded", "$mainUrl/film?search=$encoded")
+        val q = query.trim().takeIf { it.isNotBlank() } ?: return emptyList()
+        val encoded = URLEncoder.encode(q, "UTF-8")
+
+        /*
+         * Site tarafındaki arama formu zaman zaman parametre adını değiştiriyor.
+         * Tek bir endpoint'e bağımlı kalmıyoruz. Ayrıca /film sayfasını doğrudan
+         * sorgu parametreleriyle deniyoruz; böylece CloudStream'de kullanıcı
+         * aradığı filmi bulamasa bile kategori arşivinden sonuç alma şansımız var.
+         */
+        val urls = linkedSetOf(
+            "$mainUrl/film?search=$encoded",
+            "$mainUrl/film?s=$encoded",
+            "$mainUrl/?s=$encoded",
+            "$mainUrl/?search=$encoded",
+            "$mainUrl/arama?q=$encoded",
+            "$mainUrl/search?q=$encoded"
+        )
+
         for (url in urls) {
-            val results = runCatching { extractResults(app.get(url, referer = "$mainUrl/").document, url) }
-                .getOrDefault(emptyList())
+            val results = runCatching {
+                val response = app.get(url, referer = "$mainUrl/")
+                extractResults(response.document, url)
+            }.getOrDefault(emptyList())
+
             if (results.isNotEmpty()) return results
         }
+
+        /*
+         * Son çare: arşiv sayfalarını birkaç sayfa tarayıp başlık eşleşmesini
+         * CloudStream tarafında yapıyoruz. Bu, site arama endpoint'i değişse bile
+         * içerik keşfini ayakta tutar.
+         */
+        val needle = q.lowercase()
+        for (page in 1..6) {
+            val url = if (page == 1) "$mainUrl/film" else "$mainUrl/film/page/$page/"
+            val results = runCatching {
+                extractResults(
+                    app.get(url, referer = "$mainUrl/film").document,
+                    url
+                )
+            }.getOrDefault(emptyList())
+
+            val matched = results.filter {
+                it.name.lowercase().contains(needle)
+            }
+            if (matched.isNotEmpty()) return matched
+        }
+
         return emptyList()
     }
 
