@@ -506,23 +506,65 @@ class HintFilmIzle : MainAPI() {
             addPlayerUrl(match.value.replace("\\/", "/"))
         }
 
+        // Ana film sayfasında görünen doğrudan medya URL'leri çoğu zaman
+        // CDN tarafından Referer + User-Agent kontrolüyle servis edilir.
+        // ExoPlayer'a çıplak URL vermek 2004/403 üretebildiği için HLS'i
+        // M3u8Helper üzerinden, gerekli HTTP bağlamını koruyarak yayımlıyoruz.
         directLinks(document.html()).forEach { stream ->
-            callback(
-                newExtractorLink(
-                    source = name,
-                    name = "HintFilmİzle Direct",
-                    url = stream,
-                    type = if (stream.contains(".m3u8", true)) {
-                        ExtractorLinkType.M3U8
-                    } else {
-                        ExtractorLinkType.VIDEO
-                    }
-                ) {
-                    referer = data
-                    quality = getQualityFromName(stream)
-                }
+            val streamHeaders = mapOf(
+                "Referer" to data,
+                "User-Agent" to
+                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "*/*"
             )
-            found = true
+
+            if (stream.contains(".m3u8", true)) {
+                val links = runCatching {
+                    M3u8Helper.generateM3u8(
+                        source = name,
+                        streamUrl = stream,
+                        referer = data,
+                        headers = streamHeaders,
+                        name = "HintFilmİzle"
+                    )
+                }.getOrDefault(emptyList())
+
+                if (links.isNotEmpty()) {
+                    links.forEach { link ->
+                        callback(link)
+                        found = true
+                    }
+                } else {
+                    callback(
+                        newExtractorLink(
+                            source = name,
+                            name = "HintFilmİzle Direct",
+                            url = stream,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            referer = data
+                            headers = streamHeaders
+                            quality = getQualityFromName(stream)
+                        }
+                    )
+                    found = true
+                }
+            } else {
+                callback(
+                    newExtractorLink(
+                        source = name,
+                        name = "HintFilmİzle Direct",
+                        url = stream,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        referer = data
+                        headers = streamHeaders
+                        quality = getQualityFromName(stream)
+                    }
+                )
+                found = true
+            }
         }
 
         for (player in playerUrls) {
@@ -582,22 +624,60 @@ class HintFilmIzle : MainAPI() {
 
             nested?.let { nestedDocument ->
                 directLinks(nestedDocument.html()).forEach { stream ->
-                    callback(
-                        newExtractorLink(
-                            source = name,
-                            name = "HintFilmİzle Direct",
-                            url = stream,
-                            type = if (stream.contains(".m3u8", true)) {
-                                ExtractorLinkType.M3U8
-                            } else {
-                                ExtractorLinkType.VIDEO
-                            }
-                        ) {
-                            referer = player
-                            quality = getQualityFromName(stream)
-                        }
+                    val streamHeaders = mapOf(
+                        "Referer" to player,
+                        "User-Agent" to
+                            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                        "Accept" to "*/*"
                     )
-                    found = true
+
+                    if (stream.contains(".m3u8", true)) {
+                        val links = runCatching {
+                            M3u8Helper.generateM3u8(
+                                source = name,
+                                streamUrl = stream,
+                                referer = player,
+                                headers = streamHeaders,
+                                name = "HintFilmİzle"
+                            )
+                        }.getOrDefault(emptyList())
+
+                        if (links.isNotEmpty()) {
+                            links.forEach { link ->
+                                callback(link)
+                                found = true
+                            }
+                        } else {
+                            callback(
+                                newExtractorLink(
+                                    source = name,
+                                    name = "HintFilmİzle Direct",
+                                    url = stream,
+                                    type = ExtractorLinkType.M3U8
+                                ) {
+                                    referer = player
+                                    headers = streamHeaders
+                                    quality = getQualityFromName(stream)
+                                }
+                            )
+                            found = true
+                        }
+                    } else {
+                        callback(
+                            newExtractorLink(
+                                source = name,
+                                name = "HintFilmİzle Direct",
+                                url = stream,
+                                type = ExtractorLinkType.VIDEO
+                            ) {
+                                referer = player
+                                headers = streamHeaders
+                                quality = getQualityFromName(stream)
+                            }
+                        )
+                        found = true
+                    }
                 }
             }
         }
