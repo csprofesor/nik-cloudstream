@@ -350,6 +350,10 @@ class HintFilmIzle : MainAPI() {
         else url
     }
 
+    private fun isTrailerPlayer(url: String): Boolean =
+        listOf("youtube.com", "youtu.be", "youtube-nocookie.com")
+            .any { url.contains(it, true) }
+
     private fun isKnownPlayer(url: String): Boolean =
         listOf(
             "vidmoly", "vidhide", "streamtape", "voe.sx", "voe.to",
@@ -369,10 +373,27 @@ class HintFilmIzle : MainAPI() {
             Regex("""["']contentUrl["']\s*:\s*["']([^"']+\.m3u8[^"']*)""", RegexOption.IGNORE_CASE)
         )
 
-        return patterns.asSequence()
-            .mapNotNull { it.find(normalized)?.groupValues?.getOrNull(1) }
+        val embeddedManifest = listOf(
+            Regex(
+                """https?:\/\/[^"'\s<>]+(?:master|media)\.m3u8(?:\?[^"'\s<>]*)?""",
+                RegexOption.IGNORE_CASE
+            ),
+            Regex(
+                """https?%3A%2F%2F[^"'\s<>]+(?:master|media)%2Em3u8(?:%3F[^"'\s<>]*)?""",
+                RegexOption.IGNORE_CASE
+            )
+        ).asSequence()
+            .mapNotNull { it.find(normalized)?.value }
+            .map { it.replace("\\/", "/") }
+            .map { it.replace("&amp;", "&") }
             .mapNotNull { cleanUrl(it) }
             .firstOrNull()
+
+        return embeddedManifest
+            ?: patterns.asSequence()
+                .mapNotNull { it.find(normalized)?.groupValues?.getOrNull(1) }
+                .mapNotNull { cleanUrl(it) }
+                .firstOrNull()
     }
 
     override suspend fun loadLinks(
@@ -420,7 +441,10 @@ class HintFilmIzle : MainAPI() {
                     element.attr("onclick")
                 ).forEach { value ->
                     val direct = playerUrl(value, data)
-                    if (direct != null && !direct.startsWith(mainUrl, true)) {
+                    if (direct != null &&
+                        !direct.startsWith(mainUrl, true) &&
+                        !isTrailerPlayer(direct)
+                    ) {
                         playerUrls.add(direct)
                     }
 
@@ -428,7 +452,7 @@ class HintFilmIzle : MainAPI() {
                         .findAll(value)
                         .map { it.value.trimEnd('\\', '"', '\'', ')', ']') }
                         .mapNotNull { playerUrl(it, data) }
-                        .filter { !it.startsWith(mainUrl, true) }
+                        .filter { !it.startsWith(mainUrl, true) && !isTrailerPlayer(it) }
                         .forEach { playerUrls.add(it) }
                 }
             }
@@ -436,7 +460,10 @@ class HintFilmIzle : MainAPI() {
         // Bilinen sağlayıcılar link olarak gelirse ayrıca koru.
         document.select("a[href]").forEach { link ->
             val href = playerUrl(link.attr("href"), data) ?: return@forEach
-            if (!href.startsWith(mainUrl, true) && isKnownPlayer(href)) {
+            if (!href.startsWith(mainUrl, true) &&
+                !isTrailerPlayer(href) &&
+                isKnownPlayer(href)
+            ) {
                 playerUrls.add(href)
             }
         }
