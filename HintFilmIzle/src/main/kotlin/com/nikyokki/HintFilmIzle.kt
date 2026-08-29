@@ -417,7 +417,10 @@ class HintFilmIzle : MainAPI() {
         ).any { url.contains(it, true) }
 
 
-    private fun extractKinescopeHls(html: String): String? {
+
+    private inline fun buildMap(block: MutableMap<String, String>.() -> Unit): Map<String, String> =
+        linkedMapOf<String, String>().apply(block)
+\n    private fun extractKinescopeHls(html: String): String? {
         /*
          * Kinescope embeds expose the playable source in:
          *
@@ -683,10 +686,14 @@ class HintFilmIzle : MainAPI() {
                             URI(player).let { "${it.scheme}://${it.host}" }
                         }.getOrDefault("https://kinescope.io")
 
-                        // Kinescope CDN validates the signed manifest together with
-                        // the embed Origin/Referer. Match the browser request exactly
-                        // and let the same headers flow into HLS segment requests.
-                        val playerReferer = "$playerOrigin/"
+                        // Chrome uses strict-origin-when-cross-origin here. The
+                        // cross-origin request therefore normally carries the iframe
+                        // origin as Referer, not the complete signed embed URL. Also,
+                        // the media request can be same-origin with the iframe CDN host.
+                        val streamOrigin = runCatching {
+                            URI(kinescopeStream).let { x -> "${x.scheme}://${x.host}" }
+                        }.getOrDefault(playerOrigin)
+                        val sameOrigin = streamOrigin.equals(playerOrigin, ignoreCase = true)
 
                         callback(newExtractorLink(
                             source = name,
@@ -694,23 +701,23 @@ class HintFilmIzle : MainAPI() {
                             url = kinescopeStream,
                             type = ExtractorLinkType.M3U8
                         ) {
-                            // Match the browser's media request context:
-                            // Referer is the actual embed document, not only its origin.
-                            // Origin is the origin of that embed document.
-                            referer = player
-                            headers = mapOf(
-                                // These are the request-context headers used by the browser
-                                // when the Kinescope iframe asks its CDN for HLS.
-                                "Referer" to player,
-                                "Origin" to playerOrigin,
-                                "Sec-Fetch-Site" to "cross-site",
-                                "Sec-Fetch-Mode" to "cors",
-                                "Sec-Fetch-Dest" to "empty",
-                                "Accept" to "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
-                                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                                "Cache-Control" to "no-cache"
-                            )
+                            // Chrome's strict-origin-when-cross-origin policy
+                            // sends only the iframe origin as Referer across origins.
+                            // If the manifest is on the same CDN origin, do not add
+                            // synthetic CORS/Sec-Fetch headers that Chrome would omit.
+                            referer = "$playerOrigin/"
+                            headers = buildMap {
+                                "Referer" to "$playerOrigin/"
+                                "Accept" to "application/vnd.apple.mpegurl, application/x-mpegURL, */*"
+                                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+                                if (!sameOrigin) {
+                                    "Origin" to playerOrigin
+                                    "Sec-Fetch-Site" to "cross-site"
+                                    "Sec-Fetch-Mode" to "cors"
+                                    "Sec-Fetch-Dest" to "empty"
+                                }
+                            }
                             quality = getQualityFromName(kinescopeStream)
                         })
                     }
