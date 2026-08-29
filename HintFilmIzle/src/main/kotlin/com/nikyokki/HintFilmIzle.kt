@@ -11,7 +11,6 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
-import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
@@ -21,14 +20,12 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 import java.net.URI
-import java.net.URLDecoder
 import java.net.URLEncoder
 
 class HintFilmIzle : MainAPI() {
@@ -650,172 +647,192 @@ class HintFilmIzle : MainAPI() {
         }
     }
 
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        /*
+         * HintFilmIzle playerleri TEKPART/TEKPART 2/... dugmelerinden
+         * gercek iframe/player URL'lerine baglanir.
+         * Kinescope veya player.hintfilmizle.com icin ozel varsayim yapilmaz.
+         */
         val document = runCatching {
-            app.get(data, referer = "$mainUrl/").document
+            app.get(
+                data,
+                referer = "$mainUrl/",
+                headers = mapOf(
+                    "User-Agent" to
+                        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                        "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                )
+            ).document
         }.getOrNull() ?: return false
 
         var found = false
         val playerUrls = linkedSetOf<String>()
 
-        // HintFilmİzle playeri yalnızca iframe olarak değil, video/source ve
-        // data-* alanlarında da verebiliyor.
+        fun addPlayerUrl(value: String?, base: String = data) {
+            if (value.isNullOrBlank()) return
+
+            val cleaned = value
+                .replace("\\/", "/")
+                .replace("\\u0026", "&")
+                .replace("&amp;", "&")
+                .trim()
+                .trim('"', '\'')
+                .trimEnd(';')
+
+            playerUrl(cleaned, base)?.let { url ->
+                if (!isTrailerPlayer(url) && !url.startsWith(mainUrl, true)) {
+                    playerUrls.add(url)
+                }
+            }
+
+            Regex(
+                """https?://[^"'\\s<>]+""",
+                RegexOption.IGNORE_CASE
+            ).findAll(cleaned).forEach { match ->
+                val url = playerUrl(
+                    match.value.trimEnd('\\', '"', '\'', ')', ']', ';'),
+                    base
+                )
+                if (url != null &&
+                    !isTrailerPlayer(url) &&
+                    !url.startsWith(mainUrl, true)
+                ) {
+                    playerUrls.add(url)
+                }
+            }
+        }
+
         document.select(
-            "iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], iframe[data-frame], " +
-                "frame[src], video[src], video[data-src], video[data-url], " +
-                "video source[src], video source[data-src], video source[data-url]"
+            "iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], " +
+                "iframe[data-frame], frame[src], video[src], video[data-src], " +
+                "video[data-url], video source[src], video source[data-src], " +
+                "video source[data-url], a[href], a[data-url], a[data-embed], " +
+                "a[data-frame], a[data-video], a[data-player], button[data-url], " +
+                "button[data-embed], button[data-frame], button[data-video], " +
+                "button[data-player], [onclick], [data-url], [data-embed], " +
+                "[data-frame], [data-video], [data-player]"
         ).forEach { element ->
             listOf(
+                element.attr("href"),
                 element.attr("src"),
                 element.attr("data-src"),
                 element.attr("data-url"),
-                element.attr("data-iframe"),
+                element.attr("data-embed"),
                 element.attr("data-frame"),
                 element.attr("data-video"),
-                element.attr("data-player")
-            ).forEach { value ->
-                playerUrl(value, data)?.let { playerUrls.add(it) }
-            }
+                element.attr("data-player"),
+                element.attr("data-iframe"),
+                element.attr("onclick")
+            ).forEach { value -> addPlayerUrl(value) }
         }
 
-        // HintFilmİzle'nin TEKPART düğmeleri bazı içeriklerde iframe'i
-        // doğrudan src yerine data-* veya onclick içinde tutabiliyor.
-        document.select("a[href], a[data-frame], button, [onclick], [data-url], [data-embed], [data-frame], [data-video], [data-player]")
-            .forEach { element ->
-                listOf(
-                    element.attr("href"),
-                    element.attr("data-url"),
-                    element.attr("data-embed"),
-                    element.attr("data-frame"),
-                    element.attr("data-video"),
-                    element.attr("data-player"),
-                    element.attr("onclick")
-                ).forEach { value ->
-                    val direct = playerUrl(value, data)
-                    if (direct != null &&
-                        !direct.startsWith(mainUrl, true) &&
-                        !isTrailerPlayer(direct)
-                    ) {
-                        playerUrls.add(direct)
-                    }
-
-                    Regex("""https?://[^"'\\s<>]+""")
-                        .findAll(value)
-                        .map { it.value.trimEnd('\\', '"', '\'', ')', ']') }
-                        .mapNotNull { playerUrl(it, data) }
-                        .filter { !it.startsWith(mainUrl, true) && !isTrailerPlayer(it) }
-                        .forEach { playerUrls.add(it) }
-                }
-            }
-
-        // Bilinen sağlayıcılar link olarak gelirse ayrıca koru.
-        document.select("a[href]").forEach { link ->
-            val href = playerUrl(link.attr("href"), data) ?: return@forEach
-            if (!href.startsWith(mainUrl, true) &&
-                !isTrailerPlayer(href) &&
-                isKnownPlayer(href)
-            ) {
-                playerUrls.add(href)
-            }
+        Regex(
+            """https?:\\?/\\?/[^"'\\s<>]+""",
+            RegexOption.IGNORE_CASE
+        ).findAll(document.html()).forEach { match ->
+            addPlayerUrl(match.value.replace("\\/", "/"))
         }
 
-        // HTML/JS içinde saklanan doğrudan video adreslerini de yakala.
         directLinks(document.html()).forEach { stream ->
+            callback(
+                newExtractorLink(
+                    source = name,
+                    name = "HintFilmİzle Direct",
+                    url = stream,
+                    type = if (stream.contains(".m3u8", true)) {
+                        ExtractorLinkType.M3U8
+                    } else {
+                        ExtractorLinkType.VIDEO
+                    }
+                ) {
+                    referer = data
+                    quality = getQualityFromName(stream)
+                }
+            )
             found = true
-            callback(newExtractorLink(
-                source = name,
-                name = "HintFilmİzle Direct",
-                url = stream,
-                type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-            ) {
-                referer = data
-                quality = getQualityFromName(stream)
-            })
         }
 
         for (player in playerUrls) {
-            if (player.startsWith("http", true)) {
-                // HintFilmİzle'nin TEKPART oynatıcısı Kinescope embed kullanıyor.
-                // Kinescope'un imzalı HLS adresi embed HTML içindeki playerOptions
-                // nesnesinde veriliyor; imza süreli olduğu için URL'yi sabit yazmıyoruz.
-                /*
-                 * Güncel TEKPART URL'si önce player.hintfilmizle.com'dur.
-                 * Bu sayfa Kinescope iframe'ini/yönlendirmesini tarayıcıda
-                 * kurar; yalnızca HTTP ile HTML'ini indirmek çoğu zaman gerçek
-                 * embed URL'sini veya imzalı HLS isteğini vermez. WebViewResolver
-                 * doğrudan bu giriş noktasından başlatıldığında zinciri izleyip
-                 * oynatılan güncel .m3u8 isteğini yakalar.
-                 */
-                val resolvedByWebView = if (
-                    player.contains("kinescope", true) || isHintFilmPlayer(player)
-                ) {
-                    loadKinescope(player, data, subtitleCallback, callback)
-                } else {
-                    false
-                }
+            val loaded = runCatching {
+                loadExtractor(
+                    url = player,
+                    referer = data,
+                    subtitleCallback = subtitleCallback,
+                    callback = callback
+                )
+            }.getOrDefault(false)
 
-                if (resolvedByWebView) {
-                    found = true
-                } else {
-                    val loaded = runCatching {
-                        loadExtractor(player, data, subtitleCallback, callback)
-                    }.getOrDefault(false)
-                    if (loaded) found = true
-                }
+            if (loaded) found = true
 
-                // Bazı embed URL'leri ikinci bir iframe döndürüyor.
-                val nested = runCatching {
-                    app.get(player, referer = data).document
-                }.getOrNull()
+            val nested = runCatching {
+                app.get(
+                    player,
+                    referer = data,
+                    headers = mapOf(
+                        "User-Agent" to
+                            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    )
+                ).document
+            }.getOrNull()
 
-                nested?.select("iframe[src], iframe[data-src], iframe[data-frame], video[src], video source[src]")
-                    ?.forEach { element ->
-                        val nestedUrl = playerUrl(
-                            element.attr("src")
-                                .ifBlank { element.attr("data-src") }
-                                .ifBlank { element.attr("data-frame") },
-                            player
-                        ) ?: return@forEach
+            nested?.select(
+                "iframe[src], iframe[data-src], iframe[data-frame], " +
+                    "iframe[data-url], video[src], video[data-src], " +
+                    "video source[src], video source[data-src]"
+            )?.forEach { element ->
+                val nestedUrl = playerUrl(
+                    element.attr("src")
+                        .ifBlank { element.attr("data-src") }
+                        .ifBlank { element.attr("data-frame") }
+                        .ifBlank { element.attr("data-url") },
+                    player
+                ) ?: return@forEach
 
-                        if (nestedUrl != player) {
-                            val loaded = if (nestedUrl.contains("kinescope", true)) {
-                                loadKinescope(nestedUrl, player, subtitleCallback, callback)
+                if (nestedUrl == player ||
+                    nestedUrl.startsWith(mainUrl, true) ||
+                    isTrailerPlayer(nestedUrl)
+                ) return@forEach
+
+                val nestedLoaded = runCatching {
+                    loadExtractor(
+                        url = nestedUrl,
+                        referer = player,
+                        subtitleCallback = subtitleCallback,
+                        callback = callback
+                    )
+                }.getOrDefault(false)
+
+                if (nestedLoaded) found = true
+            }
+
+            nested?.let { nestedDocument ->
+                directLinks(nestedDocument.html()).forEach { stream ->
+                    callback(
+                        newExtractorLink(
+                            source = name,
+                            name = "HintFilmİzle Direct",
+                            url = stream,
+                            type = if (stream.contains(".m3u8", true)) {
+                                ExtractorLinkType.M3U8
                             } else {
-                                runCatching {
-                                    loadExtractor(nestedUrl, player, subtitleCallback, callback)
-                                }.getOrDefault(false)
+                                ExtractorLinkType.VIDEO
                             }
-                            if (loaded) found = true
+                        ) {
+                            referer = player
+                            quality = getQualityFromName(stream)
                         }
-                    }
-
-                val nestedHtml = nested?.html().orEmpty()
-                for (stream in directLinks(nestedHtml)) {
+                    )
                     found = true
-                    val isKinescopeStream = stream.contains("kinescopecdn.net", true)
-                    callback(newExtractorLink(
-                        source = name,
-                        name = if (isKinescopeStream) "HintFilmİzle Kinescope" else "HintFilmİzle Direct",
-                        url = stream,
-                        type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                    ) {
-                        referer = if (isKinescopeStream) {
-                            runCatching {
-                                URI(player).let { "${it.scheme}://${it.host}/" }
-                            }.getOrDefault(player)
-                        } else {
-                            player
-                        }
-                        if (isKinescopeStream) {
-                            headers = kinescopeRequestHeaders(player)
-                        }
-                        quality = getQualityFromName(stream)
-                    })
                 }
             }
         }
