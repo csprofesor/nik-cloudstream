@@ -203,9 +203,34 @@ class HintFilmIzle : MainAPI() {
          * Böylece ana sayfa, kategori, trend, sayfalama ve arama sonuçları aynı
          * extractor yolundan geçiyor.
          */
-        val anchors = document.select(
+        val allAnchors = document.select(
             "a[href*='/film/'], a[href*='/dizi/']"
         )
+
+        /*
+         * Kategori sayfalarının HTML'inde üst tarafta bütün siteye ait
+         * "Günün En İyileri" / "Beklenenler" gibi ortak listeler de bulunuyor.
+         * Bunları doğrudan bütün href'leri tarayarak alırsak her kategori aynı
+         * 10-20 filmi gösteriyor.
+         *
+         * Kategori/arama arşivinde gerçek sonuç listesinin başlangıcı h1'den
+         * sonradır. Bu nedenle h1'in DOM konumundan önceki film linklerini
+         * tamamen dışarıda bırakıyoruz. Böylece /tur/aile-filmleri yalnızca
+         * Aile arşivini, /tur/aksiyon-filmleri yalnızca Aksiyon arşivini verir.
+         *
+         * H1 bulunmayan ana sayfa gibi özel listelerde ise eski davranışa
+         * kontrollü olarak geri dönüyoruz.
+         */
+        val heading = document.selectFirst("main h1")
+            ?: document.selectFirst("h1")
+
+        val startIndex = heading?.let { document.allElements.indexOf(it) } ?: -1
+
+        val anchors = if (startIndex >= 0) {
+            allAnchors.filter { document.allElements.indexOf(it) > startIndex }
+        } else {
+            allAnchors
+        }
 
         return anchors.mapNotNull { anchor ->
             val card = anchor.parents().firstOrNull {
