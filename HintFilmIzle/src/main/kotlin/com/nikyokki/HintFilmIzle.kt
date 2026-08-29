@@ -378,7 +378,7 @@ class HintFilmIzle : MainAPI() {
         // /hls/.../<file>.mp4/index.m3u8?expires=...&sign=...
         // Bu nedenle yalnızca master/media aramak yeterli degil.
         val manifestCandidates = Regex(
-            """https?://[^"\\s<>]+?\\.m3u8(?:\\?[^"\\s<>]*)?""",
+            """https?://[^"\s<>]+?\.m3u8(?:\?[^"\s<>]*)?""",
             RegexOption.IGNORE_CASE
         ).findAll(normalized)
             .map { it.value.trimEnd('\\', '"' , '\\'', ')', ']') }
@@ -388,7 +388,7 @@ class HintFilmIzle : MainAPI() {
             .toList()
 
         val encodedManifestCandidates = Regex(
-            """https?%3A%2F%2F[^"\\s<>]+?%2Em3u8(?:%3F[^"\\s<>]*)?""",
+            """https?%3A%2F%2F[^"\s<>]+?%2Em3u8(?:%3F[^"\s<>]*)?""",
             RegexOption.IGNORE_CASE
         ).findAll(normalized)
             .mapNotNull { match ->
