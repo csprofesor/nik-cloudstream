@@ -418,64 +418,123 @@ class HintFilmIzle : MainAPI() {
 
 
     private fun extractKinescopeHls(html: String): String? {
+        /*
+         * Kinescope embeds expose the playable source in:
+         *
+         *   var playerOptions = {
+         *       playlist: [{
+         *           sources: {
+         *               hls: { src: "https://.../master.m3u8?...&sign=..." },
+         *               shakahls: { src: "https://.../master.m3u8?...&sign=..." }
+         *           }
+         *       }]
+         *   }
+         *
+         * This is the same structure used by the current Kinescope web player.
+         * Do not manufacture a master.m3u8 URL from the embed id: the CDN URL
+         * carries a short-lived signed query string and that is what the browser
+         * actually plays.
+         */
         val normalized = html
             .replace("\\u0026", "&")
-            .replace("\\/","/")
+            .replace("\\u003F", "?")
+            .replace("\\/", "/")
+            .replace("\\\"", "\"")
+            .replace("&amp;", "&")
 
-        val patterns = listOf(
-            Regex("""["']hls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
-            Regex("""["']shakahls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
-            Regex("""["']dash["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
-            Regex("""["']contentUrl["']\s*:\s*["']([^"']+\.m3u8[^"']*)""", RegexOption.IGNORE_CASE),
-            Regex("""["']src["']\s*:\s*["'](https?[^"']+\.m3u8(?:\?[^"']*)?)["']""", RegexOption.IGNORE_CASE)
+        fun decodeCandidate(value: String): String? {
+            var candidate = value
+                .trim()
+                .trimEnd('\"', '\\'', ')', ']', '}')
+                .replace("\\u0026", "&")
+                .replace("\\/", "/")
+                .replace("\\u003F", "?")
+                .replace("&amp;", "&")
+
+            if (candidate.contains("\\u")) {
+                candidate = runCatching {
+                    Regex("""\\u([0-9a-fA-F]{4})""").replace(candidate) {
+                        it.groupValues[1].toInt(16).toChar().toString()
+                    }
+                }.getOrDefault(candidate)
+            }
+
+            return cleanUrl(candidate)
+        }
+
+        val candidates = linkedSetOf<String>()
+
+        /*
+         * First target playerOptions directly. This is more reliable than
+         * looking for arbitrary m3u8 strings in the entire document because
+         * it follows Kinescope's actual player data model.
+         */
+        val sourcePatterns = listOf(
+            Regex(
+                """["']hls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)["']""",
+                RegexOption.IGNORE_CASE
+            ),
+            Regex(
+                """["']shakahls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)["']""",
+                RegexOption.IGNORE_CASE
+            ),
+            Regex(
+                """\bhls\s*:\s*\{\s*src\s*:\s*["']([^"']+)["']""",
+                RegexOption.IGNORE_CASE
+            ),
+            Regex(
+                """\bshakahls\s*:\s*\{\s*src\s*:\s*["']([^"']+)["']""",
+                RegexOption.IGNORE_CASE
+            )
         )
 
-        // Kinescope bazen master.m3u8 yerine imzali CDN manifesti verir:
-        // /hls/.../<file>.mp4/index.m3u8?expires=...&sign=...
-        // Bu nedenle yalnızca master/media aramak yeterli degil.
-        val manifestCandidates = Regex(
-            """https?://[^"\s<>]+?\.m3u8(?:\?[^"\s<>]*)?""",
-            RegexOption.IGNORE_CASE
-        ).findAll(normalized)
-            .map { it.value.trimEnd('"', ')', ']') }
-            .map { it.replace("&amp;", "&") }
-            .mapNotNull { cleanUrl(it) }
-            .distinct()
-            .toList()
-
-        val encodedManifestCandidates = Regex(
-            """https?%3A%2F%2F[^"\s<>]+?%2Em3u8(?:%3F[^"\s<>]*)?""",
-            RegexOption.IGNORE_CASE
-        ).findAll(normalized)
-            .mapNotNull { match ->
-                runCatching { URLDecoder.decode(match.value, "UTF-8") }.getOrNull()
+        sourcePatterns.forEach { regex ->
+            regex.findAll(normalized).forEach { match ->
+                match.groupValues.getOrNull(1)
+                    ?.let(::decodeCandidate)
+                    ?.takeIf { it.contains(".m3u8", true) }
+                    ?.let(candidates::add)
             }
-            .map { it.replace("&amp;", "&") }
-            .mapNotNull { cleanUrl(it) }
-            .distinct()
-            .toList()
+        }
 
-        val allCandidates = (manifestCandidates + encodedManifestCandidates).distinct()
+        /*
+         * Fallback for player versions that serialize playerOptions slightly
+         * differently. Search for every absolute HLS manifest, including
+         * escaped JSON URLs.
+         */
+        Regex(
+            """https?://[^"'\s<>]+?\.m3u8(?:\?[^"'\s<>]*)?""",
+            RegexOption.IGNORE_CASE
+        ).findAll(normalized).forEach { match ->
+            decodeCandidate(match.value)
+                ?.let(candidates::add)
+        }
 
-        // Once on the browser Network tab, the working address is the signed CDN
-        // manifest. Prefer it over an unsigned fallback URL.
-        val signedCdn = allCandidates.firstOrNull {
-            it.contains("kinescopecdn.net", true) &&
+        /*
+         * Some versions HTML-encode the ampersands before the script reaches
+         * the DOM. Decode those as a final pass.
+         */
+        Regex(
+            """https?://[^"'\s<>]+?\.m3u8(?:\?[^"'\s<>]*)?""",
+            RegexOption.IGNORE_CASE
+        ).findAll(html.replace("&amp;", "&")).forEach { match ->
+            decodeCandidate(match.value)
+                ?.let(candidates::add)
+        }
+
+        /*
+         * Prefer a signed Kinescope CDN manifest. The signature is generated
+         * by the player and expires, so it must always be taken from the
+         * current embed response rather than cached or synthesized.
+         */
+        return candidates.firstOrNull {
+            it.contains(".m3u8", true) &&
                 it.contains("expires=", true) &&
                 it.contains("sign=", true)
-        }
-
-        val anyCdnManifest = allCandidates.firstOrNull {
-            it.contains("kinescopecdn.net", true)
-        }
-
-        return signedCdn
-            ?: anyCdnManifest
-            ?: allCandidates.firstOrNull()
-            ?: patterns.asSequence()
-                .mapNotNull { it.find(normalized)?.groupValues?.getOrNull(1) }
-                .mapNotNull { cleanUrl(it) }
-                .firstOrNull()
+        } ?: candidates.firstOrNull {
+            it.contains(".m3u8", true) &&
+                it.contains("kinescopecdn.net", true)
+        } ?: candidates.firstOrNull()
     }
 
     override suspend fun loadLinks(
@@ -598,10 +657,13 @@ class HintFilmIzle : MainAPI() {
                                 .replace("\\/","/")
                         ).firstOrNull { it.contains(".m3u8", true) }
 
+                    /*
+                     * Do not fabricate a Kinescope master URL from the embed id.
+                     * The CDN/project embed can use a different video identifier
+                     * and the actual HLS URL is signed. Only use the URL extracted
+                     * from the current player response.
+                     */
                     val kinescopeEntryPoint = embeddedKinescopeStream
-                        ?: kinescopeVideoId?.let {
-                            "https://kinescope.io/$it/master.m3u8"
-                        }
 
                     // Do NOT fetch the HLS URL here and parse its response.
                     // Kinescope's /master.m3u8 endpoint is itself the playable HLS
@@ -632,12 +694,15 @@ class HintFilmIzle : MainAPI() {
                             url = kinescopeStream,
                             type = ExtractorLinkType.M3U8
                         ) {
-                            referer = playerReferer
+                            // Match the browser's media request context:
+                            // Referer is the actual embed document, not only its origin.
+                            // Origin is the origin of that embed document.
+                            referer = player
                             headers = mapOf(
-                                "Referer" to playerReferer,
+                                "Referer" to player,
                                 "Origin" to playerOrigin,
                                 "Accept" to "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
-                                "User-Agent" to "Mozilla/5.0"
+                                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36"
                             )
                             quality = getQualityFromName(kinescopeStream)
                         })
