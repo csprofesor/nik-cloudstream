@@ -467,10 +467,17 @@ class HintFilmIzle : MainAPI() {
 
                     // Kinescope embed format is /embed/{VIDEO_ID}; the video ID
                     // may be numeric or an opaque alphanumeric value.
+                    // Kinescope CDN embeds used by HintFilmIzle can contain a
+                    // project/player segment before the actual video embed:
+                    // /embed/{project}/embed/{videoId}. Always take the LAST /embed/.
                     val kinescopeVideoId = Regex(
-                        """https?://[^/]+/embed/([^/?#]+)""",
+                        """/embed/([^/?#]+)/embed/([^/?#]+)""",
                         RegexOption.IGNORE_CASE
-                    ).find(player)?.groupValues?.getOrNull(1)
+                    ).find(player)?.groupValues?.getOrNull(2)
+                        ?: Regex(
+                            """/embed/([^/?#]+)""",
+                            RegexOption.IGNORE_CASE
+                        ).findAll(player).lastOrNull()?.groupValues?.getOrNull(1)
                     // Kinescope player.js may generate the signed CDN manifest only
                     // after the player starts. Prefer a manifest exposed in the embed
                     // HTML, then fall back to Kinescope's documented direct HLS endpoint.
