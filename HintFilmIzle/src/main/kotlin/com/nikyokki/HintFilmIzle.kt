@@ -416,28 +416,35 @@ class HintFilmIzle : MainAPI() {
 
 
     private suspend fun loadKinescope(
-        playerUrl: String,
+        iframeUrl: String,
         parentUrl: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return runCatching {
-            // Kinescope'nin imzalı HLS adresini HTTP ile tahmin etmiyoruz.
-            // WebView gerçek tarayıcı isteğini üretir; böylece kısa ömürlü
-            // sign/expires parametreleri, cookie ve gerçek request header'ları korunur.
+            /*
+             * Kinescope'da oynatılabilir URL sabit değildir. Browser önce
+             * river-*-kinescopecdn.net üzerinde player'ı çalıştırıyor, sonra
+             * imzalı index.m3u8 isteğini oluşturuyor ve segmentler başka bir
+             * vbx-*-kinescopecdn.net hostundan geliyor.
+             *
+             * Bu yüzden URL üretmiyoruz. WebView gerçek isteği yakalıyor.
+             */
             val resolver = WebViewResolver(
-                interceptUrl = Regex("""\.m3u8(?:\?|$)""", RegexOption.IGNORE_CASE),
+                interceptUrl = Regex(
+                    """https?://[^/]*kinescopecdn\.net/hls/.*\.m3u8(?:\\?.*)?$""",
+                    RegexOption.IGNORE_CASE
+                ),
                 additionalUrls = listOf(
-                    Regex("""kinescopecdn\.net""", RegexOption.IGNORE_CASE),
-                    Regex("""kinescope\.io""", RegexOption.IGNORE_CASE)
+                    Regex("""kinescopecdn\.net/hls/.*\.m3u8""", RegexOption.IGNORE_CASE)
                 ),
                 userAgent = null,
                 useOkhttp = false,
-                timeout = 45_000L
+                timeout = 90_000L
             )
 
             val (finalRequest, requests) = resolver.resolveUsingWebView(
-                url = playerUrl,
+                url = iframeUrl,
                 referer = parentUrl,
                 headers = mapOf(
                     "Referer" to parentUrl,
@@ -445,53 +452,57 @@ class HintFilmIzle : MainAPI() {
                 )
             )
 
-            val request = finalRequest
-                ?: requests.firstOrNull { it.url.toString().contains(".m3u8", true) }
+            /*
+             * Bazı CloudStream sürümlerinde finalRequest yerine yakalanan
+             * request listesinde manifest bulunuyor. İkisini de kontrol ediyoruz.
+             */
+            val request = finalRequest?.takeIf {
+                it.url.toString().contains(".m3u8", true)
+            } ?: requests.asSequence()
+                .filter { it.url.toString().contains(".m3u8", true) }
+                .lastOrNull()
                 ?: return false
 
             val manifestUrl = request.url.toString()
-            if (!manifestUrl.contains(".m3u8", true)) return false
+            if (!manifestUrl.contains("kinescopecdn.net", true)) return false
 
             val headers = request.headers.toMap()
-                .filterKeys { key ->
-                    !key.equals("Host", true) &&
-                    !key.equals("Connection", true) &&
-                    !key.equals("Content-Length", true)
+                .filterKeys {
+                    !it.equals("Host", true) &&
+                    !it.equals("Connection", true) &&
+                    !it.equals("Content-Length", true)
                 }
                 .toMutableMap()
 
-            // Kinescope'ta manifest hostu ile player/origin hostu farklıdır.
-            // Örn: manifest river-1-2125..., Origin ise river-3-329...
-            // Bu nedenle Origin/Referer sadece gerçek WebView isteğinden alınır.
+            /*
+             * Chrome çıktındaki kritik değerler:
+             *
+             * manifest host  = river-1-2125.kinescopecdn.net
+             * Origin         = river-3-329.kinescopecdn.net
+             * Referer        = https://river-3-329.kinescopecdn.net/
+             *
+             * Origin'i manifest hostundan türetmiyoruz. WebView'dan gelen
+             * gerçek Origin/Referer değerini aynen koruyoruz.
+             */
             val origin = headers.entries
                 .firstOrNull { it.key.equals("Origin", true) }
                 ?.value
                 ?.takeIf { it.isNotBlank() }
-                ?: requests.asSequence()
-                    .flatMap { it.headers.entries.asSequence() }
-                    .firstOrNull { it.key.equals("Origin", true) }
-                    ?.value
-                    ?.takeIf { it.isNotBlank() }
 
             val actualReferer = headers.entries
                 .firstOrNull { it.key.equals("Referer", true) }
                 ?.value
                 ?.takeIf { it.isNotBlank() }
-                ?: requests.asSequence()
-                    .flatMap { it.headers.entries.asSequence() }
-                    .firstOrNull { it.key.equals("Referer", true) }
-                    ?.value
-                    ?.takeIf { it.isNotBlank() }
 
-            if (origin != null) {
-                headers["Origin"] = origin
+            if (origin != null) headers["Origin"] = origin
+            headers["Referer"] = actualReferer ?: iframeUrl
+
+            if (headers.keys.none { it.equals("User-Agent", true) }) {
+                headers["User-Agent"] =
+                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
             }
 
-            headers["Referer"] = actualReferer
-                ?: origin?.trimEnd('/')?.plus("/")
-                ?: playerUrl
-
-            // Kinescope segmentlerinde tarayıcıdaki Accept/UA da gerekli olabilir.
             if (headers.keys.none { it.equals("Accept", true) }) {
                 headers["Accept"] = "*/*"
             }
@@ -499,7 +510,7 @@ class HintFilmIzle : MainAPI() {
             val links = M3u8Helper.generateM3u8(
                 source = name,
                 streamUrl = manifestUrl,
-                referer = referer,
+                referer = headers["Referer"] ?: iframeUrl,
                 headers = headers,
                 name = "HintFilmİzle Kinescope"
             )
@@ -516,11 +527,6 @@ class HintFilmIzle : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        /*
-         * HintFilmIzle playerleri TEKPART/TEKPART 2/... dugmelerinden
-         * gercek iframe/player URL'lerine baglanir.
-         * Kinescope veya player.hintfilmizle.com icin ozel varsayim yapilmaz.
-         */
         val document = runCatching {
             app.get(
                 data,
@@ -536,51 +542,45 @@ class HintFilmIzle : MainAPI() {
         }.getOrNull() ?: return false
 
         var found = false
-        val playerUrls = linkedSetOf<String>()
+        val players = linkedSetOf<String>()
 
-        fun addPlayerUrl(value: String?, base: String = data) {
+        fun addUrl(value: String?, base: String = data) {
             if (value.isNullOrBlank()) return
 
             val cleaned = value
-                .replace("\\/", "/")
-                .replace("\\u0026", "&")
-                .replace("&amp;", "&")
+                .replace("\\/","/")
+                .replace("\\u0026","&")
+                .replace("&amp;","&")
                 .trim()
                 .trim('"', '\'')
-                .trimEnd(';')
 
             playerUrl(cleaned, base)?.let { url ->
                 if (!isTrailerPlayer(url) && !url.startsWith(mainUrl, true)) {
-                    playerUrls.add(url)
+                    players.add(url)
                 }
             }
 
-            Regex(
-                """https?://[^"'\\s<>]+""",
-                RegexOption.IGNORE_CASE
-            ).findAll(cleaned).forEach { match ->
-                val url = playerUrl(
-                    match.value.trimEnd('\\', '"', '\'', ')', ']', ';'),
-                    base
-                )
-                if (url != null &&
-                    !isTrailerPlayer(url) &&
-                    !url.startsWith(mainUrl, true)
-                ) {
-                    playerUrls.add(url)
-                }
-            }
+            Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+                .findAll(cleaned)
+                .map { it.value.trimEnd('\\', '"', '\'', ')', ']', ';') }
+                .mapNotNull { playerUrl(it, base) }
+                .filter { !isTrailerPlayer(it) && !it.startsWith(mainUrl, true) }
+                .forEach(players::add)
         }
 
+        /*
+         * Önce gerçek iframe/player URL'lerini topluyoruz. Kinescope olanlar
+         * listenin başına alınır; böylece sayfadaki reklam MP4'ü "Direct"
+         * kaynak olarak seçilip gerçek oynatıcıyı gölgelemez.
+         */
         document.select(
             "iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], " +
-                "iframe[data-frame], frame[src], video[src], video[data-src], " +
-                "video[data-url], video source[src], video source[data-src], " +
-                "video source[data-url], a[href], a[data-url], a[data-embed], " +
-                "a[data-frame], a[data-video], a[data-player], button[data-url], " +
-                "button[data-embed], button[data-frame], button[data-video], " +
-                "button[data-player], [onclick], [data-url], [data-embed], " +
-                "[data-frame], [data-video], [data-player]"
+            "iframe[data-frame], frame[src], video[src], video[data-src], video[data-url], " +
+            "video source[src], video source[data-src], video source[data-url], " +
+            "a[href], a[data-url], a[data-embed], a[data-frame], a[data-video], " +
+            "a[data-player], button[data-url], button[data-embed], button[data-frame], " +
+            "button[data-video], button[data-player], [onclick], [data-url], " +
+            "[data-embed], [data-frame], [data-video], [data-player]"
         ).forEach { element ->
             listOf(
                 element.attr("href"),
@@ -593,54 +593,62 @@ class HintFilmIzle : MainAPI() {
                 element.attr("data-player"),
                 element.attr("data-iframe"),
                 element.attr("onclick")
-            ).forEach { value -> addPlayerUrl(value) }
+            ).forEach { addUrl(it) }
         }
 
-        Regex(
-            """https?:\\?/\\?/[^"'\\s<>]+""",
-            RegexOption.IGNORE_CASE
-        ).findAll(document.html()).forEach { match ->
-            addPlayerUrl(match.value.replace("\\/", "/"))
+        Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+            .findAll(document.html())
+            .forEach { addUrl(it.value.replace("\\/","/")) }
+
+        val kinescopePlayers = players.filter {
+            it.contains("kinescope", true) ||
+            it.contains("player.hintfilmizle.com", true)
+        }
+        val otherPlayers = players.filterNot {
+            it.contains("kinescope", true) ||
+            it.contains("player.hintfilmizle.com", true)
         }
 
-        // Ana film sayfasında görünen doğrudan medya URL'leri çoğu zaman
-        // CDN tarafından Referer + User-Agent kontrolüyle servis edilir.
-        // ExoPlayer'a çıplak URL vermek 2004/403 üretebildiği için HLS'i
-        // M3u8Helper üzerinden, gerekli HTTP bağlamını koruyarak yayımlıyoruz.
-        directLinks(document.html())
-            .filterNot { it.contains("kinescopecdn.net", true) }
-            .forEach { stream ->
+        /*
+         * Kinescope'u generic extractor'dan geçirmiyoruz. Önce WebView ile
+         * gerçek signed index.m3u8 yakalanıyor.
+         */
+        for (player in kinescopePlayers) {
+            if (loadKinescope(player, data, subtitleCallback, callback)) {
+                found = true
+            }
+        }
+
+        /*
+         * Kinescope başarılı olduysa parent HTML'deki doğrudan MP4/HLS
+         * reklam URL'lerini kaynak olarak eklemiyoruz. Bu, senin gördüğün
+         * "HintFilmİzle Direct -> 2004" durumunu engelliyor.
+         */
+        if (!found) {
+            for (stream in directLinks(document.html())) {
+                if (stream.contains("kinescopecdn.net", true)) continue
+
                 found = true
                 callback(newExtractorLink(
                     source = name,
                     name = "HintFilmİzle Direct",
                     url = stream,
-                    type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                    type = if (stream.contains(".m3u8", true))
+                        ExtractorLinkType.M3U8
+                    else
+                        ExtractorLinkType.VIDEO
                 ) {
                     referer = data
                     quality = getQualityFromName(stream)
                 })
             }
+        }
 
-        for (player in playerUrls) {
-            // Kinescope ve HintFilmİzle'nin player ara katmanı için önce gerçek
-            // tarayıcı akışını yakala. loadExtractor ile doğrudan açmak, signed
-            // HLS isteğini kaybettiğinde 422/Source Error üretebiliyor.
-            val isKinescope = player.contains("kinescope", true) ||
-                player.contains("player.hintfilmizle.com", true)
-
-            if (isKinescope) {
-                val resolved = loadKinescope(player, data, subtitleCallback, callback)
-                if (resolved) {
-                    found = true
-                    // Başarılı Kinescope çözümünü generic extractor'a göndermiyoruz.
-                    // Aksi halde aynı player ikinci kez çözülüp hatalı "Direct"
-                    // kaynağı oluşturabiliyor.
-                    continue
-                }
-            }
-
-            // Kinescope olmayan sağlayıcılar için normal extractor yolu.
+        /*
+         * Kinescope dışındaki sağlayıcılar eski generic extractor zincirinden
+         * devam eder.
+         */
+        for (player in otherPlayers) {
             val loaded = runCatching {
                 loadExtractor(
                     url = player,
@@ -653,22 +661,12 @@ class HintFilmIzle : MainAPI() {
             if (loaded) found = true
 
             val nested = runCatching {
-                app.get(
-                    player,
-                    referer = data,
-                    headers = mapOf(
-                        "User-Agent" to
-                            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
-                            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                    )
-                ).document
+                app.get(player, referer = data).document
             }.getOrNull()
 
             nested?.select(
-                "iframe[src], iframe[data-src], iframe[data-frame], " +
-                    "iframe[data-url], video[src], video[data-src], " +
-                    "video source[src], video source[data-src]"
+                "iframe[src], iframe[data-src], iframe[data-frame], iframe[data-url], " +
+                "video[src], video[data-src], video source[src], video source[data-src]"
             )?.forEach { element ->
                 val nestedUrl = playerUrl(
                     element.attr("src")
@@ -695,68 +693,46 @@ class HintFilmIzle : MainAPI() {
                 if (nestedLoaded) found = true
             }
 
-            nested?.let { nestedDocument ->
-                directLinks(nestedDocument.html())
-                    .filterNot { it.contains("kinescopecdn.net", true) }
-                    .forEach { stream ->
-                    val streamHeaders = mapOf(
-                        "Referer" to player,
-                        "User-Agent" to
-                            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
-                            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                        "Accept" to "*/*"
-                    )
+            directLinks(nested?.html().orEmpty()).forEach { stream ->
+                if (stream.contains("kinescopecdn.net", true)) return@forEach
 
-                    if (stream.contains(".m3u8", true)) {
-                        val links = runCatching {
-                            M3u8Helper.generateM3u8(
-                                source = name,
-                                streamUrl = stream,
-                                referer = player,
-                                headers = streamHeaders,
-                                name = "HintFilmİzle"
-                            )
-                        }.getOrDefault(emptyList())
-
-                        if (links.isNotEmpty()) {
-                            links.forEach { link ->
-                                callback(link)
-                                found = true
-                            }
-                        } else {
-                            callback(
-                                newExtractorLink(
-                                    source = name,
-                                    name = "HintFilmİzle Direct",
-                                    url = stream,
-                                    type = ExtractorLinkType.M3U8
-                                ) {
-                                    referer = player
-                                    headers = streamHeaders
-                                    quality = getQualityFromName(stream)
-                                }
-                            )
-                            found = true
-                        }
-                    } else {
-                        callback(
-                            newExtractorLink(
-                                source = name,
-                                name = "HintFilmİzle Direct",
-                                url = stream,
-                                type = ExtractorLinkType.VIDEO
-                            ) {
-                                referer = player
-                                headers = streamHeaders
-                                quality = getQualityFromName(stream)
-                            }
+                if (stream.contains(".m3u8", true)) {
+                    val links = runCatching {
+                        M3u8Helper.generateM3u8(
+                            source = name,
+                            streamUrl = stream,
+                            referer = player,
+                            headers = mapOf(
+                                "Referer" to player,
+                                "User-Agent" to
+                                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                                    "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                                "Accept" to "*/*"
+                            ),
+                            name = "HintFilmİzle"
                         )
+                    }.getOrDefault(emptyList())
+
+                    if (links.isNotEmpty()) {
+                        links.forEach(callback)
                         found = true
                     }
+                } else {
+                    callback(newExtractorLink(
+                        source = name,
+                        name = "HintFilmİzle Direct",
+                        url = stream,
+                        type = ExtractorLinkType.VIDEO
+                    ) {
+                        referer = player
+                        quality = getQualityFromName(stream)
+                    })
+                    found = true
                 }
             }
         }
 
         return found
     }
+
 }
