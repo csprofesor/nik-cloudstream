@@ -400,11 +400,15 @@ class HintFilmIzle : MainAPI() {
 
     private fun playerUrl(value: String?, baseUrl: String): String? {
         val raw = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
-        val url = cleanUrl(raw) ?: return null
+        val url = runCatching {
+            when {
+                raw.startsWith("//") -> "https:$raw"
+                raw.startsWith("http://", true) || raw.startsWith("https://", true) -> raw
+                else -> URI(baseUrl).resolve(raw).toString()
+            }
+        }.getOrNull()?.takeIf { it.startsWith("http", true) } ?: return null
         if (url.startsWith("data:", true) || url.startsWith("javascript:", true)) return null
-        return if (url.startsWith("//")) "https:$url"
-        else if (url.startsWith("/")) "$mainUrl$url"
-        else url
+        return url
     }
 
     private fun isTrailerPlayer(url: String): Boolean =
@@ -658,7 +662,7 @@ class HintFilmIzle : MainAPI() {
         // HintFilmİzle playeri yalnızca iframe olarak değil, video/source ve
         // data-* alanlarında da verebiliyor.
         document.select(
-            "iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], " +
+            "iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], iframe[data-frame], " +
                 "frame[src], video[src], video[data-src], video[data-url], " +
                 "video source[src], video source[data-src], video source[data-url]"
         ).forEach { element ->
@@ -667,6 +671,7 @@ class HintFilmIzle : MainAPI() {
                 element.attr("data-src"),
                 element.attr("data-url"),
                 element.attr("data-iframe"),
+                element.attr("data-frame"),
                 element.attr("data-video"),
                 element.attr("data-player")
             ).forEach { value ->
@@ -676,12 +681,13 @@ class HintFilmIzle : MainAPI() {
 
         // HintFilmİzle'nin TEKPART düğmeleri bazı içeriklerde iframe'i
         // doğrudan src yerine data-* veya onclick içinde tutabiliyor.
-        document.select("a[href], button, [onclick], [data-url], [data-embed], [data-video], [data-player]")
+        document.select("a[href], a[data-frame], button, [onclick], [data-url], [data-embed], [data-frame], [data-video], [data-player]")
             .forEach { element ->
                 listOf(
                     element.attr("href"),
                     element.attr("data-url"),
                     element.attr("data-embed"),
+                    element.attr("data-frame"),
                     element.attr("data-video"),
                     element.attr("data-player"),
                     element.attr("onclick")
@@ -738,10 +744,10 @@ class HintFilmIzle : MainAPI() {
                         found = true
                     }
                 } else {
-                    val result = runCatching {
+                    val loaded = runCatching {
                         loadExtractor(player, data, subtitleCallback, callback)
-                    }
-                    if (result.isSuccess) found = true
+                    }.getOrDefault(false)
+                    if (loaded) found = true
                 }
 
                 // Bazı embed URL'leri ikinci bir iframe döndürüyor.
@@ -749,17 +755,24 @@ class HintFilmIzle : MainAPI() {
                     app.get(player, referer = data).document
                 }.getOrNull()
 
-                nested?.select("iframe[src], iframe[data-src], video[src], video source[src]")
+                nested?.select("iframe[src], iframe[data-src], iframe[data-frame], video[src], video source[src]")
                     ?.forEach { element ->
                         val nestedUrl = playerUrl(
-                            element.attr("src").ifBlank { element.attr("data-src") },
+                            element.attr("src")
+                                .ifBlank { element.attr("data-src") }
+                                .ifBlank { element.attr("data-frame") },
                             player
                         ) ?: return@forEach
 
                         if (nestedUrl != player) {
-                            runCatching {
-                                loadExtractor(nestedUrl, player, subtitleCallback, callback)
-                            }.onSuccess { found = true }
+                            val loaded = if (nestedUrl.contains("kinescope", true)) {
+                                loadKinescope(nestedUrl, player, subtitleCallback, callback)
+                            } else {
+                                runCatching {
+                                    loadExtractor(nestedUrl, player, subtitleCallback, callback)
+                                }.getOrDefault(false)
+                            }
+                            if (loaded) found = true
                         }
                     }
 
