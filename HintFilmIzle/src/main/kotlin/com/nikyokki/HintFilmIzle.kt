@@ -446,7 +446,7 @@ class HintFilmIzle : MainAPI() {
         fun decodeCandidate(value: String): String? {
             var candidate = value
                 .trim()
-                .trimEnd('\"', '\\'', ')', ']', '}')
+                .trimEnd('"', '\'', ')', ']', '}')
                 .replace("\\u0026", "&")
                 .replace("\\/", "/")
                 .replace("\\u003F", "?")
@@ -716,9 +716,7 @@ class HintFilmIzle : MainAPI() {
                                 // Chrome'un cross-origin HLS isteğinde görülen model:
                                 // Origin = iframe origin, Referer = iframe origin.
                                 "Origin" to playerOrigin.removeSuffix("/"),
-                                "Referer" to "$playerOrigin/",
-                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
-                                "Accept" to "*/*"
+                                "Referer" to "$playerOrigin/"
                             )
                             quality = getQualityFromName(kinescopeStream)
                         })
