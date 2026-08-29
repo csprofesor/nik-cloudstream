@@ -363,35 +363,6 @@ class HintFilmIzle : MainAPI() {
         ).any { url.contains(it, true) }
 
 
-    private suspend fun resolveKinescopeHls(url: String, embedUrl: String): String? {
-        val origin = runCatching {
-            URI(embedUrl).let { it.scheme + "://" + it.host }
-        }.getOrDefault("https://kinescope.io")
-
-        val body = runCatching {
-            app.get(
-                url,
-                referer = origin + "/"
-            ).text
-        }.getOrNull() ?: return null
-
-        val normalized = body
-            .replace("\\u0026", "&")
-            .replace("\\/", "/")
-            .replace("&amp;", "&")
-
-        val candidates = Regex(
-            """https?://[^"'<> ]+\.m3u8(?:\?[^"'<> ]*)?""",
-            RegexOption.IGNORE_CASE
-        ).findAll(normalized)
-            .map { it.value.trimEnd('"', '\'', ')', ']') }
-            .toList()
-
-        return candidates.firstOrNull {
-            it.contains("expires=", true) && it.contains("sign=", true)
-        } ?: candidates.firstOrNull()
-    }
-
     private fun extractKinescopeHls(html: String): String? {
         val normalized = html
             .replace("\\u0026", "&")
@@ -578,9 +549,17 @@ class HintFilmIzle : MainAPI() {
                             "https://kinescope.io/$it/master.m3u8"
                         }
 
-                    val kinescopeStream = kinescopeEntryPoint?.let {
-                        resolveKinescopeHls(it, player)
-                    }
+                    // Do NOT fetch the HLS URL here and parse its response.
+                    // Kinescope's /master.m3u8 endpoint is itself the playable HLS
+                    // entry point; its response contains relative .ts/.m3u8 URLs,
+                    // not another absolute manifest. The previous resolver therefore
+                    // returned null even though the browser could play the same video.
+                    //
+                    // Let ExoPlayer follow Kinescope's redirect to the short-lived
+                    // kinescopecdn.net manifest. The browser trace shows that the CDN
+                    // validates the request with the embed host as Origin and root
+                    // Referer, so those headers are attached to the media link.
+                    val kinescopeStream = kinescopeEntryPoint
 
                     if (kinescopeStream != null) {
                         found = true
@@ -603,7 +582,7 @@ class HintFilmIzle : MainAPI() {
                             headers = mapOf(
                                 "Referer" to playerReferer,
                                 "Origin" to playerOrigin,
-                                "Accept" to "*/*",
+                                "Accept" to "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
                                 "User-Agent" to "Mozilla/5.0"
                             )
                             quality = getQualityFromName(kinescopeStream)
