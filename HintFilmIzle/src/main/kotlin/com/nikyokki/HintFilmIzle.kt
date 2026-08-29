@@ -371,7 +371,9 @@ class HintFilmIzle : MainAPI() {
         val patterns = listOf(
             Regex("""["']hls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
             Regex("""["']shakahls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
-            Regex("""["']contentUrl["']\s*:\s*["']([^"']+\.m3u8[^"']*)""", RegexOption.IGNORE_CASE)
+            Regex("""["']dash["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)""", RegexOption.IGNORE_CASE),
+            Regex("""["']contentUrl["']\s*:\s*["']([^"']+\.m3u8[^"']*)""", RegexOption.IGNORE_CASE),
+            Regex("""["']src["']\s*:\s*["'](https?[^"']+\.m3u8(?:\?[^"']*)?)["']""", RegexOption.IGNORE_CASE)
         )
 
         // Kinescope bazen master.m3u8 yerine imzali CDN manifesti verir:
@@ -531,22 +533,21 @@ class HintFilmIzle : MainAPI() {
                             """/embed/([^/?#]+)""",
                             RegexOption.IGNORE_CASE
                         ).findAll(player).lastOrNull()?.groupValues?.getOrNull(1)
-                    // Kinescope player.js may generate the signed CDN manifest only
-                    // after the player starts. Prefer a manifest exposed in the embed
-                    // HTML, then fall back to Kinescope's documented direct HLS endpoint.
-                    // Kinescope documents the public HLS form as:
-                    // https://kinescope.io/{VIDEO_ID}/master.m3u8
-                    // Use this stable player-level URL first. Kinescope then resolves
-                    // the short-lived CDN URL (expires/sign) itself instead of us
-                    // scraping a transient signed URL from the iframe HTML.
-                    val kinescopeStream = kinescopeVideoId?.let {
-                        "https://kinescope.io/$it/master.m3u8"
-                    } ?: extractKinescopeHls(playerHtml)
+                    // Prefer the exact signed manifest produced by the embed/player.
+                    // The expires/sign/token values are short-lived, so do not synthesize
+                    // or cache them. Only use the public /master.m3u8 fallback when the
+                    // current embed response exposes no manifest at all.
+                    val embeddedKinescopeStream = extractKinescopeHls(playerHtml)
                         ?: directLinks(
                             playerHtml
                                 .replace("\\u0026", "&")
                                 .replace("\\/","/")
                         ).firstOrNull { it.contains(".m3u8", true) }
+
+                    val kinescopeStream = embeddedKinescopeStream
+                        ?: kinescopeVideoId?.let {
+                            "https://kinescope.io/$it/master.m3u8"
+                        }
 
                     if (kinescopeStream != null) {
                         found = true
