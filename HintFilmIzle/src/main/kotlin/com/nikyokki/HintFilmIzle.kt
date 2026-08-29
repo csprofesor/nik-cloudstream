@@ -460,37 +460,41 @@ class HintFilmIzle : MainAPI() {
                 }
                 .toMutableMap()
 
-            // Kinescope HLS manifest hostu ile oynatıcı/origin hostu farklı olabilir.
-            // Manifest hostunu Origin olarak kullanmıyoruz.
-            // WebViewın gördüğü Kinescope doküman isteğinden gerçek origini
-            // bulup manifest ve segment isteklerine taşıyoruz.
-            val webViewKinescopeOrigin = requests
-                .asSequence()
-                .map { it.url.toString() }
-                .filter { it.contains("kinescopecdn.net", true) }
-                .filterNot { it.contains("/hls/", true) }
-                .mapNotNull { value ->
-                    runCatching {
-                        URI(value).let { uri ->
-                            if (!uri.host.isNullOrBlank()) uri.scheme + "://" + uri.host else null
-                        }
-                    }.getOrNull()
-                }
-                .firstOrNull()
+            // Kinescope'ta manifest hostu ile player/origin hostu farklıdır.
+            // Örn: manifest river-1-2125..., Origin ise river-3-329...
+            // Bu nedenle Origin/Referer sadece gerçek WebView isteğinden alınır.
+            val origin = headers.entries
+                .firstOrNull { it.key.equals("Origin", true) }
+                ?.value
+                ?.takeIf { it.isNotBlank() }
+                ?: requests.asSequence()
+                    .flatMap { it.headers.entries.asSequence() }
+                    .firstOrNull { it.key.equals("Origin", true) }
+                    ?.value
+                    ?.takeIf { it.isNotBlank() }
 
-            if (headers.keys.none { it.equals("Origin", true) }) {
-                webViewKinescopeOrigin?.let { headers["Origin"] = it }
-            }
-
-            if (headers.keys.none { it.equals("Referer", true) }) {
-                headers["Referer"] = webViewKinescopeOrigin?.let { it + "/" } ?: playerUrl
-            }
-
-            val referer = headers.entries
+            val actualReferer = headers.entries
                 .firstOrNull { it.key.equals("Referer", true) }
                 ?.value
-                ?: webViewKinescopeOrigin?.let { it + "/" }
+                ?.takeIf { it.isNotBlank() }
+                ?: requests.asSequence()
+                    .flatMap { it.headers.entries.asSequence() }
+                    .firstOrNull { it.key.equals("Referer", true) }
+                    ?.value
+                    ?.takeIf { it.isNotBlank() }
+
+            if (origin != null) {
+                headers["Origin"] = origin
+            }
+
+            headers["Referer"] = actualReferer
+                ?: origin?.trimEnd('/')?.plus("/")
                 ?: playerUrl
+
+            // Kinescope segmentlerinde tarayıcıdaki Accept/UA da gerekli olabilir.
+            if (headers.keys.none { it.equals("Accept", true) }) {
+                headers["Accept"] = "*/*"
+            }
 
             val links = M3u8Helper.generateM3u8(
                 source = name,
@@ -627,11 +631,16 @@ class HintFilmIzle : MainAPI() {
 
             if (isKinescope) {
                 val resolved = loadKinescope(player, data, subtitleCallback, callback)
-                if (resolved) found = true
+                if (resolved) {
+                    found = true
+                    // Başarılı Kinescope çözümünü generic extractor'a göndermiyoruz.
+                    // Aksi halde aynı player ikinci kez çözülüp hatalı "Direct"
+                    // kaynağı oluşturabiliyor.
+                    continue
+                }
             }
 
-            // WebView başarısızsa diğer sağlayıcılar için normal extractor yolunu
-            // koru. Kinescope'ta da nested iframe varsa ikinci şans olarak devam eder.
+            // Kinescope olmayan sağlayıcılar için normal extractor yolu.
             val loaded = runCatching {
                 loadExtractor(
                     url = player,
@@ -687,7 +696,9 @@ class HintFilmIzle : MainAPI() {
             }
 
             nested?.let { nestedDocument ->
-                directLinks(nestedDocument.html()).forEach { stream ->
+                directLinks(nestedDocument.html())
+                    .filterNot { it.contains("kinescopecdn.net", true) }
+                    .forEach { stream ->
                     val streamHeaders = mapOf(
                         "Referer" to player,
                         "User-Agent" to
