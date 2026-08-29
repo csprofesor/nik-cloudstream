@@ -40,9 +40,9 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=5d1f56da7fca",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=ffef5b8ddb60",
     "status": 1,
-    "version": 1,
+    "version": 417,
     "name": "Anizm",
     "internalName": "Anizm",
     "authors": [
@@ -631,9 +631,9 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=5d1f56da7fca",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=ffef5b8ddb60",
     "status": 1,
-    "version": 1,
+    "version": 417,
     "name": "HintFilmİzle",
     "internalName": "HintFilmIzle",
     "authors": [
@@ -649,7 +649,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-b74ad527581fb06f82dd84126ffaaece49cba22230868caf7c9e0c8b00a292c3"
+    "fileHash": "sha256-80e0c00b02f5977448fec5646adc1a20c0d708681b09085cb91bfc780a653830"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3",
