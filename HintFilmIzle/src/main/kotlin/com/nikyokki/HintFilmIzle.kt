@@ -363,6 +363,64 @@ class HintFilmIzle : MainAPI() {
         ).any { url.contains(it, true) }
 
 
+    private suspend fun resolveKinescopeHls(url: String, embedUrl: String): String? {
+        val origin = runCatching {
+            URI(embedUrl).let { it.scheme + "://" + it.host }
+        }.getOrDefault("https://kinescope.io")
+
+        val response = runCatching {
+            app.get(
+                url,
+                referer = origin + "/",
+                headers = mapOf(
+                    "Referer" to origin + "/",
+                    "Origin" to origin,
+                    "Accept" to "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
+                    "User-Agent" to "Mozilla/5.0"
+                )
+            )
+        }.getOrNull() ?: return null
+
+        val body = response.text
+            .replace("\\u0026", "&")
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+
+        val absolute = Regex(
+            """https?://[^\\s<>\"']+\\.m3u8(?:\\?[^\\s<>\"']*)?""",
+            RegexOption.IGNORE_CASE
+        ).findAll(body)
+            .map { it.value.trimEnd('"', '\\'', ')', ']') }
+            .firstOrNull {
+                it.contains("expires=", true) && it.contains("sign=", true)
+            }
+
+        if (absolute != null) return absolute
+
+        val base = runCatching { URI(url) }.getOrNull() ?: return url
+        val query = base.rawQuery?.takeIf { it.isNotBlank() }
+
+        val candidate = body.lineSequence()
+            .map { it.trim() }
+            .firstOrNull {
+                it.isNotEmpty() &&
+                    !it.startsWith("#") &&
+                    (it.endsWith(".m3u8", true) || it.contains(".m3u8?", true))
+            }
+
+        if (candidate != null) {
+            val resolved = runCatching { base.resolve(candidate).toString() }.getOrNull()
+            if (resolved != null) {
+                if (!resolved.contains("?") && query != null) {
+                    return resolved + "?" + query
+                }
+                return resolved
+            }
+        }
+
+        return url
+    }
+
     private fun extractKinescopeHls(html: String): String? {
         val normalized = html
             .replace("\\u0026", "&")
@@ -544,10 +602,14 @@ class HintFilmIzle : MainAPI() {
                                 .replace("\\/","/")
                         ).firstOrNull { it.contains(".m3u8", true) }
 
-                    val kinescopeStream = embeddedKinescopeStream
+                    val kinescopeEntryPoint = embeddedKinescopeStream
                         ?: kinescopeVideoId?.let {
                             "https://kinescope.io/$it/master.m3u8"
                         }
+
+                    val kinescopeStream = kinescopeEntryPoint?.let {
+                        resolveKinescopeHls(it, player)
+                    }
 
                     if (kinescopeStream != null) {
                         found = true
