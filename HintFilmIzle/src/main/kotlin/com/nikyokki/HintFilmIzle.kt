@@ -418,9 +418,7 @@ class HintFilmIzle : MainAPI() {
 
 
 
-    private inline fun buildMap(block: MutableMap<String, String>.() -> Unit): Map<String, String> =
-        linkedMapOf<String, String>().apply(block)
-\n    private fun extractKinescopeHls(html: String): String? {
+    private fun extractKinescopeHls(html: String): String? {
         /*
          * Kinescope embeds expose the playable source in:
          *
@@ -690,34 +688,32 @@ class HintFilmIzle : MainAPI() {
                         // cross-origin request therefore normally carries the iframe
                         // origin as Referer, not the complete signed embed URL. Also,
                         // the media request can be same-origin with the iframe CDN host.
-                        val streamOrigin = runCatching {
-                            URI(kinescopeStream).let { x -> "${x.scheme}://${x.host}" }
-                        }.getOrDefault(playerOrigin)
-                        val sameOrigin = streamOrigin.equals(playerOrigin, ignoreCase = true)
-
                         callback(newExtractorLink(
                             source = name,
                             name = "HintFilmİzle Kinescope",
                             url = kinescopeStream,
                             type = ExtractorLinkType.M3U8
                         ) {
-                            // Chrome's strict-origin-when-cross-origin policy
-                            // sends only the iframe origin as Referer across origins.
-                            // If the manifest is on the same CDN origin, do not add
-                            // synthetic CORS/Sec-Fetch headers that Chrome would omit.
+                            /*
+                             * Browser trace is the important distinction here:
+                             * the actual media host is vbx-25.kinescopecdn.net while
+                             * the iframe document is river-3-329.kinescopecdn.net.
+                             *
+                             * For a <video>/HLS media request Chrome does NOT need us
+                             * to invent CORS request headers. In particular, sending
+                             * an Origin/Sec-Fetch-Mode/Sec-Fetch-Dest combination that
+                             * was not present in the browser request can make a CDN
+                             * signature/access rule reject the request with 403.
+                             *
+                             * CloudStream's ExtractorLink.referer is enough to put
+                             * the browser-style origin Referer on the manifest and
+                             * its child segment requests.
+                             */
                             referer = "$playerOrigin/"
-                            headers = buildMap {
-                                "Referer" to "$playerOrigin/"
-                                "Accept" to "application/vnd.apple.mpegurl, application/x-mpegURL, */*"
-                                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
-                                if (!sameOrigin) {
-                                    "Origin" to playerOrigin
-                                    "Sec-Fetch-Site" to "cross-site"
-                                    "Sec-Fetch-Mode" to "cors"
-                                    "Sec-Fetch-Dest" to "empty"
-                                }
-                            }
+                            headers = mapOf(
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+                                "Accept" to "*/*"
+                            )
                             quality = getQualityFromName(kinescopeStream)
                         })
                     }
