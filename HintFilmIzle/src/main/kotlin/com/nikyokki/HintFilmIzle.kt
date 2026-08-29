@@ -422,6 +422,10 @@ class HintFilmIzle : MainAPI() {
             "filelions", "vidsrc", "embed", "player", "kinescope"
         ).any { url.contains(it, true) }
 
+    private fun isHintFilmPlayer(url: String): Boolean = runCatching {
+        URI(url).host.equals("player.hintfilmizle.com", true)
+    }.getOrDefault(false)
+
     /*
      * Kinescope'da HLS manifesti ile gerçek medya CDN'i farklı hostlarda
      * çalışabiliyor. Tarayıcı örneğinde:
@@ -739,10 +743,24 @@ class HintFilmIzle : MainAPI() {
                 // HintFilmİzle'nin TEKPART oynatıcısı Kinescope embed kullanıyor.
                 // Kinescope'un imzalı HLS adresi embed HTML içindeki playerOptions
                 // nesnesinde veriliyor; imza süreli olduğu için URL'yi sabit yazmıyoruz.
-                if (player.contains("kinescope", true)) {
-                    if (loadKinescope(player, data, subtitleCallback, callback)) {
-                        found = true
-                    }
+                /*
+                 * Güncel TEKPART URL'si önce player.hintfilmizle.com'dur.
+                 * Bu sayfa Kinescope iframe'ini/yönlendirmesini tarayıcıda
+                 * kurar; yalnızca HTTP ile HTML'ini indirmek çoğu zaman gerçek
+                 * embed URL'sini veya imzalı HLS isteğini vermez. WebViewResolver
+                 * doğrudan bu giriş noktasından başlatıldığında zinciri izleyip
+                 * oynatılan güncel .m3u8 isteğini yakalar.
+                 */
+                val resolvedByWebView = if (
+                    player.contains("kinescope", true) || isHintFilmPlayer(player)
+                ) {
+                    loadKinescope(player, data, subtitleCallback, callback)
+                } else {
+                    false
+                }
+
+                if (resolvedByWebView) {
+                    found = true
                 } else {
                     val loaded = runCatching {
                         loadExtractor(player, data, subtitleCallback, callback)
