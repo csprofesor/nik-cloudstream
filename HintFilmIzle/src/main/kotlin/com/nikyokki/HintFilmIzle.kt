@@ -426,10 +426,10 @@ class HintFilmIzle : MainAPI() {
             // WebView gerçek tarayıcı isteğini üretir; böylece kısa ömürlü
             // sign/expires parametreleri, cookie ve gerçek request header'ları korunur.
             val resolver = WebViewResolver(
-                interceptUrl = Regex("\\\\.m3u8(?:\\\\?|$)", RegexOption.IGNORE_CASE),
+                interceptUrl = Regex("""\.m3u8(?:\?|$)""", RegexOption.IGNORE_CASE),
                 additionalUrls = listOf(
-                    Regex("kinescopecdn\\\\.net", RegexOption.IGNORE_CASE),
-                    Regex("kinescope\\\\.io", RegexOption.IGNORE_CASE)
+                    Regex("""kinescopecdn\.net""", RegexOption.IGNORE_CASE),
+                    Regex("""kinescope\.io""", RegexOption.IGNORE_CASE)
                 ),
                 userAgent = null,
                 useOkhttp = false,
@@ -452,15 +452,37 @@ class HintFilmIzle : MainAPI() {
             val manifestUrl = request.url.toString()
             if (!manifestUrl.contains(".m3u8", true)) return false
 
-            val headers = request.headers.toMap().toMutableMap()
+            val headers = request.headers.toMap()
+                .filterKeys { key ->
+                    !key.equals("Host", true) &&
+                    !key.equals("Connection", true) &&
+                    !key.equals("Content-Length", true)
+                }
+                .toMutableMap()
+
+            // Kinescope'ta manifest hostu ile iframe/origin hostu farklı olabilir.
+            // WebView'ın yakaladığı gerçek Origin/Referer değerlerini koruyoruz.
+            if (headers.keys.none { it.equals("Origin", true) }) {
+                val manifestOrigin = runCatching {
+                    URI(manifestUrl).let { uri ->
+                        if (!uri.host.isNullOrBlank()) uri.scheme + "://" + uri.host else null
+                    }
+                }.getOrNull()
+                if (manifestOrigin != null) headers["Origin"] = manifestOrigin
+            }
             if (headers.keys.none { it.equals("Referer", true) }) {
                 headers["Referer"] = playerUrl
             }
 
+            val referer = headers.entries
+                .firstOrNull { it.key.equals("Referer", true) }
+                ?.value
+                ?: playerUrl
+
             val links = M3u8Helper.generateM3u8(
                 source = name,
                 streamUrl = manifestUrl,
-                referer = playerUrl,
+                referer = referer,
                 headers = headers,
                 name = "HintFilmİzle Kinescope"
             )
