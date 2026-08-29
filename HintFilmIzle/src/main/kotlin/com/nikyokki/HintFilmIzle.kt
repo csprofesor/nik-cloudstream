@@ -436,31 +436,37 @@ class HintFilmIzle : MainAPI() {
             return v
         }
 
-        val scoped = Regex(
-            """var\\s+playerOptions\\s*=\\s*(\\{.*?\\});""",
+        val playerOptions = Regex(
+            """var\s+playerOptions\s*=\s*(\{.*?\});\s*""",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-        ).find(normalized)?.groupValues?.getOrNull(1) ?: normalized
+        ).find(normalized)?.groupValues?.getOrNull(1)
 
-        val patterns = listOf(
-            Regex("""["']hls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
-            Regex("""["']shakahls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
-            Regex("""\\bhls\\s*:\\s*\\{\\s*src\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
-            Regex("""\\bshakahls\\s*:\\s*\\{\\s*src\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        val sourcePatterns = listOf(
+            Regex("""["']hls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
+            Regex("""["']shakahls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
+            Regex("""\bhls\s*:\s*\{\s*src\s*:\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
+            Regex("""\bshakahls\s*:\s*\{\s*src\s*:\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
         )
 
-        return patterns.asSequence()
-            .flatMap { it.findAll(scoped).asSequence() }
-            .mapNotNull { it.groupValues.getOrNull(1) }
-            .map { decode(it) }
-            .firstOrNull { it.contains(".m3u8", true) && it.contains("kinescopecdn.net", true) }
-    }
+        fun findSource(text: String): String? =
+            sourcePatterns.asSequence()
+                .flatMap { regex -> regex.findAll(text).asSequence() }
+                .mapNotNull { match -> match.groupValues.getOrNull(1) }
+                .map(::decode)
+                .firstOrNull {
+                    it.contains(".m3u8", true) &&
+                        (it.contains("kinescopecdn.net", true) || it.contains("kinescope", true))
+                }
 
-    private fun kinescopeOrigin(html: String, fallback: String): String {
-        val candidate = Regex(
-            """https?://(?:river|edge)-[a-z0-9-]+\\.kinescopecdn\\.net/?""",
+        findSource(playerOptions ?: "")?.let { return it }
+        findSource(normalized)?.let { return it }
+
+        return Regex(
+            """https?://[^"'\\s<>]+?\.m3u8(?:\?[^"'\\s<>]*)?""",
             RegexOption.IGNORE_CASE
-        ).find(html)?.value?.trimEnd('/') ?: fallback
-        return candidate
+        ).findAll(normalized)
+            .map { decode(it.value) }
+            .firstOrNull { it.contains("expires=", true) && it.contains("sign=", true) }
     }
 
     private suspend fun loadKinescope(
@@ -480,15 +486,15 @@ class HintFilmIzle : MainAPI() {
                 )
             )
 
-            val html = response.text
-            val manifest = extractKinescopeSignedHls(html) ?: return false
+            val manifest = extractKinescopeSignedHls(response.text) ?: return false
 
-            val origin = kinescopeOrigin(html, iframeUrl)
-            val referer = "$origin/"
+            val origin = runCatching {
+                URI(iframeUrl).let { uri -> "$" + "{uri.scheme}://" + "$" + "{uri.host}" }
+            }.getOrDefault(iframeUrl.substringBefore("/", iframeUrl))
 
             val headers = mapOf(
+                "Referer" to iframeUrl,
                 "Origin" to origin,
-                "Referer" to referer,
                 "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 "Accept" to "*/*"
             )
@@ -496,7 +502,7 @@ class HintFilmIzle : MainAPI() {
             val links = M3u8Helper.generateM3u8(
                 source = name,
                 streamUrl = manifest,
-                referer = referer,
+                referer = iframeUrl,
                 headers = headers,
                 name = "HintFilmİzle Kinescope"
             )
