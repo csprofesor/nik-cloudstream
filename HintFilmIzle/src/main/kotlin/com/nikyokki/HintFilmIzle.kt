@@ -11,6 +11,7 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
@@ -542,7 +543,9 @@ class HintFilmIzle : MainAPI() {
          * or change whitespace/quoting. Also accept the same nested source
          * structure without requiring the wrapper, but only after the scoped
          * playerOptions attempt above.
-         */\n\n        /*
+         */
+
+        /*
          * Fallback for player versions that serialize playerOptions slightly
          * differently. Search for every absolute HLS manifest, including
          * escaped JSON URLs.
@@ -580,6 +583,62 @@ class HintFilmIzle : MainAPI() {
             it.contains(".m3u8", true) &&
                 it.contains("kinescopecdn.net", true)
         } ?: candidates.firstOrNull()
+    }
+
+
+    /*
+     * Kinescope is browser-driven: the signed HLS URL is selected during
+     * playback and the CDN can require the exact browser request context.
+     * WebViewResolver observes the real signed .m3u8 request and its headers.
+     * M3u8Helper then preserves those headers for the variant/segment requests.
+     */
+    private suspend fun loadKinescope(
+        iframeUrl: String,
+        parentUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        return try {
+            val resolver = WebViewResolver(
+                interceptUrl = Regex("""\.m3u8(?:\?|$)"""),
+                additionalUrls = listOf(Regex("""kinescopecdn\.net/hls/""")),
+                userAgent = null,
+                useOkhttp = false,
+                timeout = 45_000L
+            )
+
+            val (finalRequest, _) = resolver.resolveUsingWebView(
+                url = iframeUrl,
+                referer = parentUrl,
+                headers = mapOf(
+                    "Referer" to parentUrl,
+                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                )
+            )
+
+            val request = finalRequest ?: return false
+            val manifestUrl = request.url.toString()
+            if (!manifestUrl.contains(".m3u8", ignoreCase = true)) return false
+
+            val browserHeaders = request.headers.toMap().toMutableMap()
+            if (browserHeaders.keys.none { it.equals("Referer", ignoreCase = true) }) {
+                browserHeaders["Referer"] = iframeUrl
+            }
+
+            val links = M3u8Helper.generateM3u8(
+                source = name,
+                streamUrl = manifestUrl,
+                referer = iframeUrl,
+                headers = browserHeaders,
+                name = "Kinescope"
+            )
+
+            if (links.isEmpty()) return false
+            links.forEach(callback)
+            true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     override suspend fun loadLinks(
@@ -674,83 +733,8 @@ class HintFilmIzle : MainAPI() {
                 // Kinescope'un imzalı HLS adresi embed HTML içindeki playerOptions
                 // nesnesinde veriliyor; imza süreli olduğu için URL'yi sabit yazmıyoruz.
                 if (player.contains("kinescope", true)) {
-                    val playerHtml = runCatching {
-                        app.get(player, referer = data).text
-                    }.getOrNull().orEmpty()
-
-                    // Kinescope embed format is /embed/{VIDEO_ID}; the video ID
-                    // may be numeric or an opaque alphanumeric value.
-                    // Kinescope CDN embeds used by HintFilmIzle can contain a
-                    // project/player segment before the actual video embed:
-                    // /embed/{project}/embed/{videoId}. Always take the LAST /embed/.
-                    // Prefer the exact signed manifest produced by the embed/player.
-                    // The expires/sign/token values are short-lived, so do not synthesize
-                    // or cache them. Only use the public /master.m3u8 fallback when the
-                    // current embed response exposes no manifest at all.
-                    val embeddedKinescopeStream = extractKinescopeHls(playerHtml)
-                        ?: directLinks(
-                            playerHtml
-                                .replace("\\u0026", "&")
-                                .replace("\\/","/")
-                        ).firstOrNull { it.contains(".m3u8", true) }
-
-                    /*
-                     * Do not fabricate a Kinescope master URL from the embed id.
-                     * The CDN/project embed can use a different video identifier
-                     * and the actual HLS URL is signed. Only use the URL extracted
-                     * from the current player response.
-                     */
-                    val kinescopeEntryPoint = embeddedKinescopeStream
-
-                    // Do NOT fetch the HLS URL here and parse its response.
-                    // Kinescope's /master.m3u8 endpoint is itself the playable HLS
-                    // entry point; its response contains relative .ts/.m3u8 URLs,
-                    // not another absolute manifest. The previous resolver therefore
-                    // returned null even though the browser could play the same video.
-                    //
-                    // Let ExoPlayer follow Kinescope's redirect to the short-lived
-                    // kinescopecdn.net manifest. The browser trace shows that the CDN
-                    // validates the request with the embed host as Origin and root
-                    // Referer, so those headers are attached to the media link.
-                    val kinescopeStream = kinescopeEntryPoint
-
-                    if (kinescopeStream != null) {
+                    if (loadKinescope(player, data, subtitleCallback, callback)) {
                         found = true
-                        val playerOrigin = runCatching {
-                            URI(player).let { "${it.scheme}://${it.host}" }
-                        }.getOrDefault("https://kinescope.io")
-
-                        val kinescopeHeaders = kinescopeRequestHeaders(player)
-
-                        // Chrome uses strict-origin-when-cross-origin here. The
-                        // cross-origin request therefore normally carries the iframe
-                        // origin as Referer, not the complete signed embed URL. Also,
-                        // the media request can be same-origin with the iframe CDN host.
-                        callback(newExtractorLink(
-                            source = name,
-                            name = "HintFilmİzle Kinescope",
-                            url = kinescopeStream,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            /*
-                             * Browser trace is the important distinction here:
-                             * the actual media host is vbx-25.kinescopecdn.net while
-                             * the iframe document is river-3-329.kinescopecdn.net.
-                             *
-                             * For a <video>/HLS media request Chrome does NOT need us
-                             * to invent CORS request headers. In particular, sending
-                             * an Origin/Sec-Fetch-Mode/Sec-Fetch-Dest combination that
-                             * was not present in the browser request can make a CDN
-                             * signature/access rule reject the request with 403.
-                             *
-                             * CloudStream's ExtractorLink.referer is enough to put
-                             * the browser-style origin Referer on the manifest and
-                             * its child segment requests.
-                             */
-                            referer = "$playerOrigin/"
-                            headers = kinescopeHeaders
-                            quality = getQualityFromName(kinescopeStream)
-                        })
                     }
                 } else {
                     val result = runCatching {
