@@ -40,7 +40,7 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=62a56793c0a9",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=750c17ae618d",
     "status": 1,
     "version": 1,
     "name": "Anizm",
@@ -206,14 +206,14 @@
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=13",
     "status": 1,
-    "version": 14,
+    "version": 15,
     "name": "DiziGom",
     "internalName": "DiziGom",
     "authors": [
       "csprofesor"
     ],
     "description": "Türkçe altyazılı yabancı dizi izle, Tüm yabancı, kore, netflix dizilerin yeni ve eski sezonlarını orijinal dilinde dizigom1 alt yazılı film izleyebilir, sadece türkçe altyazılı en iyi yabancı diziler ve filmler hakkında yorum yapabilirsiniz.",
-    "fileSize": 23865,
+    "fileSize": 23867,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -221,7 +221,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-ac9a04f4dde7762350009d9c5d4188006b7b5353567f523ab339b6dc58875fca"
+    "fileHash": "sha256-ef19d39a480689cc955471d74b3381bdc6702a09aab856ea6a24b3c423e1e428"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3",
@@ -631,7 +631,7 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=62a56793c0a9",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=750c17ae618d",
     "status": 1,
     "version": 1,
     "name": "HintFilmİzle",
@@ -640,7 +640,7 @@
       "csprofesor"
     ],
     "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-    "fileSize": 34829,
+    "fileSize": 33558,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -649,7 +649,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-058cb35e0743026a3f04353e8ca92bf88d2dd05693c4705dde1bf1a5f6acd907"
+    "fileHash": "sha256-ac40e30119b096f248f70b2b276b6e52db5289ef0a500fd7deea2367463d9e82"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3",
