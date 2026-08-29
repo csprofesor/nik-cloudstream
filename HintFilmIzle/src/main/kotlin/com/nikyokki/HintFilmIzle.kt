@@ -534,15 +534,19 @@ class HintFilmIzle : MainAPI() {
                     // Kinescope player.js may generate the signed CDN manifest only
                     // after the player starts. Prefer a manifest exposed in the embed
                     // HTML, then fall back to Kinescope's documented direct HLS endpoint.
-                    val kinescopeStream = extractKinescopeHls(playerHtml)
+                    // Kinescope documents the public HLS form as:
+                    // https://kinescope.io/{VIDEO_ID}/master.m3u8
+                    // Use this stable player-level URL first. Kinescope then resolves
+                    // the short-lived CDN URL (expires/sign) itself instead of us
+                    // scraping a transient signed URL from the iframe HTML.
+                    val kinescopeStream = kinescopeVideoId?.let {
+                        "https://kinescope.io/$it/master.m3u8"
+                    } ?: extractKinescopeHls(playerHtml)
                         ?: directLinks(
                             playerHtml
                                 .replace("\\u0026", "&")
                                 .replace("\\/","/")
                         ).firstOrNull { it.contains(".m3u8", true) }
-                        ?: kinescopeVideoId?.let {
-                            "https://kinescope.io/$it/master.m3u8"
-                        }
 
                     if (kinescopeStream != null) {
                         found = true
@@ -565,7 +569,8 @@ class HintFilmIzle : MainAPI() {
                             headers = mapOf(
                                 "Referer" to playerReferer,
                                 "Origin" to playerOrigin,
-                                "Accept" to "*/*"
+                                "Accept" to "*/*",
+                                "User-Agent" to "Mozilla/5.0"
                             )
                             quality = getQualityFromName(kinescopeStream)
                         })
