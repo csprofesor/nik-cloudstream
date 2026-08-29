@@ -436,10 +436,34 @@ class HintFilmIzle : MainAPI() {
             return v
         }
 
-        val playerOptions = Regex(
-            """var\s+playerOptions\s*=\s*(\{.*?\});\s*""",
-            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
-        ).find(normalized)?.groupValues?.getOrNull(1)
+        fun balancedObject(source: String, start: Int): String? {
+            var depth = 0
+            var quote: Char? = null
+            var escaped = false
+            for (i in start until source.length) {
+                val c = source[i]
+                if (quote != null) {
+                    if (escaped) escaped = false
+                    else if (c == '\\') escaped = true
+                    else if (c == quote) quote = null
+                    continue
+                }
+                if (c == '"' || c == '\'') {
+                    quote = c
+                    continue
+                }
+                if (c == '{') depth++
+                else if (c == '}') {
+                    depth--
+                    if (depth == 0) return source.substring(start, i + 1)
+                }
+            }
+            return null
+        }
+
+        val optionsMatch = Regex("""playerOptions\s*=\s*\{""", RegexOption.IGNORE_CASE)
+            .find(normalized)
+        val playerOptions = optionsMatch?.range?.last?.let { balancedObject(normalized, it) }
 
         val sourcePatterns = listOf(
             Regex("""["']hls["']\s*:\s*\{\s*["']src["']\s*:\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
@@ -489,8 +513,8 @@ class HintFilmIzle : MainAPI() {
             val manifest = extractKinescopeSignedHls(response.text) ?: return false
 
             val origin = runCatching {
-                URI(iframeUrl).let { uri -> "$" + "{uri.scheme}://" + "$" + "{uri.host}" }
-            }.getOrDefault(iframeUrl.substringBefore("/", iframeUrl))
+                URI(iframeUrl).let { uri -> "${uri.scheme}://${uri.host}" }
+            }.getOrDefault(iframeUrl)
 
             val headers = mapOf(
                 "Referer" to iframeUrl,
