@@ -40,7 +40,7 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=894c02422adb",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=c6aee7bc1842",
     "status": 1,
     "version": 1,
     "name": "Anizm",
@@ -631,7 +631,7 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=894c02422adb",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=c6aee7bc1842",
     "status": 1,
     "version": 1,
     "name": "HintFilmİzle",
@@ -640,7 +640,7 @@
       "csprofesor"
     ],
     "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-    "fileSize": 32562,
+    "fileSize": 32696,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -649,7 +649,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-cd0cc9b6db6e695d74486cf3b9157e7ba7b69adc86903310796d35806f20b870"
+    "fileHash": "sha256-d584aa2653f320ec8aa5120ae15b68bf543ac46a6fd393ba60531f7d106de8d4"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3",
