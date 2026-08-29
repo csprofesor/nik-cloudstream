@@ -381,7 +381,7 @@ class HintFilmIzle : MainAPI() {
             """https?://[^"\s<>]+?\.m3u8(?:\?[^"\s<>]*)?""",
             RegexOption.IGNORE_CASE
         ).findAll(normalized)
-            .map { it.value.trimEnd('\\', '"' , '\\'', ')', ']') }
+            .map { it.value.trimEnd('"', ')', ']') }
             .map { it.replace("&amp;", "&") }
             .mapNotNull { cleanUrl(it) }
             .distinct()
