@@ -716,7 +716,12 @@ class HintFilmIzle : MainAPI() {
                                 // Chrome'un cross-origin HLS isteğinde görülen model:
                                 // Origin = iframe origin, Referer = iframe origin.
                                 "Origin" to playerOrigin.removeSuffix("/"),
-                                "Referer" to "$playerOrigin/"
+                                "Referer" to "$playerOrigin/",
+                                // Browser trace shows a normal Chrome UA on the actual
+                                // Kinescope media requests. ExoPlayer's default UA can be
+                                // rejected by the CDN even when the signed URL is valid.
+                                "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+                                "Accept" to "*/*"
                             )
                             quality = getQualityFromName(kinescopeStream)
                         })
