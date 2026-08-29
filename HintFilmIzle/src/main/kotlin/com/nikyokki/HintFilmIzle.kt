@@ -26,6 +26,7 @@ import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 import java.net.URI
+import java.net.URLDecoder
 
 class HintFilmIzle : MainAPI() {
     override var mainUrl = "https://www.hintfilmizle.com"
@@ -373,23 +374,48 @@ class HintFilmIzle : MainAPI() {
             Regex("""["']contentUrl["']\s*:\s*["']([^"']+\.m3u8[^"']*)""", RegexOption.IGNORE_CASE)
         )
 
-        val embeddedManifest = listOf(
-            Regex(
-                """https?:\/\/[^"'\s<>]+(?:master|media)\.m3u8(?:\?[^"'\s<>]*)?""",
-                RegexOption.IGNORE_CASE
-            ),
-            Regex(
-                """https?%3A%2F%2F[^"'\s<>]+(?:master|media)%2Em3u8(?:%3F[^"'\s<>]*)?""",
-                RegexOption.IGNORE_CASE
-            )
-        ).asSequence()
-            .mapNotNull { it.find(normalized)?.value }
-            .map { it.replace("\\/", "/") }
+        // Kinescope bazen master.m3u8 yerine imzali CDN manifesti verir:
+        // /hls/.../<file>.mp4/index.m3u8?expires=...&sign=...
+        // Bu nedenle yalnızca master/media aramak yeterli degil.
+        val manifestCandidates = Regex(
+            """https?://[^"\\s<>]+?\\.m3u8(?:\\?[^"\\s<>]*)?""",
+            RegexOption.IGNORE_CASE
+        ).findAll(normalized)
+            .map { it.value.trimEnd('\\', '"' , '\\'', ')', ']') }
             .map { it.replace("&amp;", "&") }
             .mapNotNull { cleanUrl(it) }
-            .firstOrNull()
+            .distinct()
+            .toList()
 
-        return embeddedManifest
+        val encodedManifestCandidates = Regex(
+            """https?%3A%2F%2F[^"\\s<>]+?%2Em3u8(?:%3F[^"\\s<>]*)?""",
+            RegexOption.IGNORE_CASE
+        ).findAll(normalized)
+            .mapNotNull { match ->
+                runCatching { URLDecoder.decode(match.value, "UTF-8") }.getOrNull()
+            }
+            .map { it.replace("&amp;", "&") }
+            .mapNotNull { cleanUrl(it) }
+            .distinct()
+            .toList()
+
+        val allCandidates = (manifestCandidates + encodedManifestCandidates).distinct()
+
+        // Once on the browser Network tab, the working address is the signed CDN
+        // manifest. Prefer it over an unsigned fallback URL.
+        val signedCdn = allCandidates.firstOrNull {
+            it.contains("kinescopecdn.net", true) &&
+                it.contains("expires=", true) &&
+                it.contains("sign=", true)
+        }
+
+        val anyCdnManifest = allCandidates.firstOrNull {
+            it.contains("kinescopecdn.net", true)
+        }
+
+        return signedCdn
+            ?: anyCdnManifest
+            ?: allCandidates.firstOrNull()
             ?: patterns.asSequence()
                 .mapNotNull { it.find(normalized)?.groupValues?.getOrNull(1) }
                 .mapNotNull { cleanUrl(it) }
