@@ -39,18 +39,24 @@ class HintFilmIzle : MainAPI() {
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "$mainUrl/film" to "Son Filmler",
-        "$mainUrl/film?order=DESC&orderby=date" to "Yeni Eklenenler",
+        "$mainUrl/film?order=DESC&orderby=date" to "Yeni Filmler",
         "$mainUrl/trendler" to "Trendler",
+
+        // Türler — Korku ve genel "Film" kategorisi özellikle listede yok.
+        "$mainUrl/tur/aile-filmleri" to "Aile",
         "$mainUrl/tur/aksiyon-filmleri" to "Aksiyon",
+        "$mainUrl/tur/animasyon-filmleri" to "Animasyon",
+        "$mainUrl/tur/bilim-kurgu-filmleri" to "Bilim Kurgu",
         "$mainUrl/tur/dram-filmleri" to "Dram",
+        "$mainUrl/tur/fantastik-filmleri" to "Fantastik",
         "$mainUrl/tur/komedi-filmleri" to "Komedi",
-        "$mainUrl/tur/korku-filmleri" to "Korku",
         "$mainUrl/tur/macera-filmleri" to "Macera",
         "$mainUrl/tur/romantik-filmleri" to "Romantik",
         "$mainUrl/tur/savas-filmleri" to "Savaş",
         "$mainUrl/tur/suc-filmleri" to "Suç",
         "$mainUrl/tur/tarih-filmleri" to "Tarih",
+        "$mainUrl/tur/gerilim-filmleri" to "Gerilim",
+
         "$mainUrl/netflix-izle" to "Netflix"
     )
 
