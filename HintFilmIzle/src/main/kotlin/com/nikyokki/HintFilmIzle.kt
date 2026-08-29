@@ -699,10 +699,17 @@ class HintFilmIzle : MainAPI() {
                             // Origin is the origin of that embed document.
                             referer = player
                             headers = mapOf(
+                                // These are the request-context headers used by the browser
+                                // when the Kinescope iframe asks its CDN for HLS.
                                 "Referer" to player,
                                 "Origin" to playerOrigin,
+                                "Sec-Fetch-Site" to "cross-site",
+                                "Sec-Fetch-Mode" to "cors",
+                                "Sec-Fetch-Dest" to "empty",
                                 "Accept" to "application/vnd.apple.mpegurl, application/x-mpegURL, */*",
-                                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 Chrome/131.0.0.0 Mobile Safari/537.36"
+                                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+                                "User-Agent" to "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                                "Cache-Control" to "no-cache"
                             )
                             quality = getQualityFromName(kinescopeStream)
                         })
