@@ -420,7 +420,6 @@ class HintFilmIzle : MainAPI() {
             .replace("\\u0026", "&")
             .replace("\\u003F", "?")
             .replace("\\/", "/")
-            .replace("\\"", """)
             .replace("&amp;", "&")
 
         fun decode(value: String): String {
