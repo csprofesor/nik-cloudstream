@@ -416,6 +416,31 @@ class HintFilmIzle : MainAPI() {
             "filelions", "vidsrc", "embed", "player", "kinescope"
         ).any { url.contains(it, true) }
 
+    /*
+     * Kinescope'da HLS manifesti ile gerçek medya CDN'i farklı hostlarda
+     * çalışabiliyor. Tarayıcı örneğinde:
+     *
+     *   embed/document : river-3-329.kinescopecdn.net
+     *   manifest       : river-1-2125.kinescopecdn.net
+     *   segments       : vbx-25.kinescopecdn.net
+     *
+     * CDN, medya isteğinde iframe origin'ini Origin ve Referer olarak görüyor.
+     * Origin'i manifest hostundan türetmiyoruz; iframe URL'sinden alıyoruz.
+     * Aynı header'lar manifestten sonraki HLS isteklerine de taşınır.
+     */
+    private fun kinescopeRequestHeaders(embedUrl: String): Map<String, String> {
+        val origin = runCatching {
+            URI(embedUrl).let { "${it.scheme}://${it.host}" }
+        }.getOrDefault("https://kinescope.io")
+
+        return mapOf(
+            "Origin" to origin,
+            "Referer" to "$origin/",
+            "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+            "Accept" to "*/*"
+        )
+    }
+
 
 
     private fun extractKinescopeHls(html: String): String? {
@@ -639,14 +664,6 @@ class HintFilmIzle : MainAPI() {
                     // Kinescope CDN embeds used by HintFilmIzle can contain a
                     // project/player segment before the actual video embed:
                     // /embed/{project}/embed/{videoId}. Always take the LAST /embed/.
-                    val kinescopeVideoId = Regex(
-                        """/embed/([^/?#]+)/embed/([^/?#]+)""",
-                        RegexOption.IGNORE_CASE
-                    ).find(player)?.groupValues?.getOrNull(2)
-                        ?: Regex(
-                            """/embed/([^/?#]+)""",
-                            RegexOption.IGNORE_CASE
-                        ).findAll(player).lastOrNull()?.groupValues?.getOrNull(1)
                     // Prefer the exact signed manifest produced by the embed/player.
                     // The expires/sign/token values are short-lived, so do not synthesize
                     // or cache them. Only use the public /master.m3u8 fallback when the
@@ -684,6 +701,8 @@ class HintFilmIzle : MainAPI() {
                             URI(player).let { "${it.scheme}://${it.host}" }
                         }.getOrDefault("https://kinescope.io")
 
+                        val kinescopeHeaders = kinescopeRequestHeaders(player)
+
                         // Chrome uses strict-origin-when-cross-origin here. The
                         // cross-origin request therefore normally carries the iframe
                         // origin as Referer, not the complete signed embed URL. Also,
@@ -710,19 +729,7 @@ class HintFilmIzle : MainAPI() {
                              * its child segment requests.
                              */
                             referer = "$playerOrigin/"
-                            headers = mapOf(
-                                // Kinescope CDN medya isteklerinde embed iframe'in
-                                // Origin ve Referer bağlamını kontrol edebiliyor.
-                                // Chrome'un cross-origin HLS isteğinde görülen model:
-                                // Origin = iframe origin, Referer = iframe origin.
-                                "Origin" to playerOrigin.removeSuffix("/"),
-                                "Referer" to "$playerOrigin/",
-                                // Browser trace shows a normal Chrome UA on the actual
-                                // Kinescope media requests. ExoPlayer's default UA can be
-                                // rejected by the CDN even when the signed URL is valid.
-                                "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
-                                "Accept" to "*/*"
-                            )
+                            headers = kinescopeHeaders
                             quality = getQualityFromName(kinescopeStream)
                         })
                     }
@@ -755,13 +762,23 @@ class HintFilmIzle : MainAPI() {
                 val nestedHtml = nested?.html().orEmpty()
                 for (stream in directLinks(nestedHtml)) {
                     found = true
+                    val isKinescopeStream = stream.contains("kinescopecdn.net", true)
                     callback(newExtractorLink(
                         source = name,
-                        name = "HintFilmİzle Direct",
+                        name = if (isKinescopeStream) "HintFilmİzle Kinescope" else "HintFilmİzle Direct",
                         url = stream,
                         type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                     ) {
-                        referer = player
+                        referer = if (isKinescopeStream) {
+                            runCatching {
+                                URI(player).let { "${it.scheme}://${it.host}/" }
+                            }.getOrDefault(player)
+                        } else {
+                            player
+                        }
+                        if (isKinescopeStream) {
+                            headers = kinescopeRequestHeaders(player)
+                        }
                         quality = getQualityFromName(stream)
                     })
                 }
