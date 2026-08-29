@@ -415,6 +415,55 @@ class HintFilmIzle : MainAPI() {
             .any { url.contains(it, true) }
 
 
+    private fun extractKinescopeSignedHls(html: String): String? {
+        val normalized = html
+            .replace("\\u0026", "&")
+            .replace("\\u003F", "?")
+            .replace("\\/", "/")
+            .replace("\\"", """)
+            .replace("&amp;", "&")
+
+        fun decode(value: String): String {
+            var v = value.trim()
+                .replace("\\u0026", "&")
+                .replace("\\u003F", "?")
+                .replace("\\/", "/")
+                .replace("&amp;", "&")
+            if (v.contains("\\u")) {
+                v = Regex("""\\u([0-9a-fA-F]{4})""").replace(v) {
+                    it.groupValues[1].toInt(16).toChar().toString()
+                }
+            }
+            return v
+        }
+
+        val scoped = Regex(
+            """var\\s+playerOptions\\s*=\\s*(\\{.*?\\});""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(normalized)?.groupValues?.getOrNull(1) ?: normalized
+
+        val patterns = listOf(
+            Regex("""["']hls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
+            Regex("""["']shakahls["']\\s*:\\s*\\{\\s*["']src["']\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
+            Regex("""\\bhls\\s*:\\s*\\{\\s*src\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE),
+            Regex("""\\bshakahls\\s*:\\s*\\{\\s*src\\s*:\\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+        )
+
+        return patterns.asSequence()
+            .flatMap { it.findAll(scoped).asSequence() }
+            .mapNotNull { it.groupValues.getOrNull(1) }
+            .map { decode(it) }
+            .firstOrNull { it.contains(".m3u8", true) && it.contains("kinescopecdn.net", true) }
+    }
+
+    private fun kinescopeOrigin(html: String, fallback: String): String {
+        val candidate = Regex(
+            """https?://(?:river|edge)-[a-z0-9-]+\\.kinescopecdn\\.net/?""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.value?.trimEnd('/') ?: fallback
+        return candidate
+    }
+
     private suspend fun loadKinescope(
         iframeUrl: String,
         parentUrl: String,
@@ -422,95 +471,33 @@ class HintFilmIzle : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return runCatching {
-            /*
-             * Kinescope'da oynatılabilir URL sabit değildir. Browser önce
-             * river-*-kinescopecdn.net üzerinde player'ı çalıştırıyor, sonra
-             * imzalı index.m3u8 isteğini oluşturuyor ve segmentler başka bir
-             * vbx-*-kinescopecdn.net hostundan geliyor.
-             *
-             * Bu yüzden URL üretmiyoruz. WebView gerçek isteği yakalıyor.
-             */
-            val resolver = WebViewResolver(
-                interceptUrl = Regex(
-                    """https?://[^/]*kinescopecdn\.net/hls/.*\.m3u8(?:\\?.*)?$""",
-                    RegexOption.IGNORE_CASE
-                ),
-                additionalUrls = listOf(
-                    Regex("""kinescopecdn\.net/hls/.*\.m3u8""", RegexOption.IGNORE_CASE)
-                ),
-                userAgent = null,
-                useOkhttp = false,
-                timeout = 90_000L
-            )
-
-            val (finalRequest, requests) = resolver.resolveUsingWebView(
-                url = iframeUrl,
+            val response = app.get(
+                iframeUrl,
                 referer = parentUrl,
                 headers = mapOf(
-                    "Referer" to parentUrl,
+                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
                 )
             )
 
-            /*
-             * Bazı CloudStream sürümlerinde finalRequest yerine yakalanan
-             * request listesinde manifest bulunuyor. İkisini de kontrol ediyoruz.
-             */
-            val request = finalRequest?.takeIf {
-                it.url.toString().contains(".m3u8", true)
-            } ?: requests.asSequence()
-                .filter { it.url.toString().contains(".m3u8", true) }
-                .lastOrNull()
-                ?: return false
+            val html = response.text
+            val manifest = extractKinescopeSignedHls(html) ?: return false
 
-            val manifestUrl = request.url.toString()
-            if (!manifestUrl.contains("kinescopecdn.net", true)) return false
+            val origin = kinescopeOrigin(html, iframeUrl)
+            val referer = "$origin/"
 
-            val headers = request.headers.toMap()
-                .filterKeys {
-                    !it.equals("Host", true) &&
-                    !it.equals("Connection", true) &&
-                    !it.equals("Content-Length", true)
-                }
-                .toMutableMap()
-
-            /*
-             * Chrome çıktındaki kritik değerler:
-             *
-             * manifest host  = river-1-2125.kinescopecdn.net
-             * Origin         = river-3-329.kinescopecdn.net
-             * Referer        = https://river-3-329.kinescopecdn.net/
-             *
-             * Origin'i manifest hostundan türetmiyoruz. WebView'dan gelen
-             * gerçek Origin/Referer değerini aynen koruyoruz.
-             */
-            val origin = headers.entries
-                .firstOrNull { it.key.equals("Origin", true) }
-                ?.value
-                ?.takeIf { it.isNotBlank() }
-
-            val actualReferer = headers.entries
-                .firstOrNull { it.key.equals("Referer", true) }
-                ?.value
-                ?.takeIf { it.isNotBlank() }
-
-            if (origin != null) headers["Origin"] = origin
-            headers["Referer"] = actualReferer ?: iframeUrl
-
-            if (headers.keys.none { it.equals("User-Agent", true) }) {
-                headers["User-Agent"] =
-                    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
-            }
-
-            if (headers.keys.none { it.equals("Accept", true) }) {
-                headers["Accept"] = "*/*"
-            }
+            val headers = mapOf(
+                "Origin" to origin,
+                "Referer" to referer,
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "*/*"
+            )
 
             val links = M3u8Helper.generateM3u8(
                 source = name,
-                streamUrl = manifestUrl,
-                referer = headers["Referer"] ?: iframeUrl,
+                streamUrl = manifest,
+                referer = referer,
                 headers = headers,
                 name = "HintFilmİzle Kinescope"
             )
