@@ -11,6 +11,7 @@ import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
 import com.lagradost.cloudstream3.newEpisode
@@ -21,6 +22,7 @@ import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
@@ -413,6 +415,62 @@ class HintFilmIzle : MainAPI() {
             .any { url.contains(it, true) }
 
 
+    private suspend fun loadKinescope(
+        playerUrl: String,
+        parentUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        return runCatching {
+            // Kinescope'nin imzalı HLS adresini HTTP ile tahmin etmiyoruz.
+            // WebView gerçek tarayıcı isteğini üretir; böylece kısa ömürlü
+            // sign/expires parametreleri, cookie ve gerçek request header'ları korunur.
+            val resolver = WebViewResolver(
+                interceptUrl = Regex("\\\\.m3u8(?:\\\\?|$)", RegexOption.IGNORE_CASE),
+                additionalUrls = listOf(
+                    Regex("kinescopecdn\\\\.net", RegexOption.IGNORE_CASE),
+                    Regex("kinescope\\\\.io", RegexOption.IGNORE_CASE)
+                ),
+                userAgent = null,
+                useOkhttp = false,
+                timeout = 45_000L
+            )
+
+            val (finalRequest, requests) = resolver.resolveUsingWebView(
+                url = playerUrl,
+                referer = parentUrl,
+                headers = mapOf(
+                    "Referer" to parentUrl,
+                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                )
+            )
+
+            val request = finalRequest
+                ?: requests.firstOrNull { it.url.toString().contains(".m3u8", true) }
+                ?: return false
+
+            val manifestUrl = request.url.toString()
+            if (!manifestUrl.contains(".m3u8", true)) return false
+
+            val headers = request.headers.toMap().toMutableMap()
+            if (headers.keys.none { it.equals("Referer", true) }) {
+                headers["Referer"] = playerUrl
+            }
+
+            val links = M3u8Helper.generateM3u8(
+                source = name,
+                streamUrl = manifestUrl,
+                referer = playerUrl,
+                headers = headers,
+                name = "HintFilmİzle Kinescope"
+            )
+
+            if (links.isEmpty()) return false
+            links.forEach(callback)
+            true
+        }.getOrDefault(false)
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -568,6 +626,19 @@ class HintFilmIzle : MainAPI() {
         }
 
         for (player in playerUrls) {
+            // Kinescope ve HintFilmİzle'nin player ara katmanı için önce gerçek
+            // tarayıcı akışını yakala. loadExtractor ile doğrudan açmak, signed
+            // HLS isteğini kaybettiğinde 422/Source Error üretebiliyor.
+            val isKinescope = player.contains("kinescope", true) ||
+                player.contains("player.hintfilmizle.com", true)
+
+            if (isKinescope) {
+                val resolved = loadKinescope(player, data, subtitleCallback, callback)
+                if (resolved) found = true
+            }
+
+            // WebView başarısızsa diğer sağlayıcılar için normal extractor yolunu
+            // koru. Kinescope'ta da nested iframe varsa ikinci şans olarak devam eder.
             val loaded = runCatching {
                 loadExtractor(
                     url = player,
