@@ -524,16 +524,22 @@ class HintFilmIzle : MainAPI() {
                             URI(player).let { "${it.scheme}://${it.host}" }
                         }.getOrDefault("https://kinescope.io")
 
+                        // Kinescope CDN validates the signed manifest together with
+                        // the embed Origin/Referer. Match the browser request exactly
+                        // and let the same headers flow into HLS segment requests.
+                        val playerReferer = "$playerOrigin/"
+
                         callback(newExtractorLink(
                             source = name,
                             name = "HintFilmİzle Kinescope",
                             url = kinescopeStream,
                             type = ExtractorLinkType.M3U8
                         ) {
-                            referer = player
+                            referer = playerReferer
                             headers = mapOf(
-                                "Referer" to player,
-                                "Origin" to playerOrigin
+                                "Referer" to playerReferer,
+                                "Origin" to playerOrigin,
+                                "Accept" to "*/*"
                             )
                             quality = getQualityFromName(kinescopeStream)
                         })
