@@ -412,16 +412,6 @@ class HintFilmIzle : MainAPI() {
         listOf("youtube.com", "youtu.be", "youtube-nocookie.com")
             .any { url.contains(it, true) }
 
-    private fun isKnownPlayer(url: String): Boolean =
-        listOf(
-            "vidmoly", "vidhide", "streamtape", "voe.sx", "voe.to",
-            "ok.ru", "dood", "filemoon", "mixdrop", "streamwish",
-            "filelions", "vidsrc", "embed", "player", "kinescope"
-        ).any { url.contains(it, true) }
-
-    private fun isHintFilmPlayer(url: String): Boolean = runCatching {
-        URI(url).host.equals("player.hintfilmizle.com", true)
-    }.getOrDefault(false)
 
     override suspend fun loadLinks(
         data: String,
