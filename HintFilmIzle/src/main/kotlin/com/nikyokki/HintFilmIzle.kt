@@ -548,7 +548,7 @@ class HintFilmIzle : MainAPI() {
              *   Origin:  https://river-3-329.kinescopecdn.net
              *   Referer: https://river-3-329.kinescopecdn.net/
              *   User-Agent: browser UA
-             *   Accept: */*
+             *   Accept: any
              *
              * The segment CDN may be a different host (vbx-*.kinescopecdn.net),
              * but Kinescope expects the iframe CDN origin to remain the Origin.
