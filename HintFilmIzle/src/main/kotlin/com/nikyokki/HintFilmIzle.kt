@@ -679,6 +679,7 @@ class HintFilmIzle : MainAPI() {
             "button[data-video], button[data-player], [onclick], [data-url], " +
             "[data-embed], [data-frame], [data-video], [data-player]"
         ).forEach { element ->
+            Log.d("HintFilmIzle", "ELEMENT tag=" + element.tagName() + " class=" + element.className() + " id=" + element.id())
             listOf(
                 element.attr("href"),
                 element.attr("src"),
