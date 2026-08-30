@@ -500,34 +500,73 @@ class HintFilmIzle : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         return runCatching {
-            val response = app.get(
-                iframeUrl,
+            /*
+             * Kinescope's current player builds the signed HLS URL in the
+             * browser. We therefore resolve the iframe with WebView first.
+             *
+             * IMPORTANT: do NOT copy every Chrome header into ExoPlayer.
+             * Headers such as Host, Connection, Accept-Encoding, sec-fetch-*,
+             * and sec-ch-* are browser/transport headers and can break the
+             * native HLS request. Keep only the headers Kinescope actually
+             * uses for the CDN authorization context.
+             */
+            val resolver = WebViewResolver(
+                interceptUrl = Regex("""\.m3u8(?:\?|$)""", RegexOption.IGNORE_CASE),
+                additionalUrls = listOf(
+                    Regex("""kinescopecdn\.net/hls/""", RegexOption.IGNORE_CASE)
+                ),
+                userAgent = null,
+                useOkhttp = false,
+                timeout = 45_000L
+            )
+
+            val (request, _) = resolver.resolveUsingWebView(
+                url = iframeUrl,
                 referer = parentUrl,
                 headers = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Referer" to parentUrl,
                     "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
                 )
             )
 
-            val manifest = extractKinescopeSignedHls(response.text) ?: return false
+            val manifestRequest = request ?: return false
+            val manifestUrl = manifestRequest.url.toString()
+            if (!manifestUrl.contains(".m3u8", true)) return false
 
             val origin = runCatching {
-                URI(iframeUrl).let { uri -> "${uri.scheme}://${uri.host}" }
+                URI(iframeUrl).let { "${it.scheme}://${it.host}" }
             }.getOrDefault(iframeUrl)
 
-            val headers = mapOf(
-                "Referer" to iframeUrl,
-                "Origin" to origin,
-                "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                "Accept" to "*/*"
-            )
+            val captured = manifestRequest.headers
+            fun capturedHeader(name: String): String? =
+                captured.entries.firstOrNull { it.key.equals(name, true) }?.value
+                    ?.takeIf { it.isNotBlank() }
+
+            /*
+             * Match the browser's useful Kinescope context:
+             *
+             *   Origin:  https://river-3-329.kinescopecdn.net
+             *   Referer: https://river-3-329.kinescopecdn.net/
+             *   User-Agent: browser UA
+             *   Accept: */*
+             *
+             * The segment CDN may be a different host (vbx-*.kinescopecdn.net),
+             * but Kinescope expects the iframe CDN origin to remain the Origin.
+             */
+            val hlsHeaders = linkedMapOf<String, String>()
+            hlsHeaders["Origin"] = capturedHeader("Origin") ?: origin
+            hlsHeaders["Referer"] = capturedHeader("Referer")
+                ?: iframeUrl.substringBefore("?").trimEnd('/') + "/"
+            hlsHeaders["User-Agent"] = capturedHeader("User-Agent")
+                ?: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+            hlsHeaders["Accept"] = "*/*"
+            capturedHeader("Accept-Language")?.let { hlsHeaders["Accept-Language"] = it }
 
             val links = M3u8Helper.generateM3u8(
                 source = name,
-                streamUrl = manifest,
-                referer = iframeUrl,
-                headers = headers,
+                streamUrl = manifestUrl,
+                referer = hlsHeaders["Referer"] ?: iframeUrl,
+                headers = hlsHeaders,
                 name = "HintFilmİzle Kinescope"
             )
 
