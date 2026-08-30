@@ -580,11 +580,27 @@ class HintFilmIzle : MainAPI() {
                             "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                             "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
                     )
+
+                    // This path used to return the signed URL immediately, which
+                    // bypassed the Kinescope decoder entirely. Fetch the manifest
+                    // first: current Kinescope returns an encrypted {p:...} envelope.
+                    val decoded = runCatching {
+                        app.get(
+                            signedManifest,
+                            referer = iframeUrl,
+                            headers = manifestHeaders
+                        ).text
+                    }.getOrNull()?.let(::decodeKinescopeManifestResponse)
+
+                    val playableUrl = decoded
+                        ?.let { extractKinescopeVariant(it, signedManifest) }
+                        ?: signedManifest
+
                     callback(
                         newExtractorLink(
                             source = name,
                             name = "HintFilmİzle Kinescope",
-                            url = signedManifest,
+                            url = playableUrl,
                             type = ExtractorLinkType.M3U8
                         ) {
                             referer = iframeUrl
