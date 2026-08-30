@@ -386,7 +386,7 @@ class HintFilmIzle : MainAPI() {
 
     private fun directLinks(html: String): List<String> {
         val regex = Regex(
-            """https?://[^"'\\s<>]+(?:\\.(?:m3u8|mp4)(?:\\?[^"'\\s<>]*)?|/manifest(?:\\?[^"'\\s<>]*)?)""",
+            """https?://[^"'\\s<>]+?\.(?:m3u8|mp4)(?:\?[^"'\\s<>]*)?""",
             RegexOption.IGNORE_CASE
         )
         return regex.findAll(html)
