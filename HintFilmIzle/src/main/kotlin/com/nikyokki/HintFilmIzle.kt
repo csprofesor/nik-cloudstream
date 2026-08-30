@@ -1,6 +1,7 @@
 package com.nikyokki
 
 import android.util.Log
+import android.util.Base64
 
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
@@ -495,6 +496,55 @@ class HintFilmIzle : MainAPI() {
             .firstOrNull { it.contains("expires=", true) && it.contains("sign=", true) }
     }
 
+    private companion object {
+        const val KINESCOPE_DECODER_KEY = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA"
+    }
+
+    private fun decodeKinescopeManifestResponse(response: String): String? {
+        val body = response.trim()
+        if (!body.startsWith("{") || !body.contains("\"p\"")) {
+            return body.takeIf { it.startsWith("#EXTM3U") }
+        }
+
+        val p = Regex("""\"p\"\s*:\s*\"([^\"]+)\"""")
+            .find(body)?.groupValues?.getOrNull(1) ?: return null
+
+        return runCatching {
+            val encrypted = Base64.decode(p.reversed(), Base64.DEFAULT)
+            val key = KINESCOPE_DECODER_KEY.toByteArray(Charsets.UTF_8)
+            val decoded = ByteArray(encrypted.size) { i ->
+                (encrypted[i].toInt() and 0xff xor
+                    (key[i % key.size].toInt() and 0xff)).toByte()
+            }
+            String(decoded, Charsets.UTF_8).trim()
+        }.getOrNull()
+    }
+
+    private fun extractKinescopeVariant(playlist: String, baseUrl: String): String? {
+        if (!playlist.contains("#EXTM3U")) return null
+
+        val lines = playlist.lines()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+
+        val variantIndex = lines.indexOfFirst {
+            it.startsWith("#EXT-X-STREAM-INF", true)
+        }
+        if (variantIndex < 0) return null
+
+        val uri = lines.drop(variantIndex + 1)
+            .firstOrNull { !it.startsWith("#") }
+            ?: return null
+
+        return runCatching {
+            when {
+                uri.startsWith("http://", true) || uri.startsWith("https://", true) -> uri
+                uri.startsWith("//") -> "https:$uri"
+                else -> URI(baseUrl).resolve(uri).toString()
+            }
+        }.getOrNull()
+    }
+
     private suspend fun loadKinescope(
         iframeUrl: String,
         parentUrl: String,
@@ -569,6 +619,18 @@ class HintFilmIzle : MainAPI() {
             val manifestUrl = manifestRequest.url.toString()
             if (!manifestUrl.contains(".m3u8", true)) return false
 
+            val decodedManifest = runCatching {
+                app.get(
+                    manifestUrl,
+                    referer = iframeUrl,
+                    headers = manifestRequest.headers
+                ).text
+            }.getOrNull()?.let(::decodeKinescopeManifestResponse)
+
+            val nativeManifestUrl = decodedManifest
+                ?.let { extractKinescopeVariant(it, manifestUrl) }
+                ?: manifestUrl
+
             val captured = manifestRequest.headers
             fun capturedHeader(name: String): String? =
                 captured[name]?.takeIf { it.isNotBlank() }
@@ -608,7 +670,7 @@ class HintFilmIzle : MainAPI() {
                 newExtractorLink(
                     source = name,
                     name = "HintFilmİzle Kinescope",
-                    url = manifestUrl,
+                    url = nativeManifestUrl,
                     type = ExtractorLinkType.M3U8
                 ) {
                     referer = hlsHeaders["Referer"] ?: iframeUrl
