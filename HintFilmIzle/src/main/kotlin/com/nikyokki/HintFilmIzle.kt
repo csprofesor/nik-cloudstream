@@ -623,7 +623,7 @@ class HintFilmIzle : MainAPI() {
                 app.get(
                     manifestUrl,
                     referer = iframeUrl,
-                    headers = manifestRequest.headers
+                    headers = mapOf("Referer" to iframeUrl)
                 ).text
             }.getOrNull()?.let(::decodeKinescopeManifestResponse)
 
