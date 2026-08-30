@@ -501,14 +501,10 @@ class HintFilmIzle : MainAPI() {
     ): Boolean {
         return runCatching {
             /*
-             * Kinescope's current player builds the signed HLS URL in the
-             * browser. We therefore resolve the iframe with WebView first.
-             *
-             * IMPORTANT: do NOT copy every Chrome header into ExoPlayer.
-             * Headers such as Host, Connection, Accept-Encoding, sec-fetch-*,
-             * and sec-ch-* are browser/transport headers and can break the
-             * native HLS request. Keep only the headers Kinescope actually
-             * uses for the CDN authorization context.
+             * Resolve Kinescope in a browser and capture the signed HLS URL.
+             * The working Kinescope clients pass the signed manifest onward and
+             * use the embed URL as the Referer; they do not force the browser's
+             * Origin header onto native HLS requests.
              */
             val resolver = WebViewResolver(
                 interceptUrl = Regex("""\.m3u8(?:\?|$)""", RegexOption.IGNORE_CASE),
@@ -533,34 +529,29 @@ class HintFilmIzle : MainAPI() {
             val manifestUrl = manifestRequest.url.toString()
             if (!manifestUrl.contains(".m3u8", true)) return false
 
-            val origin = runCatching {
-                URI(iframeUrl).let { "${it.scheme}://${it.host}" }
-            }.getOrDefault(iframeUrl)
-
             val captured = manifestRequest.headers
             fun capturedHeader(name: String): String? =
                 captured.entries.firstOrNull { it.key.equals(name, true) }?.value
                     ?.takeIf { it.isNotBlank() }
 
-            /*
-             * Match the browser's useful Kinescope context:
-             *
-             *   Origin:  https://river-3-329.kinescopecdn.net
-             *   Referer: https://river-3-329.kinescopecdn.net/
-             *   User-Agent: browser UA
-             *   Accept: any
-             *
-             * The segment CDN may be a different host (vbx-*.kinescopecdn.net),
-             * but Kinescope expects the iframe CDN origin to remain the Origin.
-             */
-            val hlsHeaders = linkedMapOf<String, String>()
-            hlsHeaders["Origin"] = capturedHeader("Origin") ?: origin
-            hlsHeaders["Referer"] = capturedHeader("Referer")
-                ?: iframeUrl.substringBefore("?").trimEnd('/') + "/"
-            hlsHeaders["User-Agent"] = capturedHeader("User-Agent")
+            val userAgent = capturedHeader("User-Agent")
                 ?: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
-            hlsHeaders["Accept"] = "*/*"
-            capturedHeader("Accept-Language")?.let { hlsHeaders["Accept-Language"] = it }
+
+            /*
+             * Keep the native HLS request deliberately small. In particular,
+             * don't send Origin: the browser sends it because the request is
+             * CORS/fetch traffic; ExoPlayer is not making a browser CORS
+             * request. The signed URL + Referer are the relevant inputs.
+             */
+            val hlsHeaders = linkedMapOf<String, String>(
+                "Referer" to (capturedHeader("Referer")
+                    ?: iframeUrl.substringBefore("?").trimEnd('/') + "/"),
+                "User-Agent" to userAgent
+            )
+
+            capturedHeader("Accept-Language")?.let {
+                hlsHeaders["Accept-Language"] = it
+            }
 
             val links = M3u8Helper.generateM3u8(
                 source = name,
