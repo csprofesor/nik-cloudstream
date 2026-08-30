@@ -506,6 +506,44 @@ class HintFilmIzle : MainAPI() {
              * use the embed URL as the Referer; they do not force the browser's
              * Origin header onto native HLS requests.
              */
+            // First inspect the player HTML itself. Kinescope can expose the
+            // signed HLS manifest in playerOptions before the browser makes the
+            // actual playlist request. Prefer that exact signed URL when present.
+            val iframeHtml = runCatching {
+                app.get(
+                    iframeUrl,
+                    referer = parentUrl,
+                    headers = mapOf(
+                        "Referer" to parentUrl,
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )
+                ).text
+            }.getOrNull()
+
+            iframeHtml?.let { html ->
+                extractKinescopeSignedHls(html)?.let { signedManifest ->
+                    val manifestHeaders = linkedMapOf<String, String>(
+                        "Referer" to iframeUrl,
+                        "User-Agent" to
+                            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+                    )
+                    callback(
+                        newExtractorLink(
+                            source = name,
+                            name = "HintFilmİzle Kinescope",
+                            url = signedManifest,
+                            type = ExtractorLinkType.M3U8
+                        ) {
+                            referer = iframeUrl
+                            headers = manifestHeaders
+                            quality = getQualityFromName(signedManifest)
+                        }
+                    )
+                    return@runCatching true
+                }
+            }
+
             val resolver = WebViewResolver(
                 interceptUrl = Regex("""\.m3u8(?:\?|$)""", RegexOption.IGNORE_CASE),
                 additionalUrls = listOf(
@@ -683,7 +721,7 @@ class HintFilmIzle : MainAPI() {
          * reklam URL'lerini kaynak olarak eklemiyoruz. Bu, senin gördüğün
          * "HintFilmİzle Direct -> 2004" durumunu engelliyor.
          */
-        if (!found) {
+        if (!found && kinescopePlayers.isEmpty()) {
             for (stream in directLinks(document.html())) {
                 if (stream.contains("kinescopecdn.net", true)) continue
 
