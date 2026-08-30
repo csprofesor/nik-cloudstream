@@ -584,17 +584,22 @@ class HintFilmIzle : MainAPI() {
                     // This path used to return the signed URL immediately, which
                     // bypassed the Kinescope decoder entirely. Fetch the manifest
                     // first: current Kinescope returns an encrypted {p:...} envelope.
-                    val decoded = runCatching {
+                    Log.d("HintFilmIzle", "KINESCOPE_SIGNED_MANIFEST=$signedManifest")
+                    val rawManifest = runCatching {
                         app.get(
                             signedManifest,
                             referer = iframeUrl,
                             headers = manifestHeaders
                         ).text
-                    }.getOrNull()?.let(::decodeKinescopeManifestResponse)
+                    }.getOrNull()
+                    Log.d("HintFilmIzle", "KINESCOPE_MANIFEST_RESPONSE=" + (rawManifest?.take(300) ?: "NULL"))
+                    val decoded = rawManifest?.let(::decodeKinescopeManifestResponse)
+                    Log.d("HintFilmIzle", "KINESCOPE_DECODED=" + (decoded?.take(300) ?: "NULL"))
 
                     val playableUrl = decoded
                         ?.let { extractKinescopeVariant(it, signedManifest) }
                         ?: signedManifest
+                    Log.d("HintFilmIzle", "KINESCOPE_PLAYABLE_URL=$playableUrl")
 
                     callback(
                         newExtractorLink(
