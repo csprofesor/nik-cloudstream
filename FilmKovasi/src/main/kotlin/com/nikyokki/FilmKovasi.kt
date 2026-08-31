@@ -130,7 +130,7 @@ class FilmKovasi : MainAPI() {
 
         suspend fun tryExtractor(rawUrl: String?, referer: String = data) {
             val url = rawUrl?.trim()
-                ?.trim('"', '\\'', '(', ')', ';', ',')
+                ?.trim('"', '(', ')', ';', ',')
                 ?.let { fixUrlNull(it) }
                 ?: return
 
@@ -160,7 +160,7 @@ class FilmKovasi : MainAPI() {
 
         // First try the URLs exposed directly by source buttons.
         for (element in sourceElements) {
-            val referer = fixUrlNull(element.attr("href")).takeUnless { it.isNullOrBlank() } ?: data
+            val referer = fixUrlNull(element.attr("href"))?.takeUnless { it.isBlank() } ?: data
 
             val attributes = listOf(
                 element.attr("href"),
