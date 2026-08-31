@@ -43,6 +43,35 @@ class FilmKovasiOkRuExtractor : ExtractorApi() {
             else -> url
         }
 
+        val videoId = Regex("""(?:/videoembed/|/video/)(\d+)""")
+            .find(embedUrl)
+            ?.groupValues
+            ?.getOrNull(1)
+
+        // The current OK.ru web player obtains signed CDN renditions from
+        // videoPlayerMetadata. Use that first instead of depending on the
+        // WebView's player DOM.
+        if (!videoId.isNullOrBlank()) {
+            val metadataEndpoints = listOf(
+                "https://www.ok.ru/dk?cmd=videoPlayerMetadata",
+                "https://ok.ru/dk?cmd=videoPlayerMetadata"
+            )
+
+            for (endpoint in metadataEndpoints) {
+                val root = runCatching {
+                    val response = app.post(
+                        endpoint,
+                        data = mapOf("mid" to videoId),
+                        headers = headers,
+                        referer = referer ?: embedUrl
+                    )
+                    mapper.readTree(response.text)
+                }.getOrNull() ?: continue
+
+                if (emitMetadata(root, callback)) return
+            }
+        }
+
         val document = try {
             app.get(
                 embedUrl,
@@ -50,13 +79,13 @@ class FilmKovasiOkRuExtractor : ExtractorApi() {
                 referer = referer ?: "https://ok.ru/"
             ).document
         } catch (e: Throwable) {
-            throw ErrorLoadingException("OK.ru embed alınamadı: \${e.message}")
+            throw ErrorLoadingException("OK.ru embed alınamadı: " + (e.message ?: "bilinmeyen hata"))
         }
 
         val options = document.selectFirst("[data-options]")
             ?.attr("data-options")
-            ?.replace("&quot;", "\"")
-            ?.replace("&#34;", "\"")
+            ?.replace("&quot;", """)
+            ?.replace("&#34;", """)
             ?.replace("&amp;", "&")
             ?.trim()
 
@@ -67,36 +96,37 @@ class FilmKovasiOkRuExtractor : ExtractorApi() {
         val player = try {
             mapper.readTree(options)
         } catch (e: Throwable) {
-            throw ErrorLoadingException("OK.ru player JSON çözülemedi: \${e.message}")
+            throw ErrorLoadingException("OK.ru player JSON çözülemedi: " + (e.message ?: "bilinmeyen hata"))
         }
 
         val flashvars = player.path("flashvars")
-        var metadata: JsonNode? = null
 
-        val inlineMetadata = flashvars.path("metadata")
-        if (!inlineMetadata.isMissingNode && !inlineMetadata.isNull && inlineMetadata.asText().isNotBlank()) {
-            metadata = runCatching {
-                mapper.readTree(inlineMetadata.asText())
+        val metadata = flashvars.path("metadata").takeUnless {
+            it.isMissingNode || it.isNull || it.asText().isBlank()
+        }?.let {
+            runCatching { mapper.readTree(it.asText()) }.getOrNull()
+        }
+
+        if (metadata != null && emitMetadata(metadata, callback)) return
+
+        val metadataUrl = flashvars.path("metadataUrl").asText("").trim()
+        if (metadataUrl.isNotBlank()) {
+            val remoteMetadata = runCatching {
+                mapper.readTree(app.post(metadataUrl, headers = headers).text)
             }.getOrNull()
+
+            if (remoteMetadata != null && emitMetadata(remoteMetadata, callback)) return
         }
 
-        if (metadata == null) {
-            val metadataUrl = flashvars.path("metadataUrl").asText("").trim()
-            if (metadataUrl.isNotBlank()) {
-                metadata = runCatching {
-                    mapper.readTree(
-                        app.post(metadataUrl, headers = headers).text
-                    )
-                }.getOrNull()
-            }
-        }
+        throw ErrorLoadingException("OK.ru oynatılabilir kaynak döndürmedi")
+    }
 
-        if (metadata == null) {
-            throw ErrorLoadingException("OK.ru metadata bulunamadı")
-        }
-
-        val videos = metadata.path("videos")
+    private fun emitMetadata(
+        metadata: JsonNode,
+        callback: (ExtractorLink) -> Unit,
+    ): Boolean {
         var emitted = false
+        val videos = metadata.path("videos")
 
         if (videos.isArray) {
             for (video in videos) {
@@ -153,8 +183,6 @@ class FilmKovasiOkRuExtractor : ExtractorApi() {
             emitted = true
         }
 
-        if (!emitted) {
-            throw ErrorLoadingException("OK.ru oynatılabilir kaynak döndürmedi")
-        }
+        return emitted
     }
 }
