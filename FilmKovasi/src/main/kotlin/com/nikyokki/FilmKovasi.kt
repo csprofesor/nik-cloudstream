@@ -14,7 +14,6 @@ import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.fixUrlNull
@@ -161,96 +160,11 @@ class FilmKovasi : MainAPI() {
     ): Boolean {
         debugFilmKovasi("LOADLINKS_DATA", data)
 
-        val document = runCatching {
-            app.get(
-                data,
-                referer = mainUrl + "/",
-                headers = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                )
-            ).document
-        }.getOrNull() ?: return false
-
-        var found = false
-        val visited = mutableSetOf<String>()
-
-        // JS-driven source buttons may expose about:blank until a browser executes them.
-        val webViewResolver = WebViewResolver(
-            interceptUrl = { intercepted ->
-                val u = intercepted.toString()
-                u.contains(".m3u8", true) || u.contains(".mp4", true) ||
-                    u.contains("kinescope", true) || u.contains("vidsrc", true) ||
-                    u.contains("2embed", true) || u.contains("autoembed", true) ||
-                    u.contains("smashy", true) || u.contains("moviesapi", true)
-            },
-            script = """
-                (function() {
-                    try {
-                        var urls = [];
-                        Array.from(document.querySelectorAll('iframe,video,source')).forEach(function(e) {
-                            var u = e.currentSrc || e.src || e.getAttribute('data-src') ||
-                                e.getAttribute('data-url') || e.getAttribute('data-embed') || '';
-                            if (u) urls.push(u);
-                        });
-                        return JSON.stringify({
-                            href: location.href,
-                            urls: urls,
-                            resources: performance.getEntriesByType('resource').map(function(e){return e.name;})
-                        });
-                    } catch(e) {
-                        return JSON.stringify({error:String(e), href:location.href});
-                    }
-                })()
-            """.trimIndent(),
-            scriptCallback = { result ->
-                debugFilmKovasi("WEBVIEW_GRAPH", result)
-            },
-            timeout = 30_000L
+        val headers = mapOf(
+            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
         )
-
-        suspend fun resolveSourceWithWebView(sourceUrl: String, referer: String): Boolean {
-            val resolved = runCatching {
-                webViewResolver.resolveUsingWebView(
-                    url = sourceUrl,
-                    referer = referer,
-                    headers = mapOf(
-                        "Referer" to referer,
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
-                    )
-                )
-            }.onFailure {
-                debugFilmKovasi("WEBVIEW_FAILED", sourceUrl + " -> " + it.message)
-            }.getOrNull() ?: return false
-
-            var added = false
-            resolved.second.orEmpty().map { it.url.toString() }.distinct().forEach { capturedUrl ->
-                debugFilmKovasi("WEBVIEW_CAPTURE", capturedUrl)
-                if (capturedUrl.contains(".m3u8", true) || capturedUrl.contains(".mp4", true)) {
-                    if (!ignored(capturedUrl)) {
-                        callback(newExtractorLink(
-                            source = name,
-                            name = "FilmKovası Direct",
-                            url = capturedUrl,
-                            type = if (capturedUrl.contains(".m3u8", true))
-                                ExtractorLinkType.M3U8
-                            else
-                                ExtractorLinkType.VIDEO
-                        ) {
-                            referer = sourceUrl
-                        })
-                        added = true
-                    }
-                } else if (!capturedUrl.equals(sourceUrl, true) &&
-                    !capturedUrl.equals("about:blank", true)) {
-                    enqueue(capturedUrl, sourceUrl, "webview")
-                }
-            }
-            return added
-        }
-        val playerQueue = ArrayDeque<Pair<String, String>>()
 
         fun normalize(raw: String?, base: String): String? {
             val value = raw?.trim()
@@ -258,10 +172,9 @@ class FilmKovasi : MainAPI() {
                 ?.replace("\\u0026", "&")
                 ?.replace("&amp;", "&")
                 ?.trim('"', '\'', '(', ')', '[', ']', '{', '}', ';', ',')
-                ?.takeIf { it.isNotBlank() }
-                ?: return null
+                ?.takeIf { it.isNotBlank() } ?: return null
 
-            val resolved = runCatching {
+            val url = runCatching {
                 when {
                     value.startsWith("//") -> "https:$value"
                     value.startsWith("http://", true) || value.startsWith("https://", true) -> value
@@ -269,142 +182,95 @@ class FilmKovasi : MainAPI() {
                 }
             }.getOrNull() ?: return null
 
-            if (!resolved.startsWith("http://", true) && !resolved.startsWith("https://", true)) return null
-            if (resolved.equals("about:blank", true)) return null
-            return resolved
+            if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return null
+            if (url.equals("about:blank", true)) return null
+            return url
         }
 
-        fun ignored(url: String): Boolean {
-            val u = url.lowercase()
-            return listOf(
-                "youtube.com", "youtu.be", "youtube-nocookie.com",
-                "video.twimg.com", "twitter.com", "x.com", "t.co/",
-                "facebook.com", "fb.watch", "instagram.com", "instagramcdn.com",
-                "tiktok.com", "vimeo.com", "doubleclick.net",
-                "googlesyndication.com", "/ads/", "ads.", "/advert"
-            ).any { u.contains(it) }
-        }
+        val firstDocument = runCatching {
+            app.get(data, referer = mainUrl + "/", headers = headers).document
+        }.getOrNull() ?: return false
 
-        fun enqueue(raw: String?, base: String, reason: String) {
-            val url = normalize(raw, base) ?: return
-            if (url == data || url.startsWith(mainUrl, true) || ignored(url)) return
-            if (visited.add(url)) {
-                debugFilmKovasi("PLAYER_QUEUE", "${reason} -> ${url}")
-                playerQueue.addLast(url to base)
-            }
-        }
-
-        suspend fun addDirectMedia(html: String, referer: String, sourceName: String): Boolean {
-            var added = false
-            val mediaRegex = Regex(
-                """https?://[^"'\s<>]+?\\.(?:m3u8|mp4)(?:\\?[^"'\s<>]*)?""",
-                RegexOption.IGNORE_CASE
-            )
-            for (match in mediaRegex.findAll(html)) {
-                val media = match.value
-                    .replace("&amp;", "&")
-                    .trimEnd('\\', '"', '\'', ')', ']', ';', ',')
-                if (!ignored(media)) {
-                    callback(newExtractorLink(
-                        source = name,
-                        name = "${sourceName} Direct",
-                        url = media,
-                        type = if (media.contains(".m3u8", true))
-                            ExtractorLinkType.M3U8
-                        else
-                            ExtractorLinkType.VIDEO
-                    ) {
-                        this.referer = referer
-                    })
-                    added = true
-                }
-            }
-            return added
-        }
-
-        val sourcePages = document.select("a[href]").mapNotNull { element ->
+        val sourcePages = firstDocument.select("a[href]").mapNotNull { element ->
             val href = normalize(element.attr("href"), data) ?: return@mapNotNull null
             if (!href.startsWith(mainUrl, true) || href == data) return@mapNotNull null
             val number = Regex("/(\\d+)/?$").find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
                 ?: return@mapNotNull null
             if (number < 2) return@mapNotNull null
-            href to (element.text().replace(Regex("\\s+"), " ").trim().ifBlank { "Kaynak ${number}" })
-        }.distinctBy { it.first }
-            .sortedBy { Regex("/(\\d+)/?$").find(it.first)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Int.MAX_VALUE }
+            href
+        }.distinct()
 
-        debugFilmKovasi("SOURCE_PAGE_COUNT", sourcePages.size.toString())
+        val playerUrls = linkedMapOf<String, String>()
 
-        for ((sourceUrl, label) in sourcePages) {
-            debugFilmKovasi("SOURCE_PAGE_START", "${label} = ${sourceUrl}")
-            val sourceDocument = runCatching {
+        fun addPlayer(raw: String?, referer: String) {
+            val url = normalize(raw, referer) ?: return
+            if (url == data || url.startsWith(mainUrl, true)) return
+            if (url.contains("google.com", true) || url.contains("doubleclick", true)) return
+            playerUrls.putIfAbsent(url, referer)
+            debugFilmKovasi("PLAYER_FOUND", url)
+        }
+
+        val pages = listOf(data) + sourcePages
+        for (sourceUrl in pages.distinct()) {
+            val document = runCatching {
                 app.get(
                     sourceUrl,
-                    referer = data,
-                    headers = mapOf(
-                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                    )
+                    referer = if (sourceUrl == data) mainUrl + "/" else data,
+                    headers = headers
                 ).document
             }.getOrNull() ?: continue
 
-            val sourceHtml = sourceDocument.html()
-            debugFilmKovasi("SOURCE_PAGE_OK", "${label} = ${sourceUrl}")
+            val html = document.html()
 
-            if (sourceHtml.contains("about:blank", true)) {
-                resolveSourceWithWebView(sourceUrl, data)
-            }
-
-            sourceDocument.select(
-                "iframe[src], iframe[data-src], iframe[data-url], iframe[data-frame], iframe[data-iframe], " +
-                "frame[src], embed[src], object[data], video[src], video[data-src], " +
-                "video[data-url], video source[src], video source[data-src], video source[data-url], " +
-                "a[href], a[data-url], a[data-embed], a[data-frame], a[data-video], a[data-player], " +
-                "button[data-url], button[data-embed], button[data-frame], button[data-video], button[data-player], " +
-                "[onclick], [data-url], [data-embed], [data-frame], [data-video], [data-player]"
+            document.select(
+                "iframe[src],iframe[data-src],iframe[data-url],iframe[data-embed],iframe[data-player]," +
+                "embed[src],object[data],video[src],video[data-src],video source[src],video source[data-src]," +
+                "[data-url],[data-embed],[data-player],[data-video]"
             ).forEach { element ->
                 listOf(
-                    element.attr("href"),
                     element.attr("src"),
                     element.attr("data-src"),
                     element.attr("data-url"),
                     element.attr("data-embed"),
-                    element.attr("data-frame"),
-                    element.attr("data-video"),
                     element.attr("data-player"),
-                    element.attr("data-iframe"),
-                    element.attr("onclick")
-                ).forEach { raw -> enqueue(raw, sourceUrl, "${label} ${element.tagName()}") }
+                    element.attr("data-video"),
+                    element.attr("data")
+                ).forEach { addPlayer(it, sourceUrl) }
             }
 
-            Regex("""https?:\\/\\/[^"'\s<>]+""", RegexOption.IGNORE_CASE)
-                .findAll(sourceHtml)
-                .forEach { match -> enqueue(match.value.replace("\\/", "/"), sourceUrl, "${label} html") }
-
-            val atobRegex = Regex("""atob\\(\s*["']([^"']+)["']\s*\\)""", RegexOption.IGNORE_CASE)
-            val absoluteRegex = Regex("""https?://[^"'\s<>]+""", RegexOption.IGNORE_CASE)
-            sourceDocument.select("script").forEach { script ->
+            // FilmKovası's real player mechanism:
+            // atob("...") -> JSON array -> iframe.src.
+            document.select("script").forEach { script ->
                 val text = script.data().ifBlank { script.html() }
-                atobRegex.findAll(text).forEach { match ->
-                    runCatching {
-                        val decoded = Base64.decode(match.groupValues[1], Base64.DEFAULT).toString(Charsets.UTF_8)
-                        absoluteRegex.findAll(decoded).forEach { url -> enqueue(url.value, sourceUrl, "${label} atob") }
+                Regex("atob\\(\\s*[\"']([^\"']+)[\"']\\s*\\)", RegexOption.IGNORE_CASE)
+                    .findAll(text)
+                    .forEach { match ->
+                        runCatching {
+                            Base64.decode(match.groupValues[1], Base64.DEFAULT)
+                                .toString(Charsets.UTF_8)
+                        }.getOrNull()?.let { decoded ->
+                            Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+                                .findAll(decoded)
+                                .forEach { addPlayer(it.value.replace("\\/", "/"), sourceUrl) }
+                        }
                     }
-                }
-                absoluteRegex.findAll(text).forEach { url -> enqueue(url.value, sourceUrl, "${label} script") }
+
+                Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+                    .findAll(text)
+                    .forEach { addPlayer(it.value.replace("\\/", "/"), sourceUrl) }
             }
 
-            if (addDirectMedia(sourceHtml, sourceUrl, label)) found = true
+            // Direct player URLs occasionally appear in HTML even when the iframe is lazy-loaded.
+            Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+                .findAll(html)
+                .forEach { addPlayer(it.value.replace("\\/", "/"), sourceUrl) }
         }
 
-        var depth = 0
-        while (playerQueue.isNotEmpty() && depth < 80) {
-            val (playerUrl, referer) = playerQueue.removeFirst()
-            depth++
-            debugFilmKovasi("PLAYER_START", playerUrl)
+        var found = false
 
-            val loaded = runCatching {
-                loadExtractor(
+        for ((playerUrl, referer) in playerUrls) {
+            val bundled = runCatching {
+                FilmKovasiBundledExtractors.tryExtract(
                     url = playerUrl,
                     referer = referer,
                     subtitleCallback = subtitleCallback,
@@ -412,101 +278,26 @@ class FilmKovasi : MainAPI() {
                 )
             }.getOrDefault(false)
 
-            if (loaded) found = true
-
-            val nestedDocument = runCatching {
-                app.get(
-                    playerUrl,
-                    referer = referer,
-                    headers = mapOf(
-                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
-                        "Accept" to "*/*",
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                    )
-                ).document
-            }.getOrNull() ?: continue
-
-            val nestedHtml = nestedDocument.html()
-            if (addDirectMedia(nestedHtml, playerUrl, playerUrl.substringAfter("://").substringBefore('/'))) {
+            if (bundled) {
                 found = true
+                continue
             }
 
-            nestedDocument.select(
-                "iframe[src], iframe[data-src], iframe[data-url], iframe[data-frame], iframe[data-iframe], " +
-                "frame[src], embed[src], object[data], video[src], video[data-src], " +
-                "video source[src], video source[data-src], video source[data-url], " +
-                "[data-url], [data-embed], [data-frame], [data-video], [data-player]"
-            ).forEach { element ->
-                listOf(
-                    element.attr("src"),
-                    element.attr("data-src"),
-                    element.attr("data-url"),
-                    element.attr("data-embed"),
-                    element.attr("data-frame"),
-                    element.attr("data-video"),
-                    element.attr("data-player"),
-                    element.attr("data-iframe"),
-                    element.attr("data")
-                ).forEach { raw -> enqueue(raw, playerUrl, "nested ${element.tagName()}") }
-            }
-
-            Regex("""https?:\\/\\/[^"'\s<>]+""", RegexOption.IGNORE_CASE)
-                .findAll(nestedHtml)
-                .forEach { match -> enqueue(match.value.replace("\\/", "/"), playerUrl, "nested html") }
-
-            nestedDocument.select("script").forEach { script ->
-                val text = script.data().ifBlank { script.html() }
-                Regex("""atob\\(\s*["']([^"']+)["']\s*\\)""", RegexOption.IGNORE_CASE)
-                    .findAll(text).forEach { match ->
-                        runCatching {
-                            val decoded = Base64.decode(match.groupValues[1], Base64.DEFAULT).toString(Charsets.UTF_8)
-                            Regex("""https?://[^"'\s<>]+""").findAll(decoded)
-                                .forEach { url -> enqueue(url.value, playerUrl, "nested atob") }
-                        }
-                    }
-                Regex("""https?://[^"'\s<>]+""").findAll(text)
-                    .forEach { url -> enqueue(url.value, playerUrl, "nested script") }
-            }
-        }
-
-        document.select(
-            "iframe[src], iframe[data-src], iframe[data-url], iframe[data-frame], " +
-            "embed[src], video[src], video[data-src], video source[src], video source[data-src], " +
-            "[data-embed], [data-player], [data-video], [data-url]"
-        ).forEach { element ->
-            listOf(
-                element.attr("src"),
-                element.attr("data-src"),
-                element.attr("data-url"),
-                element.attr("data-embed"),
-                element.attr("data-player"),
-                element.attr("data-video")
-            ).forEach { raw -> enqueue(raw, data, "film-page") }
-        }
-
-        var tail = 0
-        while (playerQueue.isNotEmpty() && tail < 40) {
-            val (playerUrl, referer) = playerQueue.removeFirst()
-            tail++
-            runCatching {
-                if (loadExtractor(playerUrl, referer, subtitleCallback) { link ->
+            val extracted = runCatching {
+                loadExtractor(
+                    url = playerUrl,
+                    referer = referer,
+                    subtitleCallback = subtitleCallback
+                ) { link ->
                     found = true
                     callback(link)
-                }) {
-                    found = true
                 }
-            }
-            val nested = runCatching { app.get(playerUrl, referer = referer).document }.getOrNull() ?: continue
-            if (addDirectMedia(nested.html(), playerUrl, playerUrl.substringAfter("://").substringBefore('/'))) found = true
-            nested.select("iframe[src],iframe[data-src],video[src],video[data-src],video source[src],video source[data-src],[data-url],[data-embed],[data-player],[data-video]")
-                .forEach { element ->
-                    listOf(element.attr("src"), element.attr("data-src"), element.attr("data-url"),
-                        element.attr("data-embed"), element.attr("data-player"), element.attr("data-video"))
-                        .forEach { raw -> enqueue(raw, playerUrl, "tail") }
-                }
+            }.getOrDefault(false)
+
+            if (extracted) found = true
         }
 
+        debugFilmKovasi("LOADLINKS_RESULT", found.toString())
         return found
     }
-
 }
