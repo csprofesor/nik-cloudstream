@@ -763,7 +763,23 @@ class HintFilmIzle : MainAPI() {
          */
         if (!found && kinescopePlayers.isEmpty()) {
             for (stream in directLinks(document.html())) {
-                if (stream.contains("kinescopecdn.net", true)) continue
+                // Never expose social-media/ad/trailer media as the film source.
+                // These pages contain unrelated short videos (e.g. X/Twitter),
+                // which were previously being returned as "HintFilmİzle Direct".
+                if (
+                    stream.contains("kinescopecdn.net", true) ||
+                    stream.contains("video.twimg.com", true) ||
+                    stream.contains("twitter.com", true) ||
+                    stream.contains("x.com", true) ||
+                    stream.contains("t.co/", true) ||
+                    stream.contains("youtube.com", true) ||
+                    stream.contains("youtu.be", true) ||
+                    stream.contains("facebook.com", true) ||
+                    stream.contains("instagram.com", true) ||
+                    stream.contains("ads.", true) ||
+                    stream.contains("/ads/", true) ||
+                    isTrailerPlayer(stream)
+                ) continue
 
                 found = true
                 callback(newExtractorLink(
