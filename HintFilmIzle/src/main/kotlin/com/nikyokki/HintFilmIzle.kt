@@ -627,30 +627,33 @@ class HintFilmIzle : MainAPI() {
                 timeout = 45_000L
             )
 
-            val (request, _) = resolver.resolveUsingWebView(
-                url = iframeUrl,
-                referer = parentUrl,
-                headers = mapOf(
-                    "Referer" to parentUrl,
-                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            val resolved = runCatching {
+                resolver.resolveUsingWebView(
+                    url = iframeUrl,
+                    referer = parentUrl,
+                    headers = mapOf(
+                        "Referer" to parentUrl,
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )
                 )
-            )
+            }.onFailure {
+                Log.e("HintFilmIzle", "KINESCOPE_WEBVIEW_RESOLVE_FAILED", it)
+            }.getOrNull()
 
-            val manifestRequest = request ?: return false
+            val manifestRequest = resolved?.first
+            if (manifestRequest == null) {
+                Log.e("HintFilmIzle", "KINESCOPE_NO_INTERCEPTED_MANIFEST")
+                return false
+            }
+
             val manifestUrl = manifestRequest.url.toString()
-            if (!manifestUrl.contains(".m3u8", true)) return false
+            Log.d("HintFilmIzle", "KINESCOPE_INTERCEPTED_URL=$manifestUrl")
+            if (!manifestUrl.contains(".m3u8", true)) {
+                Log.e("HintFilmIzle", "KINESCOPE_INTERCEPTED_NOT_M3U8=$manifestUrl")
+                return false
+            }
 
-            val decodedManifest = runCatching {
-                app.get(
-                    manifestUrl,
-                    referer = iframeUrl,
-                    headers = mapOf("Referer" to iframeUrl)
-                ).text
-            }.getOrNull()?.let(::decodeKinescopeManifestResponse)
-
-            val nativeManifestUrl = decodedManifest
-                ?.let { extractKinescopeVariant(it, manifestUrl) }
-                ?: manifestUrl
+            val nativeManifestUrl = manifestUrl
 
             val captured = manifestRequest.headers
             fun capturedHeader(name: String): String? =
