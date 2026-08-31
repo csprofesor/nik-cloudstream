@@ -133,133 +133,112 @@ class FilmKovasi : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         debugFilmKovasi("LOADLINKS_DATA", data)
-        val document = app.get(data).document
-        var found = false
 
-        suspend fun tryExtractor(rawUrl: String?, referer: String = data) {
-            val candidate = rawUrl?.trim()
-                ?.trim('"', '(', ')', ';', ',')
+        val document = try {
+            app.get(data).document
+        } catch (_: Throwable) {
+            return false
+        }
+
+        var found = false
+        val tried = mutableSetOf<String>()
+
+        suspend fun tryExtractor(rawUrl: String?, referer: String) {
+            val url = rawUrl?.trim()
+                ?.trim('"', '\'', '(', ')', ';', ',')
+                ?.let { fixUrlNull(it) }
                 ?: return
 
-            debugFilmKovasi("SOURCE_RAW", candidate)
-
-            // Never send labels/identifiers such as "filmkova" to the HTTP client.
-            val url = if (candidate.startsWith("http://", true) || candidate.startsWith("https://", true)) {
-                candidate
-            } else {
-                fixUrlNull(candidate) ?: return
-            }
-
             if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return
+            if (url == data || !tried.add(url)) return
 
-            if (url.isBlank() ||
-                url.startsWith("javascript:", true) ||
-                url == data
-            ) return
+            debugFilmKovasi("EXTRACTOR_URL", url)
 
             try {
-                debugFilmKovasi("EXTRACTOR_URL", url)
                 if (loadExtractor(url, referer, subtitleCallback) { link ->
                         callback(link)
                     }) {
                     found = true
                 }
             } catch (_: Throwable) {
-                // Try the next source.
+                // One broken source must not prevent the remaining sources from being tried.
             }
         }
 
-        // The site can expose the player either directly or through source/mirror pages.
-        val sourceElements = document.select(
-            "div.sources a[href], " +
-            "a[data-url], a[data-src], a[data-link], a[data-embed], " +
-            "a[href*='embed'], a[href*='player'], " +
-            "button[data-url], button[data-src]"
-        )
+        // FilmKovası does not put the real player URLs on the film page.
+        // Each player is a separate /2/, /3/, ... source page.
+        // The source links are marked explicitly with class="post-page-numbers".
+        val sourcePages = document.select("a.post-page-numbers[href]")
+            .mapNotNull { element ->
+                val href = element.attr("href").trim()
+                if (href.isBlank()) return@mapNotNull null
 
-        // First try the URLs exposed directly by source buttons.
-        for (element in sourceElements) {
-            val referer = fixUrlNull(element.attr("href"))?.takeUnless { it.isBlank() } ?: data
+                val url = fixUrlNull(href) ?: return@mapNotNull null
+                val label = element.selectFirst(".dil")?.text()?.trim()
+                    ?: element.text().trim()
 
-            val attributes = listOf(
-                element.attr("href"),
-                element.attr("data-url"),
-                element.attr("data-src"),
-                element.attr("data-link"),
-                element.attr("data-embed"),
-                element.attr("data-video")
-            ).map { it.trim() }.filter { it.isNotBlank() }
+                Triple(url, label, element.attr("href"))
+            }
+            .distinctBy { it.first }
 
-            // FilmKovası currently splits some player URLs across multiple attributes,
-            // e.g. "https://filmkova" + "/kelebegin-ruya" + "/2/".
-            // Reconstruct the URL before passing it to an extractor.
-            val joined = attributes.joinToString("")
-            if (joined.startsWith("http://", true) || joined.startsWith("https://", true)) {
-                tryExtractor(joined)
+        debugFilmKovasi("SOURCE_PAGE_COUNT", sourcePages.size.toString())
+
+        // Open every source page independently. This is the important part:
+        // /2/, /3/, ... are FilmKovası source pages, not media URLs.
+        for ((sourceUrl, label, _) in sourcePages) {
+            debugFilmKovasi("SOURCE_PAGE", "$label = $sourceUrl")
+
+            val sourceDocument = try {
+                app.get(sourceUrl, referer = data).document
+            } catch (_: Throwable) {
+                continue
             }
 
-            for (raw in attributes) {
-                val candidates = Regex("""https?://[^"'\\s<>]+|/[^"'\\s<>]+""")
-                    .findAll(raw)
-                    .map { it.value }
-                    .toList()
+            // Most source pages expose the actual player as an iframe.
+            sourceDocument.select(
+                "iframe[src], iframe[data-src], " +
+                "embed[src], object[data], " +
+                "video source[src], video source[data-src], video[src], video[data-src]"
+            ).forEach { element ->
+                val raw = when (element.tagName()) {
+                    "iframe", "embed" -> element.attr("src").ifBlank { element.attr("data-src") }
+                    "object" -> element.attr("data")
+                    else -> element.attr("src").ifBlank { element.attr("data-src") }
+                }
 
-                if (candidates.isEmpty() && raw.startsWith("http", true)) {
-                    tryExtractor(raw)
-                } else {
-                    candidates.forEach { tryExtractor(it) }
+                if (raw.isNotBlank()) {
+                    debugFilmKovasi("PLAYER", "$label -> $raw")
+                    tryExtractor(raw, sourceUrl)
                 }
             }
 
-            // Some source buttons open a FilmKovası page containing the real iframe.
-            val href = fixUrlNull(element.attr("href"))
-            if (!href.isNullOrBlank() && href.contains("filmkovasi.co", true)) {
-                try {
-                    val sourceDoc = app.get(href, referer = data).document
-                    sourceDoc.select("iframe[src], iframe[data-src]").forEach { iframe ->
-                        val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
-                        tryExtractor(iframeUrl, href)
-                    }
+            // Some providers place the player URL in a data-* attribute on a div.
+            sourceDocument.select(
+                "[data-embed], [data-player], [data-video], [data-src], [data-url]"
+            ).forEach { element ->
+                val raw = sequenceOf(
+                    element.attr("data-embed"),
+                    element.attr("data-player"),
+                    element.attr("data-video"),
+                    element.attr("data-src"),
+                    element.attr("data-url")
+                ).firstOrNull { it.isNotBlank() }
 
-                    sourceDoc.select("video source[src], video[src]").forEach { video ->
-                        tryExtractor(video.attr("src").ifBlank { video.attr("data-src") }, href)
-                    }
-                } catch (_: Throwable) {
-                    // Continue with other sources.
+                if (!raw.isNullOrBlank()) {
+                    debugFilmKovasi("PLAYER_DATA", "$label -> $raw")
+                    tryExtractor(raw, sourceUrl)
                 }
             }
         }
 
-        // Also inspect any iframe already present on the film page.
+        // Fallback: if a site version exposes a direct iframe on the film page,
+        // still support it.
         document.select("iframe[src], iframe[data-src]").forEach { iframe ->
-            val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
-            tryExtractor(iframeUrl, data)
-        }
-
-        // Finally accept a direct media URL if the site exposes one in the HTML.
-        document.select("video source[src], video[src]").forEach { video ->
-            val media = fixUrlNull(video.attr("src").ifBlank { video.attr("data-src") })
-                ?: return@forEach
-
-            if (media.startsWith("http", true)) {
-                callback(
-                    ExtractorLink(
-                        source = this.name,
-                        name = this.name,
-                        url = media,
-                        referer = data,
-                        quality = Qualities.Unknown.value,
-                        type = if (media.contains(".m3u8", true)) {
-                            ExtractorLinkType.M3U8
-                        } else {
-                            ExtractorLinkType.VIDEO
-                        }
-                    )
-                )
-                found = true
-            }
+            val raw = iframe.attr("src").ifBlank { iframe.attr("data-src") }
+            tryExtractor(raw, data)
         }
 
         return found
     }
+
 }
