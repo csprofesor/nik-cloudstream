@@ -1,3 +1,4 @@
+import android.util.Log
 package com.nikyokki
 
 import com.lagradost.cloudstream3.HomePageResponse
@@ -87,6 +88,7 @@ class FilmKovasi : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
+        debugFilmKovasi("LOAD_URL", url)
         val document = app.get(url).document
         val title = document.selectFirst("h1.title-border, h1, .title-border")?.text()
             ?.replace(Regex("(?i)\\s+izle$"), "")?.trim() ?: return null
@@ -119,12 +121,17 @@ class FilmKovasi : MainAPI() {
         }
     }
 
+    private fun debugFilmKovasi(tag: String, value: String) {
+        Log.d("FilmKovasiDebug", "$tag = $value")
+    }
+
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        debugFilmKovasi("LOADLINKS_DATA", data)
         val document = app.get(data).document
         var found = false
 
@@ -132,6 +139,8 @@ class FilmKovasi : MainAPI() {
             val candidate = rawUrl?.trim()
                 ?.trim('"', '(', ')', ';', ',')
                 ?: return
+
+            debugFilmKovasi("SOURCE_RAW", candidate)
 
             // Never send labels/identifiers such as "filmkova" to the HTTP client.
             val url = if (candidate.startsWith("http://", true) || candidate.startsWith("https://", true)) {
@@ -148,6 +157,7 @@ class FilmKovasi : MainAPI() {
             ) return
 
             try {
+                debugFilmKovasi("EXTRACTOR_URL", url)
                 if (loadExtractor(url, referer, subtitleCallback) { link ->
                         callback(link)
                     }) {
