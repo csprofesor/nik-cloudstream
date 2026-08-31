@@ -601,8 +601,13 @@ class HintFilmIzle : MainAPI() {
             val resolver = WebViewResolver(
                 // Do not stop on the first request. The player first fetches a
                 // JSON/API payload and only then obtains the encrypted HLS data.
-                interceptUrl = Regex("""https?://.*""", RegexOption.IGNORE_CASE),
-                additionalUrls = emptyList(),
+                interceptUrl = Regex("""https?://[^"'\\s<>]+\\.m3u8(?:\\?[^"'\\s<>]*)?""", RegexOption.IGNORE_CASE),
+                additionalUrls = listOf(
+                    // Keep API/config/player requests while waiting for the
+                    // final HLS request. interceptUrl must NOT match the embed
+                    // page itself, otherwise WebViewResolver stops immediately.
+                    Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+                ),
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 useOkhttp = false,
@@ -662,7 +667,7 @@ class HintFilmIzle : MainAPI() {
             }
 
             // HintFilmIzle uses /embed/<video-id>, not /<video-id>/embed.
-            val embedId = Regex("""/embed/(\\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
+            val embedId = Regex("""/embed/(\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
                 .find(iframeUrl)?.groupValues?.getOrNull(1)
 
             fun manifestScore(url: String): Int {
