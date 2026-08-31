@@ -1,5 +1,6 @@
-import android.util.Log
 package com.nikyokki
+
+import android.util.Log
 
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
