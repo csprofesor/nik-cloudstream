@@ -157,9 +157,22 @@ class FilmKovasi : MainAPI() {
             debugFilmKovasi("EXTRACTOR_URL", url)
 
             try {
+                // First use the extractors bundled specifically for FilmKovası.
+                // These cover the external provider buttons that are not part of
+                // CloudStream's built-in extractorApis list.
+                val bundled = FilmKovasiBundledExtractors.tryExtract(
+                    url = url,
+                    referer = referer,
+                    subtitleCallback = subtitleCallback,
+                    callback = callback
+                )
+                if (bundled) {
+                    found = true
+                    return
+                }
+
+                // Then hand everything else to the current CloudStream extractor registry.
                 loadExtractor(url, referer, subtitleCallback) { link ->
-                    // loadExtractor() returns true when an extractor matches the host.
-                    // It does not guarantee that the extractor emitted a playable link.
                     found = true
                     callback(link)
                 }
