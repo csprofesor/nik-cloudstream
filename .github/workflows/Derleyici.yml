@@ -25,15 +25,22 @@ jobs:
         with:
           path: "src"
           fetch-depth: 0
+          persist-credentials: false
 
       - name: "'build' Depo Kontrolü"
         uses: actions/checkout@v4.2.2
         with:
           ref: "builds"
           path: "builds"
+          persist-credentials: false
 
       - name: Eski Derlemeleri Temizle
         run: find $GITHUB_WORKSPACE/builds -name '*.cs3' -delete
+
+      - name: Cache Temizle
+        run: |
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.m2/repository
 
       - name: JDK 17 Ayarla
         uses: actions/setup-java@v4.6.0
