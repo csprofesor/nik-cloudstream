@@ -60,7 +60,14 @@ class FilmKovasi : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val pageUrl = if (page <= 1) request.data else "${request.data}page/$page/"
-        val document = app.get(pageUrl).document
+        val document = app.get(
+            pageUrl,
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ).document
         return newHomePageResponse(
             request.name,
             document.select("div.movie-box").mapNotNull { it.toMainPageResult() }.distinctBy { it.url }
@@ -87,14 +94,28 @@ class FilmKovasi : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> =
-        app.get("${mainUrl}/?s=${query}").document.select("div.movie-box")
+        app.get(
+            "${mainUrl}/?s=${query}",
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ).document.select("div.movie-box")
             .mapNotNull { it.toMainPageResult() }.distinctBy { it.url }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
         debugFilmKovasi("LOAD_URL", url)
-        val document = app.get(url).document
+        val document = app.get(
+            url,
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ).document
         val title = document.selectFirst("h1.title-border, h1, .title-border")?.text()
             ?.replace(Regex("(?i)\\s+izle$"), "")?.trim() ?: return null
         val poster = document.selectFirst("meta[property='og:image']")?.attr("content")?.let { fixUrlNull(it) }
@@ -139,7 +160,14 @@ class FilmKovasi : MainAPI() {
         debugFilmKovasi("LOADLINKS_DATA", data)
 
         val document = try {
-            app.get(data).document
+            app.get(
+                data,
+                headers = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                )
+            ).document
         } catch (_: Throwable) {
             return false
         }
@@ -233,7 +261,15 @@ class FilmKovasi : MainAPI() {
             debugFilmKovasi("SOURCE_PAGE_START", "${label} = ${sourceUrl}")
 
             val sourceDocument = try {
-                app.get(sourceUrl, referer = data).document
+                app.get(
+                    sourceUrl,
+                    referer = data,
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )
+                ).document
             } catch (e: Throwable) {
                 debugFilmKovasi("SOURCE_PAGE_FAIL", "${label} = ${e.javaClass.simpleName}: ${e.message ?: ""}")
                 continue
