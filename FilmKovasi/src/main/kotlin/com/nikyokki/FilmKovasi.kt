@@ -188,7 +188,15 @@ class FilmKovasi : MainAPI() {
                 element.attr("data-link"),
                 element.attr("data-embed"),
                 element.attr("data-video")
-            )
+            ).map { it.trim() }.filter { it.isNotBlank() }
+
+            // FilmKovası currently splits some player URLs across multiple attributes,
+            // e.g. "https://filmkova" + "/kelebegin-ruya" + "/2/".
+            // Reconstruct the URL before passing it to an extractor.
+            val joined = attributes.joinToString("")
+            if (joined.startsWith("http://", true) || joined.startsWith("https://", true)) {
+                tryExtractor(joined)
+            }
 
             for (raw in attributes) {
                 val candidates = Regex("""https?://[^"'\\s<>]+|/[^"'\\s<>]+""")
@@ -196,10 +204,10 @@ class FilmKovasi : MainAPI() {
                     .map { it.value }
                     .toList()
 
-                if (candidates.isEmpty() && raw.isNotBlank()) {
-                    tryExtractor(raw, data)
+                if (candidates.isEmpty() && raw.startsWith("http", true)) {
+                    tryExtractor(raw)
                 } else {
-                    candidates.forEach { tryExtractor(it, data) }
+                    candidates.forEach { tryExtractor(it) }
                 }
             }
 
