@@ -87,7 +87,7 @@ object FilmKovasiBundledExtractors {
             if (v.isNotBlank() && !v.equals("about:blank", true)) candidates += v
         }
 
-        val abs = Regex("""https?://[^"'\\s<>]+""")
+        val abs = Regex("""https?://[^"'\s<>]+""")
         response.document.select("script").forEach { s ->
             abs.findAll(s.data().ifBlank { s.html() }).forEach { candidates += it.value }
         }
@@ -96,7 +96,7 @@ object FilmKovasiBundledExtractors {
             getAndUnpack(response.document.select("script").joinToString("\n") { it.data().ifBlank { s -> s.html() } })
         }.getOrDefault(response.text)
 
-        Regex("""(?:file|src|source)\\s*:\\s*["']([^"']+\\.(?:m3u8|mp4)(?:\\?[^"']*)?)["']""")
+        Regex("""(?:file|src|source)\s*:\s*["']([^"']+\.(?:m3u8|mp4)(?:\?[^"']*)?)["']""")
             .findAll(unpacked).forEach {
                 val media = resolve(it.groupValues[1], url) ?: return@forEach
                 callback(link(label, media, url))
@@ -118,7 +118,7 @@ object FilmKovasiBundledExtractors {
             }
         }
 
-        Regex("""https?://[^"'\\s<>]+\\.(?:m3u8|mp4)(?:\\?[^"'\\s<>]*)?""")
+        Regex("""https?://[^"'\s<>]+\.(?:m3u8|mp4)(?:\?[^"'\s<>]*)?""")
             .findAll(response.html).forEach {
                 callback(link(label, it.value.replace("&amp;","&"), url))
                 found = true
@@ -137,16 +137,16 @@ object FilmKovasiBundledExtractors {
     ): Boolean {
         val response = runCatching { app.get(url, headers(url, referer), referer = referer ?: url) }.getOrNull()
             ?: return false
-        val master = Regex("""MasterJS\\s*=\\s*'([^']*)'""").find(response.text)?.groupValues?.get(1)
+        val master = Regex("""MasterJS\s*=\s*'([^']*)'""").find(response.text)?.groupValues?.get(1)
             ?: return iframeBridge(url, referer, subtitleCallback, callback, visited, depth, "SmashyStream")
 
         return runCatching {
             val blob = String(Base64.getDecoder().decode(master))
-            val salt = Regex(""""salt"\\s*:\\s*"([^"]+)"""").find(blob)?.groupValues?.get(1) ?: return@runCatching false
-            val iv = Regex(""""iv"\\s*:\\s*"([^"]+)"""").find(blob)?.groupValues?.get(1) ?: return@runCatching false
-            val iterations = Regex(""""iterations"\\s*:\\s*(\\d+)""").find(blob)?.groupValues?.get(1)?.toIntOrNull()
+            val salt = Regex(""""salt"\s*:\s*"([^"]+)"""").find(blob)?.groupValues?.get(1) ?: return@runCatching false
+            val iv = Regex(""""iv"\s*:\s*"([^"]+)"""").find(blob)?.groupValues?.get(1) ?: return@runCatching false
+            val iterations = Regex(""""iterations"\s*:\s*(\d+)""").find(blob)?.groupValues?.get(1)?.toIntOrNull()
                 ?: return@runCatching false
-            val ciphertext = Regex(""""ciphertext"\\s*:\\s*"([^"]+)"""").find(blob)?.groupValues?.get(1)
+            val ciphertext = Regex(""""ciphertext"\s*:\s*"([^"]+)"""").find(blob)?.groupValues?.get(1)
                 ?: return@runCatching false
 
             val key = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA512").generateSecret(
@@ -155,11 +155,11 @@ object FilmKovasiBundledExtractors {
             val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
             cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv.hex()))
             val decrypted = String(cipher.doFinal(Base64.getDecoder().decode(ciphertext)))
-            val sources = Regex("""sources\\s*:\\s*(\\[[^\\]]*])""").find(decrypted)?.groupValues?.get(1)
+            val sources = Regex("""sources\s*:\s*(\[[^\]]*])""").find(decrypted)?.groupValues?.get(1)
                 ?: return@runCatching false
-            val file = Regex(""""file"\\s*:\\s*"([^"]+)"""").find(sources)?.groupValues?.get(1)
+            val file = Regex(""""file"\s*:\s*"([^"]+)"""").find(sources)?.groupValues?.get(1)
                 ?: return@runCatching false
-            val label = Regex(""""label"\\s*:\\s*"([^"]+)"""").find(sources)?.groupValues?.get(1) ?: ""
+            val label = Regex(""""label"\s*:\s*"([^"]+)"""").find(sources)?.groupValues?.get(1) ?: ""
             callback(link("SmashyStream", file, url, getQualityFromName(label)))
             true
         }.getOrDefault(false)
