@@ -157,10 +157,11 @@ class FilmKovasi : MainAPI() {
             debugFilmKovasi("EXTRACTOR_URL", url)
 
             try {
-                if (loadExtractor(url, referer, subtitleCallback) { link ->
-                        callback(link)
-                    }) {
+                loadExtractor(url, referer, subtitleCallback) { link ->
+                    // loadExtractor() returns true when an extractor matches the host.
+                    // It does not guarantee that the extractor emitted a playable link.
                     found = true
+                    callback(link)
                 }
             } catch (_: Throwable) {
                 // One broken source must not prevent the remaining sources from being tried.
