@@ -418,6 +418,37 @@ class HintFilmIzle : MainAPI() {
             .any { url.contains(it, true) }
 
 
+    private fun isIgnoredPlayer(url: String): Boolean {
+        val u = url.lowercase()
+
+        // Unrelated short-form/social/ad media that can be embedded on film pages.
+        // Never let these become CloudStream film sources.
+        val blockedHosts = listOf(
+            "video.twimg.com",
+            "twitter.com",
+            "x.com",
+            "t.co/",
+            "youtube.com",
+            "youtu.be",
+            "youtube-nocookie.com",
+            "facebook.com",
+            "fb.watch",
+            "instagram.com",
+            "instagramcdn.com",
+            "tiktok.com",
+            "vimeo.com"
+        )
+
+        if (blockedHosts.any { u.contains(it) }) return true
+
+        return u.contains("/ads/") ||
+            u.contains("ads.") ||
+            u.contains("/advert") ||
+            u.contains("doubleclick.net") ||
+            u.contains("googlesyndication.com")
+    }
+
+
     private fun extractKinescopeSignedHls(html: String): String? {
         val normalized = html
             .replace("\\u0026", "&")
@@ -732,7 +763,11 @@ class HintFilmIzle : MainAPI() {
                 .trim('"', '\'')
 
             playerUrl(cleaned, base)?.let { url ->
-                if (!isTrailerPlayer(url) && !url.startsWith(mainUrl, true)) {
+                if (
+                    !isIgnoredPlayer(url) &&
+                    !isTrailerPlayer(url) &&
+                    !url.startsWith(mainUrl, true)
+                ) {
                     players.add(url)
                 }
             }
@@ -741,7 +776,11 @@ class HintFilmIzle : MainAPI() {
                 .findAll(cleaned)
                 .map { it.value.trimEnd('\\', '"', '\'', ')', ']', ';') }
                 .mapNotNull { playerUrl(it, base) }
-                .filter { !isTrailerPlayer(it) && !it.startsWith(mainUrl, true) }
+                .filter {
+                    !isIgnoredPlayer(it) &&
+                    !isTrailerPlayer(it) &&
+                    !it.startsWith(mainUrl, true)
+                }
                 .forEach(players::add)
         }
 
@@ -788,7 +827,8 @@ class HintFilmIzle : MainAPI() {
 
         val otherPlayers = players.filterNot {
             it.contains("kinescope", true) ||
-            it.contains("player.hintfilmizle.com", true)
+            it.contains("player.hintfilmizle.com", true) ||
+            isIgnoredPlayer(it)
         }
 
         /*
@@ -874,8 +914,10 @@ class HintFilmIzle : MainAPI() {
                     player
                 ) ?: return@forEach
 
-                if (nestedUrl == player ||
+                if (
+                    nestedUrl == player ||
                     nestedUrl.startsWith(mainUrl, true) ||
+                    isIgnoredPlayer(nestedUrl) ||
                     isTrailerPlayer(nestedUrl)
                 ) return@forEach
 
@@ -892,7 +934,10 @@ class HintFilmIzle : MainAPI() {
             }
 
             directLinks(nested?.html().orEmpty()).forEach { stream ->
-                if (stream.contains("kinescopecdn.net", true)) return@forEach
+                if (
+                    stream.contains("kinescopecdn.net", true) ||
+                    isIgnoredPlayer(stream)
+                ) return@forEach
 
                 if (stream.contains(".m3u8", true)) {
                     val links = runCatching {
