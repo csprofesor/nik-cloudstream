@@ -121,7 +121,7 @@ class FilmKovasiOkRuExtractor : ExtractorApi() {
         throw ErrorLoadingException("OK.ru oynatılabilir kaynak döndürmedi")
     }
 
-    private fun emitMetadata(
+    private suspend fun emitMetadata(
         metadata: JsonNode,
         callback: (ExtractorLink) -> Unit,
     ): Boolean {
