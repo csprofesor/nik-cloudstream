@@ -66,7 +66,7 @@ object FilmKovasiBundledExtractors {
         label: String
     ): Boolean {
         val response = runCatching {
-            app.get(url, headers(url, referer), referer = referer ?: url)
+            app.get(url, headers(url, referer))
         }.getOrNull() ?: return false
 
         var found = false
@@ -93,7 +93,7 @@ object FilmKovasiBundledExtractors {
         }
 
         val unpacked = runCatching {
-            getAndUnpack(response.document.select("script").joinToString("\n") { it.data().ifBlank { s -> s.html() } })
+            getAndUnpack(response.document.select("script").joinToString("\n") { script -> script.data().ifBlank { script.html() } })
         }.getOrDefault(response.text)
 
         Regex("""(?:file|src|source)\s*:\s*["']([^"']+\.(?:m3u8|mp4)(?:\?[^"']*)?)["']""")
@@ -119,7 +119,7 @@ object FilmKovasiBundledExtractors {
         }
 
         Regex("""https?://[^"'\s<>]+\.(?:m3u8|mp4)(?:\?[^"'\s<>]*)?""")
-            .findAll(response.html).forEach {
+            .findAll(response.text).forEach {
                 callback(link(label, it.value.replace("&amp;","&"), url))
                 found = true
             }
@@ -135,7 +135,7 @@ object FilmKovasiBundledExtractors {
         visited: MutableSet<String>,
         depth: Int
     ): Boolean {
-        val response = runCatching { app.get(url, headers(url, referer), referer = referer ?: url) }.getOrNull()
+        val response = runCatching { app.get(url, headers(url, referer)) }.getOrNull()
             ?: return false
         val master = Regex("""MasterJS\s*=\s*'([^']*)'""").find(response.text)?.groupValues?.get(1)
             ?: return iframeBridge(url, referer, subtitleCallback, callback, visited, depth, "SmashyStream")
@@ -165,7 +165,7 @@ object FilmKovasiBundledExtractors {
         }.getOrDefault(false)
     }
 
-    private fun link(source: String, url: String, referer: String, quality: Int = 0): ExtractorLink =
+    private suspend fun link(source: String, url: String, referer: String, quality: Int = 0): ExtractorLink =
         newExtractorLink(source, source, url, type = if (url.contains(".m3u8")) ExtractorLinkType.M3U8 else INFER_TYPE) {
             this.referer = referer
             this.headers = headers(referer, false)
