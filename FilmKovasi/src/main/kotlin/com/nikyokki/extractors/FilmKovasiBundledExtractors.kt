@@ -89,7 +89,22 @@ object FilmKovasiBundledExtractors {
 
         val abs = Regex("""https?://[^"'\s<>]+""")
         response.document.select("script").forEach { s ->
-            abs.findAll(s.data().ifBlank { s.html() }).forEach { candidates += it.value }
+            val scriptText = s.data().ifBlank { s.html() }
+            abs.findAll(scriptText).forEach { candidates += it.value }
+
+            // VidSrc CC and similar players may hide the iframe URL in atob(...).
+            Regex("atob\\(\\s*[\"']([^\"']+)[\"']\\s*\\)", RegexOption.IGNORE_CASE)
+                .findAll(scriptText)
+                .forEach { match ->
+                    runCatching {
+                        Base64.getDecoder()
+                            .decode(match.groupValues[1])
+                            .toString(Charsets.UTF_8)
+                    }.getOrNull()?.let { decoded ->
+                        abs.findAll(decoded)
+                            .forEach { candidates += it.value.replace("\\/", "/") }
+                    }
+                }
         }
 
         val unpacked = runCatching {
