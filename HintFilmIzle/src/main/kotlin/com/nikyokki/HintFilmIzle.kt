@@ -571,8 +571,8 @@ class HintFilmIzle : MainAPI() {
                 // Never terminate on the first HLS request.
                 interceptUrl = Regex("""a^"""),
                 additionalUrls = listOf(
-                    Regex("""https?://[^/]*kinescopecdn\\.net/hls/[^"'\\\\s<>]+\\.m3u8(?:\\?[^"'\\\\s<>]*)?""", RegexOption.IGNORE_CASE),
-                    Regex("""https?://[^"'\\\\s<>]+\\.m3u8(?:\\?[^"'\\\\s<>]*)?""", RegexOption.IGNORE_CASE)
+                    Regex("""https?://[^/]*kinescopecdn\.net/hls/[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?""", RegexOption.IGNORE_CASE),
+                    Regex("""https?://[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?""", RegexOption.IGNORE_CASE)
                 ),
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
