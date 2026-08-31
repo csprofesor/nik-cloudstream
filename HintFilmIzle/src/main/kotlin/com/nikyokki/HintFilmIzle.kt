@@ -705,8 +705,7 @@ class HintFilmIzle : MainAPI() {
                 """.trimIndent(),
                 scriptCallback = { result ->
                     Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result")
-                },
-                timeout = 30_000L
+                }
             )
 
             val resolved = runCatching {
