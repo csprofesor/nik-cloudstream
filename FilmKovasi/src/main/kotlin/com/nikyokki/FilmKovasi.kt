@@ -173,13 +173,12 @@ class FilmKovasi : MainAPI() {
         val sourcePages = document.select("a.post-page-numbers[href]")
             .mapNotNull { element ->
                 val href = element.attr("href").trim()
-                if (href.isBlank()) return@mapNotNull null
-
                 val url = fixUrlNull(href) ?: return@mapNotNull null
                 val label = element.selectFirst(".dil")?.text()?.trim()
                     ?: element.text().trim()
-
-                Triple(url, label, element.attr("href"))
+                if (url.startsWith(mainUrl, true) && Regex("/\\d+/?$").containsMatchIn(url)) {
+                    Pair(url, label)
+                } else null
             }
             .distinctBy { it.first }
 
