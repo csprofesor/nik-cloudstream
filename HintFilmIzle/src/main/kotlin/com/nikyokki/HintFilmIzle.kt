@@ -599,53 +599,20 @@ class HintFilmIzle : MainAPI() {
              * video for unrelated films.
              */
             val resolver = WebViewResolver(
-                // Never terminate on the first HLS request.
+                // Do not stop on the first request. The player first fetches a
+                // JSON/API payload and only then obtains the encrypted HLS data.
                 interceptUrl = Regex("""a^"""),
                 additionalUrls = listOf(
-                    // Capture the complete Kinescope/player request chain, not only HLS.
-                    // This lets us see whether different film embeds resolve to the
-                    // same asset/video id before the final manifest is requested.
-                    Regex("""https?://player\.hintfilmizle\.com/[^"'\s<>]+""", RegexOption.IGNORE_CASE),
-                    Regex("""https?://[^"'\s<>]*kinescope[^"'\s<>]*""", RegexOption.IGNORE_CASE),
-                    Regex("""https?://[^"'\s<>]+(?:kinescopecdn|kinescope)\.[^"'\s<>]+""", RegexOption.IGNORE_CASE),
-                    Regex("""https?://[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?""", RegexOption.IGNORE_CASE)
+                    // Capture every HTTP(S) request from the embed. The site's
+                    // player does not expose the final HLS URL directly: its
+                    // JavaScript fetches an API response, parses an encrypted
+                    // M3U8 payload, decrypts it, and then feeds it to the HLS
+                    // player. See the supplied embed.js source.
+                    Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
                 ),
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 useOkhttp = false,
-                /*
-                 * Kinescope's embed uses JavaScript to build/decrypt its HLS
-                 * source. WebViewResolver may not expose that URL through
-                 * shouldInterceptRequest (especially when the renderer dies).
-                 * Inspect the page's own resource graph and media elements too.
-                 */
-                script = """
-                    (function() {
-                        try {
-                            var resources = performance.getEntriesByType('resource')
-                                .map(function(e) { return e.name; })
-                                .filter(function(u) {
-                                    return /kinescope|m3u8|hls|video|media|stream|asset|playback/i.test(u);
-                                });
-                            var media = Array.from(document.querySelectorAll('video,audio,source'))
-                                .map(function(e) { return e.currentSrc || e.src || ''; })
-                                .filter(Boolean);
-                            var htmlMatches = (document.documentElement ? document.documentElement.innerHTML : '')
-                                .match(/https?:\\/\\/[^"'\\s<>]+(?:m3u8|kinescope|hls|video|media|stream)[^"'\\s<>]*/ig) || [];
-                            return JSON.stringify({
-                                href: location.href,
-                                media: media,
-                                resources: resources,
-                                html: htmlMatches
-                            });
-                        } catch (e) {
-                            return JSON.stringify({error: String(e)});
-                        }
-                    })()
-                """.trimIndent(),
-                scriptCallback = { result ->
-                    Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result")
-                },
                 timeout = 45_000L
             )
 
@@ -674,10 +641,21 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$url")
                 }
 
-            val manifestCandidates = capturedRequests
+            val allUrls = capturedRequests
                 .map { it.url.toString() }
+                .distinct()
+
+            Log.d(
+                "HintFilmIzle",
+                "KINESCOPE_REQUEST_COUNT=" + allUrls.size
+            )
+
+            allUrls.forEach { url ->
+                Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$url")
+            }
+
+            val manifestCandidates = allUrls
                 .filter { it.contains(".m3u8", true) }
-                .filter { it.contains("kinescope", true) }
                 .distinct()
 
             Log.d(
