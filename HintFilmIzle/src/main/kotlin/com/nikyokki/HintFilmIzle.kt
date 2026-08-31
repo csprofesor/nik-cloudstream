@@ -735,6 +735,8 @@ class HintFilmIzle : MainAPI() {
         var found = false
         val players = linkedSetOf<String>()
 
+        Log.d("HintFilmIzle", "FILM_DATA=$data")
+
         fun addUrl(value: String?, base: String = data) {
             if (value.isNullOrBlank()) return
 
@@ -792,10 +794,14 @@ class HintFilmIzle : MainAPI() {
             .findAll(document.html())
             .forEach { addUrl(it.value.replace("\\/","/")) }
 
+        Log.d("HintFilmIzle", "PLAYER_LIST=" + players.joinToString(" || "))
+
         val kinescopePlayers = players.filter {
             it.contains("kinescope", true) ||
             it.contains("player.hintfilmizle.com", true)
         }
+        Log.d("HintFilmIzle", "KINESCOPE_PLAYERS=" + kinescopePlayers.joinToString(" || "))
+
         val otherPlayers = players.filterNot {
             it.contains("kinescope", true) ||
             it.contains("player.hintfilmizle.com", true)
