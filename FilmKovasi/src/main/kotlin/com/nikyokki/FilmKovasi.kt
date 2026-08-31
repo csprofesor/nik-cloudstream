@@ -14,6 +14,7 @@ import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.Score
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.TvType
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.fixUrlNull
@@ -174,6 +175,81 @@ class FilmKovasi : MainAPI() {
 
         var found = false
         val visited = mutableSetOf<String>()
+
+        // JS-driven source buttons may expose about:blank until a browser executes them.
+        val webViewResolver = WebViewResolver(
+            interceptUrl = { intercepted ->
+                val u = intercepted.toString()
+                u.contains(".m3u8", true) || u.contains(".mp4", true) ||
+                    u.contains("kinescope", true) || u.contains("vidsrc", true) ||
+                    u.contains("2embed", true) || u.contains("autoembed", true) ||
+                    u.contains("smashy", true) || u.contains("moviesapi", true)
+            },
+            script = """
+                (function() {
+                    try {
+                        var urls = [];
+                        Array.from(document.querySelectorAll('iframe,video,source')).forEach(function(e) {
+                            var u = e.currentSrc || e.src || e.getAttribute('data-src') ||
+                                e.getAttribute('data-url') || e.getAttribute('data-embed') || '';
+                            if (u) urls.push(u);
+                        });
+                        return JSON.stringify({
+                            href: location.href,
+                            urls: urls,
+                            resources: performance.getEntriesByType('resource').map(function(e){return e.name;})
+                        });
+                    } catch(e) {
+                        return JSON.stringify({error:String(e), href:location.href});
+                    }
+                })()
+            """.trimIndent(),
+            scriptCallback = { result ->
+                debugFilmKovasi("WEBVIEW_GRAPH", result)
+            },
+            timeout = 30_000L
+        )
+
+        suspend fun resolveSourceWithWebView(sourceUrl: String, referer: String): Boolean {
+            val resolved = runCatching {
+                webViewResolver.resolveUsingWebView(
+                    url = sourceUrl,
+                    referer = referer,
+                    headers = mapOf(
+                        "Referer" to referer,
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+                    )
+                )
+            }.onFailure {
+                debugFilmKovasi("WEBVIEW_FAILED", sourceUrl + " -> " + it.message)
+            }.getOrNull() ?: return false
+
+            var added = false
+            resolved.second.orEmpty().map { it.url.toString() }.distinct().forEach { capturedUrl ->
+                debugFilmKovasi("WEBVIEW_CAPTURE", capturedUrl)
+                if (capturedUrl.contains(".m3u8", true) || capturedUrl.contains(".mp4", true)) {
+                    if (!ignored(capturedUrl)) {
+                        callback(newExtractorLink(
+                            source = name,
+                            name = "FilmKovası Direct",
+                            url = capturedUrl,
+                            type = if (capturedUrl.contains(".m3u8", true))
+                                ExtractorLinkType.M3U8
+                            else
+                                ExtractorLinkType.VIDEO
+                        ) {
+                            referer = sourceUrl
+                        })
+                        added = true
+                    }
+                } else if (!capturedUrl.equals(sourceUrl, true) &&
+                    !capturedUrl.equals("about:blank", true)) {
+                    enqueue(capturedUrl, sourceUrl, "webview")
+                }
+            }
+            return added
+        }
         val playerQueue = ArrayDeque<Pair<String, String>>()
 
         fun normalize(raw: String?, base: String): String? {
@@ -274,6 +350,10 @@ class FilmKovasi : MainAPI() {
 
             val sourceHtml = sourceDocument.html()
             debugFilmKovasi("SOURCE_PAGE_OK", "${label} = ${sourceUrl}")
+
+            if (sourceHtml.contains("about:blank", true)) {
+                resolveSourceWithWebView(sourceUrl, data)
+            }
 
             sourceDocument.select(
                 "iframe[src], iframe[data-src], iframe[data-url], iframe[data-frame], iframe[data-iframe], " +
