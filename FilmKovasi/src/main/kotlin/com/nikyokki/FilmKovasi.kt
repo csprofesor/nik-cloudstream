@@ -195,10 +195,10 @@ class FilmKovasi : MainAPI() {
         // Some WordPress/cache variants can leave the source anchors only in raw HTML.
         if (sourcePages.isEmpty()) {
             val html = document.html()
-            Regex("""https?://[^"'\\s<>]+/\\d+/?""").findAll(html).forEach { match ->
+            Regex("""https?://[^"'\s<>]+/\d+/?""").findAll(html).forEach { match ->
                 addSourcePage(match.value)
             }
-            Regex("""href=["']([^"']+/\\d+/?)["']""", RegexOption.IGNORE_CASE)
+            Regex("""href=["']([^"']+/\d+/?)["']""", RegexOption.IGNORE_CASE)
                 .findAll(html).forEach { match ->
                     addSourcePage(match.groupValues[1])
                 }
@@ -209,21 +209,21 @@ class FilmKovasi : MainAPI() {
             .sortedBy { Regex("/(\\d+)/?$").find(it.first)?.groupValues?.get(1)?.toIntOrNull() ?: Int.MAX_VALUE }
 
         debugFilmKovasi("SOURCE_PAGE_COUNT", orderedSourcePages.size.toString())
-        debugFilmKovasi("SOURCE_PAGE_ORDER", orderedSourcePages.joinToString(" | ") { "${it.second}=$@@{it.first}" })
+        debugFilmKovasi("SOURCE_PAGE_ORDER", orderedSourcePages.joinToString(" | ") { "${it.second}=${it.first}" })
 
         // Try sources strictly in page-number order. If one source works, stop:
         // there is no reason to wait for the remaining dead providers.
         for ((sourceUrl, label) in orderedSourcePages) {
-            debugFilmKovasi("SOURCE_PAGE_START", "$@@{label} = $@@{sourceUrl}")
+            debugFilmKovasi("SOURCE_PAGE_START", "${label} = ${sourceUrl}")
 
             val sourceDocument = try {
                 app.get(sourceUrl, referer = data).document
             } catch (e: Throwable) {
-                debugFilmKovasi("SOURCE_PAGE_FAIL", "$@@{label} = $@@{e.javaClass.simpleName}: $@@{e.message ?: ""}")
+                debugFilmKovasi("SOURCE_PAGE_FAIL", "${label} = ${e.javaClass.simpleName}: ${e.message ?: ""}")
                 continue
             }
 
-            debugFilmKovasi("SOURCE_PAGE_OK", "$@@{label} = $@@{sourceUrl}")
+            debugFilmKovasi("SOURCE_PAGE_OK", "${label} = ${sourceUrl}")
 
             sourceDocument.select(
                 "iframe[src], iframe[data-src], " +
@@ -237,7 +237,7 @@ class FilmKovasi : MainAPI() {
                 }
 
                 if (raw.isNotBlank() && !raw.equals("about:blank", true)) {
-                    debugFilmKovasi("PLAYER", "$@@{label} -> $@@{raw}")
+                    debugFilmKovasi("PLAYER", "${label} -> ${raw}")
                     tryExtractor(raw, sourceUrl)
                 }
             }
@@ -245,13 +245,13 @@ class FilmKovasi : MainAPI() {
             // CloudStream does not execute the source page JavaScript.
             // Decode URLs that are present directly or inside simple atob(...) payloads.
             val scriptUrls = mutableListOf<String>()
-            val atobRegex = Regex("""atob\\(\\s*["']([^"']+)["']\\s*\\)""", RegexOption.IGNORE_CASE)
-            val absoluteUrlRegex = Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+            val atobRegex = Regex("""atob\(\s*["']([^"']+)["']\s*\)""", RegexOption.IGNORE_CASE)
+            val absoluteUrlRegex = Regex("""https?://[^"'\s<>]+""", RegexOption.IGNORE_CASE)
 
             fun addScriptUrl(raw: String) {
                 val cleaned = raw
-                    .replace("\\\\/", "/")
-                    .replace("\\\\u0026", "&")
+                    .replace("\\/", "/")
+                    .replace("\u0026", "&")
                     .replace("&amp;", "&")
                     .trim()
                     .trim('"', '\'', '(', ')', '[', ']', '{', '}', ';', ',', '.')
@@ -291,7 +291,7 @@ class FilmKovasi : MainAPI() {
             }
 
             scriptUrls.distinct().forEach { playerUrl ->
-                debugFilmKovasi("SCRIPT_PLAYER", "$@@{label} -> $@@{playerUrl}")
+                debugFilmKovasi("SCRIPT_PLAYER", "${label} -> ${playerUrl}")
                 tryExtractor(playerUrl, sourceUrl)
             }
 
@@ -307,13 +307,13 @@ class FilmKovasi : MainAPI() {
                 ).firstOrNull { it.isNotBlank() }
 
                 if (!raw.isNullOrBlank() && !raw.equals("about:blank", true)) {
-                    debugFilmKovasi("PLAYER_DATA", "$@@{label} -> $@@{raw}")
+                    debugFilmKovasi("PLAYER_DATA", "${label} -> ${raw}")
                     tryExtractor(raw, sourceUrl)
                 }
             }
 
             if (found) {
-                debugFilmKovasi("SOURCE_SUCCESS", "$@@{label}")
+                debugFilmKovasi("SOURCE_SUCCESS", "${label}")
                 break
             }
         }
