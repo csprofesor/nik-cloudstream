@@ -24,6 +24,7 @@ import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import org.jsoup.nodes.Element
 
+// FilmKovasi source-page resolver: source pages (/2/, /3/, ...) are parsed for real player URLs.
 class FilmKovasi : MainAPI() {
     override var mainUrl = "https://filmkovasi.co"
     override var name = "FilmKovası"
