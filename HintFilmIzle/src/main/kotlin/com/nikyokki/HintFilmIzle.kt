@@ -602,7 +602,12 @@ class HintFilmIzle : MainAPI() {
                 // Never terminate on the first HLS request.
                 interceptUrl = Regex("""a^"""),
                 additionalUrls = listOf(
-                    Regex("""https?://[^/]*kinescopecdn\.net/hls/[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?""", RegexOption.IGNORE_CASE),
+                    // Capture the complete Kinescope/player request chain, not only HLS.
+                    // This lets us see whether different film embeds resolve to the
+                    // same asset/video id before the final manifest is requested.
+                    Regex("""https?://player\.hintfilmizle\.com/[^"'\s<>]+""", RegexOption.IGNORE_CASE),
+                    Regex("""https?://[^"'\s<>]*kinescope[^"'\s<>]*""", RegexOption.IGNORE_CASE),
+                    Regex("""https?://[^"'\s<>]+(?:kinescopecdn|kinescope)\.[^"'\s<>]+""", RegexOption.IGNORE_CASE),
                     Regex("""https?://[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?""", RegexOption.IGNORE_CASE)
                 ),
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
@@ -625,6 +630,17 @@ class HintFilmIzle : MainAPI() {
             }.getOrNull()
 
             val capturedRequests = resolved?.second.orEmpty()
+
+            // Diagnostic dump: include every captured Kinescope/player request.
+            // URLs are enough to compare two different film embeds without
+            // dumping cookies or authorization headers.
+            capturedRequests
+                .map { it.url.toString() }
+                .distinct()
+                .forEach { url ->
+                    Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$url")
+                }
+
             val manifestCandidates = capturedRequests
                 .map { it.url.toString() }
                 .filter { it.contains(".m3u8", true) }
