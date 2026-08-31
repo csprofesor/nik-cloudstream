@@ -4,6 +4,10 @@ import org.gradle.api.plugins.JavaPluginExtension
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
+plugins {
+    kotlin("jvm")
+}
+
 buildscript {
     repositories {
         google()
@@ -85,6 +89,12 @@ subprojects {
     }
 }
 
-tasks.register("clean", Delete::class) {
+tasks.named("clean") {
     delete(rootProject.layout.buildDirectory)
+}
+repositories {
+    mavenCentral()
+}
+dependencies {
+    testImplementation(kotlin("test"))
 }

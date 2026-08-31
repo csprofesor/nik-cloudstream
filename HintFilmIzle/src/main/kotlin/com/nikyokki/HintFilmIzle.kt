@@ -251,7 +251,17 @@ class HintFilmIzle : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val pageUrl = if (page <= 1) request.data else request.data.trimEnd('/') + "/page/" + page + "/"
-        val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
+        val document = runCatching {
+            app.get(
+                pageUrl,
+                referer = "$mainUrl/",
+                headers = mapOf(
+                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                )
+            ).document
+        }.getOrNull()
             ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
         val results = extractResults(document, pageUrl)
         return newHomePageResponse(request.name, results, hasNext = results.isNotEmpty())
@@ -278,7 +288,15 @@ class HintFilmIzle : MainAPI() {
 
         for (url in urls) {
             val results = runCatching {
-                val response = app.get(url, referer = "$mainUrl/")
+                val response = app.get(
+                    url,
+                    referer = "$mainUrl/",
+                    headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )
+                )
                 extractResults(response.document, url)
             }.getOrDefault(emptyList())
 
@@ -295,7 +313,15 @@ class HintFilmIzle : MainAPI() {
             val url = if (page == 1) "$mainUrl/film" else "$mainUrl/film/page/$page/"
             val results = runCatching {
                 extractResults(
-                    app.get(url, referer = "$mainUrl/film").document,
+                    app.get(
+                        url,
+                        referer = "$mainUrl/film",
+                        headers = mapOf(
+                            "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                        )
+                    ).document,
                     url
                 )
             }.getOrDefault(emptyList())
@@ -322,7 +348,15 @@ class HintFilmIzle : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url, referer = "$mainUrl/").document
+        val document = app.get(
+            url,
+            referer = "$mainUrl/",
+            headers = mapOf(
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ).document
         val title = firstText(document, "h1", ".entry-title", ".film-title", ".movie-title", ".serieTitle")
             ?: return null
 
