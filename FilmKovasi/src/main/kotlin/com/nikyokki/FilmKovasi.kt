@@ -25,6 +25,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
+import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
 // FilmKovasi source-page resolver: source pages (/2/, /3/, ...) are parsed for real player URLs.
@@ -86,8 +87,8 @@ class FilmKovasi : MainAPI() {
     private fun Element.toMainPageResult(): SearchResponse? {
         val link = selectFirst("div.film-ismi a[href]") ?: return null
         val href = fixUrlNull(link.attr("href")) ?: return null
-        val title = link.text().replace(Regex("\s+"), " ")
-            .replace(Regex("(?i)\s+izle$"), "").trim()
+        val title = link.text().replace(Regex("\\s+"), " ")
+            .replace(Regex("(?i)\\s+izle$"), "").trim()
         if (title.length < 2) return null
         val poster = selectFirst("div.poster img")?.posterUrl() ?: selectFirst("img")?.posterUrl()
         return newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster }
@@ -117,7 +118,7 @@ class FilmKovasi : MainAPI() {
             )
         ).document
         val title = document.selectFirst("h1.title-border, h1, .title-border")?.text()
-            ?.replace(Regex("(?i)\s+izle$"), "")?.trim() ?: return null
+            ?.replace(Regex("(?i)\\s+izle$"), "")?.trim() ?: return null
         val poster = document.selectFirst("meta[property='og:image']")?.attr("content")?.let { fixUrlNull(it) }
             ?: document.selectFirst("div.film-afis img, .film-afis img, .poster img, .film-poster img")?.posterUrl()
         val description = document.selectFirst("div#film-aciklama, #film-aciklama, .film-aciklama")?.text()?.trim()
@@ -250,7 +251,7 @@ class FilmKovasi : MainAPI() {
             val number = Regex("/(\\d+)/?$").find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
                 ?: return@mapNotNull null
             if (number < 2) return@mapNotNull null
-            href to (element.text().replace(Regex("\s+"), " ").trim().ifBlank { "Kaynak ${number}" })
+            href to (element.text().replace(Regex("\\s+"), " ").trim().ifBlank { "Kaynak ${number}" })
         }.distinctBy { it.first }
             .sortedBy { Regex("/(\\d+)/?$").find(it.first)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Int.MAX_VALUE }
 
