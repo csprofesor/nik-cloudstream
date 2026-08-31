@@ -645,6 +645,7 @@ class HintFilmIzle : MainAPI() {
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 useOkhttp = false,
+                timeout = 30_000L,
                 script = """
                     (function() {
                         try {
@@ -705,7 +706,7 @@ class HintFilmIzle : MainAPI() {
                 scriptCallback = { result ->
                     Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result")
                 },
-                timeout = 45_000L
+                timeout = 30_000L
             )
 
             val resolved = runCatching {
@@ -714,7 +715,8 @@ class HintFilmIzle : MainAPI() {
                     referer = parentUrl,
                     headers = mapOf(
                         "Referer" to parentUrl,
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
                     )
                 )
             }.onFailure {
