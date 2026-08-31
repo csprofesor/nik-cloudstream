@@ -613,6 +613,39 @@ class HintFilmIzle : MainAPI() {
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 useOkhttp = false,
+                /*
+                 * Kinescope's embed uses JavaScript to build/decrypt its HLS
+                 * source. WebViewResolver may not expose that URL through
+                 * shouldInterceptRequest (especially when the renderer dies).
+                 * Inspect the page's own resource graph and media elements too.
+                 */
+                script = """
+                    (function() {
+                        try {
+                            var resources = performance.getEntriesByType('resource')
+                                .map(function(e) { return e.name; })
+                                .filter(function(u) {
+                                    return /kinescope|m3u8|hls|video|media|stream|asset|playback/i.test(u);
+                                });
+                            var media = Array.from(document.querySelectorAll('video,audio,source'))
+                                .map(function(e) { return e.currentSrc || e.src || ''; })
+                                .filter(Boolean);
+                            var htmlMatches = (document.documentElement ? document.documentElement.innerHTML : '')
+                                .match(/https?:\\/\\/[^"'\\s<>]+(?:m3u8|kinescope|hls|video|media|stream)[^"'\\s<>]*/ig) || [];
+                            return JSON.stringify({
+                                href: location.href,
+                                media: media,
+                                resources: resources,
+                                html: htmlMatches
+                            });
+                        } catch (e) {
+                            return JSON.stringify({error: String(e)});
+                        }
+                    })()
+                """.trimIndent(),
+                scriptCallback = { result ->
+                    Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result")
+                },
                 timeout = 45_000L
             )
 
@@ -657,7 +690,8 @@ class HintFilmIzle : MainAPI() {
                 return false
             }
 
-            val embedId = Regex("""/(\\d+)/embed(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
+            // HintFilmIzle uses /embed/<video-id>, not /<video-id>/embed.
+            val embedId = Regex("""/embed/(\\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
                 .find(iframeUrl)?.groupValues?.getOrNull(1)
 
             fun manifestScore(url: String): Int {
