@@ -567,9 +567,14 @@ class HintFilmIzle : MainAPI() {
                     referer = parentUrl,
                     headers = mapOf(
                         "Referer" to parentUrl,
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                            "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                         "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
                     )
                 ).text
+            }.onFailure {
+                Log.e("HintFilmIzle", "KINESCOPE_IFRAME_GET_FAILED=$iframeUrl", it)
             }.getOrNull()
 
             iframeHtml?.let { html ->
@@ -618,11 +623,12 @@ class HintFilmIzle : MainAPI() {
             }
 
             val resolver = WebViewResolver(
-                interceptUrl = Regex("""\.m3u8(?:\?|$)""", RegexOption.IGNORE_CASE),
+                interceptUrl = Regex("""(?:\.m3u8(?:\?|$)|kinescopecdn\.net/hls/)""", RegexOption.IGNORE_CASE),
                 additionalUrls = listOf(
                     Regex("""kinescopecdn\.net/hls/""", RegexOption.IGNORE_CASE)
                 ),
-                userAgent = null,
+                userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 useOkhttp = false,
                 timeout = 45_000L
             )
