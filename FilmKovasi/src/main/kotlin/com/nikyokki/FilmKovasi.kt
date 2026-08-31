@@ -129,10 +129,18 @@ class FilmKovasi : MainAPI() {
         var found = false
 
         suspend fun tryExtractor(rawUrl: String?, referer: String = data) {
-            val url = rawUrl?.trim()
+            val candidate = rawUrl?.trim()
                 ?.trim('"', '(', ')', ';', ',')
-                ?.let { fixUrlNull(it) }
                 ?: return
+
+            // Never send labels/identifiers such as "filmkova" to the HTTP client.
+            val url = if (candidate.startsWith("http://", true) || candidate.startsWith("https://", true)) {
+                candidate
+            } else {
+                fixUrlNull(candidate) ?: return
+            }
+
+            if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return
 
             if (url.isBlank() ||
                 url.startsWith("javascript:", true) ||
