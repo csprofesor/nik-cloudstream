@@ -601,15 +601,8 @@ class HintFilmIzle : MainAPI() {
             val resolver = WebViewResolver(
                 // Do not stop on the first request. The player first fetches a
                 // JSON/API payload and only then obtains the encrypted HLS data.
-                interceptUrl = Regex("""a^"""),
-                additionalUrls = listOf(
-                    // Capture every HTTP(S) request from the embed. The site's
-                    // player does not expose the final HLS URL directly: its
-                    // JavaScript fetches an API response, parses an encrypted
-                    // M3U8 payload, decrypts it, and then feeds it to the HLS
-                    // player. See the supplied embed.js source.
-                    Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
-                ),
+                interceptUrl = Regex("""https?://.*""", RegexOption.IGNORE_CASE),
+                additionalUrls = emptyList(),
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 useOkhttp = false,
