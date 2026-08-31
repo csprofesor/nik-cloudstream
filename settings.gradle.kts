@@ -1,3 +1,11 @@
+pluginManagement {
+    plugins {
+        kotlin("jvm") version "2.4.10"
+    }
+}
+plugins {
+    id("org.gradle.toolchains.foojay-resolver-convention") version "1.0.0"
+}
 rootProject.name = "gsrepo"
 
 // All plugin directories containing build.gradle.kts are included automatically.
