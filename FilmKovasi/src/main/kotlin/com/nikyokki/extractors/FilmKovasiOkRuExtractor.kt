@@ -84,8 +84,8 @@ class FilmKovasiOkRuExtractor : ExtractorApi() {
 
         val options = document.selectFirst("[data-options]")
             ?.attr("data-options")
-            ?.replace("&quot;", """)
-            ?.replace("&#34;", """)
+            ?.replace("&quot;", "\"")
+            ?.replace("&#34;", "\"")
             ?.replace("&amp;", "&")
             ?.trim()
 
