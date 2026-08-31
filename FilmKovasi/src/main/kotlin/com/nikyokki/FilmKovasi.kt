@@ -170,13 +170,15 @@ class FilmKovasi : MainAPI() {
         // FilmKovası does not put the real player URLs on the film page.
         // Each player is a separate /2/, /3/, ... source page.
         // The source links are marked explicitly with class="post-page-numbers".
-        val sourcePages = document.select("a.post-page-numbers[href]")
+        val sourcePages = document.select("a[href]").filter { element ->
+            element.hasClass("post-page-numbers") || element.selectFirst(".dil") != null
+        }
             .mapNotNull { element ->
                 val href = element.attr("href").trim()
                 val url = fixUrlNull(href) ?: return@mapNotNull null
                 val label = element.selectFirst(".dil")?.text()?.trim()
                     ?: element.text().trim()
-                if (url.startsWith(mainUrl, true) && Regex("/\\d+/?$").containsMatchIn(url)) {
+                if (url.startsWith(mainUrl, true) && Regex("/\\d+/?$").containsMatchIn(url) && url != data) {
                     Pair(url, label)
                 } else null
             }
@@ -186,7 +188,7 @@ class FilmKovasi : MainAPI() {
 
         // Open every source page independently. This is the important part:
         // /2/, /3/, ... are FilmKovası source pages, not media URLs.
-        for ((sourceUrl, label, _) in sourcePages) {
+        for ((sourceUrl, label) in sourcePages) {
             debugFilmKovasi("SOURCE_PAGE", "$label = $sourceUrl")
 
             val sourceDocument = try {
