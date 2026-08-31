@@ -172,7 +172,7 @@ class FilmKovasi : MainAPI() {
             )
 
             for (raw in attributes) {
-                val candidates = Regex("https?://[^\\\\"'\\s<>]+|/[^\\\\"'\\s<>]+")
+                val candidates = Regex("""https?://[^"'\\s<>]+|/[^"'\\s<>]+""")
                     .findAll(raw)
                     .map { it.value }
                     .toList()
