@@ -86,8 +86,8 @@ class FilmKovasi : MainAPI() {
     private fun Element.toMainPageResult(): SearchResponse? {
         val link = selectFirst("div.film-ismi a[href]") ?: return null
         val href = fixUrlNull(link.attr("href")) ?: return null
-        val title = link.text().replace(Regex("\\s+"), " ")
-            .replace(Regex("(?i)\\s+izle$"), "").trim()
+        val title = link.text().replace(Regex("\s+"), " ")
+            .replace(Regex("(?i)\s+izle$"), "").trim()
         if (title.length < 2) return null
         val poster = selectFirst("div.poster img")?.posterUrl() ?: selectFirst("img")?.posterUrl()
         return newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster }
@@ -117,7 +117,7 @@ class FilmKovasi : MainAPI() {
             )
         ).document
         val title = document.selectFirst("h1.title-border, h1, .title-border")?.text()
-            ?.replace(Regex("(?i)\\s+izle$"), "")?.trim() ?: return null
+            ?.replace(Regex("(?i)\s+izle$"), "")?.trim() ?: return null
         val poster = document.selectFirst("meta[property='og:image']")?.attr("content")?.let { fixUrlNull(it) }
             ?: document.selectFirst("div.film-afis img, .film-afis img, .poster img, .film-poster img")?.posterUrl()
         val description = document.selectFirst("div#film-aciklama, #film-aciklama, .film-aciklama")?.text()?.trim()
@@ -177,8 +177,8 @@ class FilmKovasi : MainAPI() {
 
         fun normalize(raw: String?, base: String): String? {
             val value = raw?.trim()
-                ?.replace("\\\\/", "/")
-                ?.replace("\\\\u0026", "&")
+                ?.replace("\\/", "/")
+                ?.replace("\\u0026", "&")
                 ?.replace("&amp;", "&")
                 ?.trim('"', '\'', '(', ')', '[', ']', '{', '}', ';', ',')
                 ?.takeIf { it.isNotBlank() }
@@ -220,7 +220,7 @@ class FilmKovasi : MainAPI() {
         fun addDirectMedia(html: String, referer: String, sourceName: String): Boolean {
             var added = false
             Regex(
-                """https?://[^"'\\s<>]+?\\.(?:m3u8|mp4)(?:\\?[^"'\\s<>]*)?""",
+                """https?://[^"'\s<>]+?\\.(?:m3u8|mp4)(?:\\?[^"'\s<>]*)?""",
                 RegexOption.IGNORE_CASE
             ).findAll(html).forEach { match ->
                 val media = match.value
@@ -250,7 +250,7 @@ class FilmKovasi : MainAPI() {
             val number = Regex("/(\\d+)/?$").find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
                 ?: return@mapNotNull null
             if (number < 2) return@mapNotNull null
-            href to (element.text().replace(Regex("\\s+"), " ").trim().ifBlank { "Kaynak ${number}" })
+            href to (element.text().replace(Regex("\s+"), " ").trim().ifBlank { "Kaynak ${number}" })
         }.distinctBy { it.first }
             .sortedBy { Regex("/(\\d+)/?$").find(it.first)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Int.MAX_VALUE }
 
@@ -295,12 +295,12 @@ class FilmKovasi : MainAPI() {
                 ).forEach { raw -> enqueue(raw, sourceUrl, "${label} ${element.tagName()}") }
             }
 
-            Regex("""https?:\\/\\/[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+            Regex("""https?:\\/\\/[^"'\s<>]+""", RegexOption.IGNORE_CASE)
                 .findAll(sourceHtml)
                 .forEach { match -> enqueue(match.value.replace("\\/", "/"), sourceUrl, "${label} html") }
 
-            val atobRegex = Regex("""atob\\(\\s*["']([^"']+)["']\\s*\\)""", RegexOption.IGNORE_CASE)
-            val absoluteRegex = Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+            val atobRegex = Regex("""atob\\(\s*["']([^"']+)["']\s*\\)""", RegexOption.IGNORE_CASE)
+            val absoluteRegex = Regex("""https?://[^"'\s<>]+""", RegexOption.IGNORE_CASE)
             sourceDocument.select("script").forEach { script ->
                 val text = script.data().ifBlank { script.html() }
                 atobRegex.findAll(text).forEach { match ->
@@ -368,21 +368,21 @@ class FilmKovasi : MainAPI() {
                 ).forEach { raw -> enqueue(raw, playerUrl, "nested ${element.tagName()}") }
             }
 
-            Regex("""https?:\\/\\/[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+            Regex("""https?:\\/\\/[^"'\s<>]+""", RegexOption.IGNORE_CASE)
                 .findAll(nestedHtml)
                 .forEach { match -> enqueue(match.value.replace("\\/", "/"), playerUrl, "nested html") }
 
             nestedDocument.select("script").forEach { script ->
                 val text = script.data().ifBlank { script.html() }
-                Regex("""atob\\(\\s*["']([^"']+)["']\\s*\\)""", RegexOption.IGNORE_CASE)
+                Regex("""atob\\(\s*["']([^"']+)["']\s*\\)""", RegexOption.IGNORE_CASE)
                     .findAll(text).forEach { match ->
                         runCatching {
                             val decoded = Base64.decode(match.groupValues[1], Base64.DEFAULT).toString(Charsets.UTF_8)
-                            Regex("""https?://[^"'\\s<>]+""").findAll(decoded)
+                            Regex("""https?://[^"'\s<>]+""").findAll(decoded)
                                 .forEach { url -> enqueue(url.value, playerUrl, "nested atob") }
                         }
                     }
-                Regex("""https?://[^"'\\s<>]+""").findAll(text)
+                Regex("""https?://[^"'\s<>]+""").findAll(text)
                     .forEach { url -> enqueue(url.value, playerUrl, "nested script") }
             }
         }
