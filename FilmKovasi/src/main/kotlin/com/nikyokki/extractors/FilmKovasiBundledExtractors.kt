@@ -66,7 +66,7 @@ object FilmKovasiBundledExtractors {
         label: String
     ): Boolean {
         val response = runCatching {
-            app.get(url, headers(referer))
+            app.get(url, headers = headers(referer), referer = referer)
         }.getOrNull() ?: return false
 
         var found = false
@@ -135,7 +135,7 @@ object FilmKovasiBundledExtractors {
         visited: MutableSet<String>,
         depth: Int
     ): Boolean {
-        val response = runCatching { app.get(url, headers(referer)) }.getOrNull()
+        val response = runCatching { app.get(url, headers = headers(referer), referer = referer) }.getOrNull()
             ?: return false
         val master = Regex("""MasterJS\s*=\s*'([^']*)'""").find(response.text)?.groupValues?.get(1)
             ?: return iframeBridge(url, referer, subtitleCallback, callback, visited, depth, "SmashyStream")
