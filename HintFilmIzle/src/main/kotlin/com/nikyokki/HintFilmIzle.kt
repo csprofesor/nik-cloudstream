@@ -561,10 +561,18 @@ class HintFilmIzle : MainAPI() {
             // player.hintfilmizle.com is browser-only in this environment.
             // Do not resolve it through the native HTTP client: that produces
             // UnknownHostException and prevents the WebView from reaching Kinescope.
+            /*
+             * Do not stop on the first .m3u8 request. Kinescope can request a
+             * short preview/ad/auxiliary playlist before the actual movie HLS.
+             * The old interceptUrl behavior therefore selected the same short
+             * video for unrelated films.
+             */
             val resolver = WebViewResolver(
-                interceptUrl = Regex("""(?:https?://[^/]*kinescopecdn\.net/hls/|\.m3u8(?:\?|$))""", RegexOption.IGNORE_CASE),
+                // Never terminate on the first HLS request.
+                interceptUrl = Regex("""a^"""),
                 additionalUrls = listOf(
-                    Regex("""kinescopecdn\.net/hls/""", RegexOption.IGNORE_CASE)
+                    Regex("""https?://[^/]*kinescopecdn\\.net/hls/[^"'\\\\s<>]+\\.m3u8(?:\\?[^"'\\\\s<>]*)?""", RegexOption.IGNORE_CASE),
+                    Regex("""https?://[^"'\\\\s<>]+\\.m3u8(?:\\?[^"'\\\\s<>]*)?""", RegexOption.IGNORE_CASE)
                 ),
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
@@ -585,18 +593,55 @@ class HintFilmIzle : MainAPI() {
                 Log.e("HintFilmIzle", "KINESCOPE_WEBVIEW_RESOLVE_FAILED", it)
             }.getOrNull()
 
-            val manifestRequest = resolved?.first
-            if (manifestRequest == null) {
-                Log.e("HintFilmIzle", "KINESCOPE_NO_INTERCEPTED_MANIFEST")
+            val capturedRequests = resolved?.second.orEmpty()
+            val manifestCandidates = capturedRequests
+                .map { it.url.toString() }
+                .filter { it.contains(".m3u8", true) }
+                .filter { it.contains("kinescope", true) }
+                .distinct()
+
+            Log.d(
+                "HintFilmIzle",
+                "KINESCOPE_MANIFEST_CANDIDATES=" + manifestCandidates.joinToString(" || ")
+            )
+
+            if (manifestCandidates.isEmpty()) {
+                Log.e("HintFilmIzle", "KINESCOPE_NO_HLS_CANDIDATE")
                 return false
             }
 
-            val manifestUrl = manifestRequest.url.toString()
-            Log.d("HintFilmIzle", "KINESCOPE_INTERCEPTED_URL=$manifestUrl")
-            if (!manifestUrl.contains(".m3u8", true)) {
-                Log.e("HintFilmIzle", "KINESCOPE_INTERCEPTED_NOT_M3U8=$manifestUrl")
-                return false
+            val embedId = Regex("""/(\\d+)/embed(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
+                .find(iframeUrl)?.groupValues?.getOrNull(1)
+
+            fun manifestScore(url: String): Int {
+                var score = 0
+                if (embedId != null && url.contains(embedId, true)) score += 1000
+                if (url.contains("/hls/", true)) score += 100
+                if (url.contains("master", true) || url.contains("index", true)) score += 30
+                if (url.contains("playlist", true)) score += 20
+                if (url.contains("preview", true) || url.contains("trailer", true)) score -= 500
+                if (url.contains("/ad", true) || url.contains("ads", true)) score -= 500
+                return score
             }
+
+            // Later requests win ties because the actual player playlist is
+            // normally requested after the embed initializes.
+            val manifestUrl = manifestCandidates
+                .mapIndexed { index, url -> Triple(manifestScore(url), index, url) }
+                .maxWithOrNull(
+                    compareBy<Triple<Int, Int, String>> { it.first }.thenBy { it.second }
+                )
+                ?.third
+                ?: return false
+
+            Log.d(
+                "HintFilmIzle",
+                "KINESCOPE_SELECTED_MANIFEST=${manifestUrl} score=${manifestScore(manifestUrl)}"
+            )
+
+            val manifestRequest = capturedRequests.lastOrNull {
+                it.url.toString() == manifestUrl
+            } ?: return false
 
             val nativeManifestUrl = manifestUrl
 
