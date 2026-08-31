@@ -218,12 +218,13 @@ class FilmKovasi : MainAPI() {
             }
         }
 
-        fun addDirectMedia(html: String, referer: String, sourceName: String): Boolean {
+        suspend fun addDirectMedia(html: String, referer: String, sourceName: String): Boolean {
             var added = false
-            Regex(
+            val mediaRegex = Regex(
                 """https?://[^"'\s<>]+?\\.(?:m3u8|mp4)(?:\\?[^"'\s<>]*)?""",
                 RegexOption.IGNORE_CASE
-            ).findAll(html).forEach { match ->
+            )
+            for (match in mediaRegex.findAll(html)) {
                 val media = match.value
                     .replace("&amp;", "&")
                     .trimEnd('\\', '"', '\'', ')', ']', ';', ',')
