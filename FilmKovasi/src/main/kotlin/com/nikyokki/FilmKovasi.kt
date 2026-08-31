@@ -127,90 +127,110 @@ class FilmKovasi : MainAPI() {
     ): Boolean {
         val document = app.get(data).document
         var found = false
-        val sourceNames = setOf(
-            "harici kaynak 1", "harici kaynak 2",
-            "vidsrc me", "vidsrc xyz", "vidsrc to", "vidsrc pro", "vidsrc icu", "vidsrc cc",
-            "2embed", "autoembed", "smashystream", "multiembed", "moviesapi"
+
+        suspend fun tryExtractor(rawUrl: String?, referer: String = data) {
+            val url = rawUrl?.trim()
+                ?.trim('"', '\\'', '(', ')', ';', ',')
+                ?.let { fixUrlNull(it) }
+                ?: return
+
+            if (url.isBlank() ||
+                url.startsWith("javascript:", true) ||
+                url == data
+            ) return
+
+            try {
+                if (loadExtractor(url, referer, subtitleCallback) { link ->
+                        callback(link)
+                    }) {
+                    found = true
+                }
+            } catch (_: Throwable) {
+                // Try the next source.
+            }
+        }
+
+        // The site can expose the player either directly or through source/mirror pages.
+        val sourceElements = document.select(
+            "div.sources a[href], " +
+            "a[data-url], a[data-src], a[data-link], a[data-embed], " +
+            "a[href*='embed'], a[href*='player'], " +
+            "button[data-url], button[data-src]"
         )
 
-        suspend fun resolveCandidate(raw: String, sourceName: String) {
-            val candidate = fixUrlNull(raw.trim().trim('"', '\'', '(', ')', ';', ',')) ?: return
-            if (candidate.isBlank() || candidate.startsWith("javascript:") || candidate == data) return
-            try {
-                if (candidate.startsWith("http") && !candidate.contains("filmkovasi.co", true)) {
-                    if (loadExtractor(candidate, data, subtitleCallback) { link ->
-                        callback(link)
-                    }) found = true
-                    return
-                }
+        // First try the URLs exposed directly by source buttons.
+        for (element in sourceElements) {
+            val referer = fixUrlNull(element.attr("href")).takeUnless { it.isNullOrBlank() } ?: data
 
-                val sourceDoc = app.get(candidate, referer = data).document
-                for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
-                    val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
-                    if (loadExtractor(iframeUrl, candidate, subtitleCallback) { link ->
-                        callback(link)
-                    }) found = true
-                }
-            } catch (_: Throwable) {
-                // Try the next visible source; FilmKovası exposes multiple mirrors.
-            }
-        }
-
-        for (element in document.select("a, button, [role=button]")) {
-            val label = element.text().replace(Regex("\\s+"), " ").trim().lowercase()
-            if (label !in sourceNames) continue
-            val sourceName = element.text().replace(Regex("\\s+"), " ").trim()
-            val attrs = listOf(
-                element.attr("href"), element.attr("src"), element.attr("data-url"),
-                element.attr("data-src"), element.attr("data-link"), element.attr("data-embed"),
-                element.attr("data-video"), element.attr("onclick")
+            val attributes = listOf(
+                element.attr("href"),
+                element.attr("data-url"),
+                element.attr("data-src"),
+                element.attr("data-link"),
+                element.attr("data-embed"),
+                element.attr("data-video")
             )
-            for (raw in attrs.filter { it.isNotBlank() }) {
-                for (candidate in Regex("https?://[^\\\"'\\s<>]+|/[^\\\"'\\s<>]+")
-                    .findAll(raw).map { it.value }) {
-                    resolveCandidate(candidate, sourceName)
+
+            for (raw in attributes) {
+                val candidates = Regex("https?://[^\\\\"'\\s<>]+|/[^\\\\"'\\s<>]+")
+                    .findAll(raw)
+                    .map { it.value }
+                    .toList()
+
+                if (candidates.isEmpty() && raw.isNotBlank()) {
+                    tryExtractor(raw, data)
+                } else {
+                    candidates.forEach { tryExtractor(it, data) }
                 }
             }
 
-            for (iframe in element.select("iframe[src], iframe[data-src]")) {
-                val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
-                if (iframeUrl.isBlank()) continue
-                if (loadExtractor(iframeUrl, data, subtitleCallback) { link ->
-                    callback(link)
-                }) found = true
-            }
-        }
+            // Some source buttons open a FilmKovası page containing the real iframe.
+            val href = fixUrlNull(element.attr("href"))
+            if (!href.isNullOrBlank() && href.contains("filmkovasi.co", true)) {
+                try {
+                    val sourceDoc = app.get(href, referer = data).document
+                    sourceDoc.select("iframe[src], iframe[data-src]").forEach { iframe ->
+                        val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
+                        tryExtractor(iframeUrl, href)
+                    }
 
-        for (source in document.select("div.sources a[href]")) {
-            val sourceName = source.selectFirst("span")?.text()?.trim().takeUnless { it.isNullOrBlank() } ?: name
-            val href = fixUrlNull(source.attr("href")) ?: continue
-            try {
-                val sourceDoc = app.get(href, referer = data).document
-                for (iframe in sourceDoc.select("iframe[src], iframe[data-src]")) {
-                    val iframeUrl = fixUrlNull(iframe.attr("src").ifBlank { iframe.attr("data-src") }) ?: continue
-                    if (loadExtractor(iframeUrl, href, subtitleCallback) { link ->
-                        callback(link)
-                    }) found = true
+                    sourceDoc.select("video source[src], video[src]").forEach { video ->
+                        tryExtractor(video.attr("src").ifBlank { video.attr("data-src") }, href)
+                    }
+                } catch (_: Throwable) {
+                    // Continue with other sources.
                 }
-            } catch (_: Throwable) {
-                // Continue with other source buttons.
             }
         }
 
-        document.select("video source[src], video[src]").mapNotNull {
-            fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") })
-        }.filter { it.startsWith("http") }.forEach { media ->
-            callback(
-                ExtractorLink(
-                    source = this.name,
-                    name = "FilmKovası",
-                    url = media,
-                    referer = data,
-                    quality = Qualities.Unknown.value,
-                    type = if (media.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+        // Also inspect any iframe already present on the film page.
+        document.select("iframe[src], iframe[data-src]").forEach { iframe ->
+            val iframeUrl = iframe.attr("src").ifBlank { iframe.attr("data-src") }
+            tryExtractor(iframeUrl, data)
+        }
+
+        // Finally accept a direct media URL if the site exposes one in the HTML.
+        document.select("video source[src], video[src]").forEach { video ->
+            val media = fixUrlNull(video.attr("src").ifBlank { video.attr("data-src") })
+                ?: return@forEach
+
+            if (media.startsWith("http", true)) {
+                callback(
+                    ExtractorLink(
+                        source = this.name,
+                        name = this.name,
+                        url = media,
+                        referer = data,
+                        quality = Qualities.Unknown.value,
+                        type = if (media.contains(".m3u8", true)) {
+                            ExtractorLinkType.M3U8
+                        } else {
+                            ExtractorLinkType.VIDEO
+                        }
+                    )
                 )
-            )
-            found = true
+                found = true
+            }
         }
 
         return found
