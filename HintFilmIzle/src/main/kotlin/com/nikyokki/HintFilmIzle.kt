@@ -611,6 +611,66 @@ class HintFilmIzle : MainAPI() {
                 userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
                 useOkhttp = false,
+                script = """
+                    (function() {
+                        try {
+                            var v = document.querySelector('video');
+                            var sources = Array.from(document.querySelectorAll('video,source'))
+                                .map(function(e) {
+                                    return {
+                                        src: e.currentSrc || e.src || '',
+                                        type: e.getAttribute('type') || ''
+                                    };
+                                })
+                                .filter(function(x) { return x.src; });
+
+                            var resourceUrls = performance.getEntriesByType('resource')
+                                .map(function(e) { return e.name; })
+                                .filter(function(u) {
+                                    return /m3u8|kinescope|kinescopecdn|hls|stream|media|video|asset|playback/i.test(u);
+                                });
+
+                            var globals = {};
+                            ['current_video_id','currnetFileId','iframeUrl','apiPosterUrl','apiTrailerUrl']
+                                .forEach(function(k) {
+                                    try {
+                                        if (typeof window[k] !== 'undefined') globals[k] = String(window[k]);
+                                    } catch (_) {}
+                                });
+
+                            try {
+                                if (typeof contentIds !== 'undefined') {
+                                    globals.contentIds = JSON.stringify(contentIds);
+                                }
+                            } catch (_) {}
+
+                            try {
+                                if (typeof playerInstance !== 'undefined' && playerInstance) {
+                                    globals.playerInstance = Object.keys(playerInstance).slice(0,80).join(',');
+                                    try {
+                                        if (typeof playerInstance.api !== 'undefined') {
+                                            globals.playerApi = String(playerInstance.api);
+                                        }
+                                    } catch (_) {}
+                                }
+                            } catch (_) {}
+
+                            return JSON.stringify({
+                                href: location.href,
+                                videoCurrentSrc: v ? (v.currentSrc || v.src || '') : '',
+                                videoReadyState: v ? v.readyState : -1,
+                                sources: sources,
+                                resources: resourceUrls,
+                                globals: globals
+                            });
+                        } catch (e) {
+                            return JSON.stringify({error: String(e), href: location.href});
+                        }
+                    })()
+                """.trimIndent(),
+                scriptCallback = { result ->
+                    Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result")
+                },
                 timeout = 45_000L
             )
 
