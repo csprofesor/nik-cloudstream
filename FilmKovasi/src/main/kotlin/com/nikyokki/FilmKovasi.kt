@@ -222,7 +222,7 @@ class FilmKovasi : MainAPI() {
         val atobRegex = Regex("""atob\(\s*["']([^"']+)["']\s*\)""", RegexOption.IGNORE_CASE)
         val absoluteUrlRegex = Regex("""https?://\S+""", RegexOption.IGNORE_CASE)
 
-        fun addScriptUrl(raw: String) {
+            fun addScriptUrl(raw: String) {
             val cleaned = raw
                 .replace("\\/", "/")
                 .replace("\\u0026", "&")
@@ -230,46 +230,46 @@ class FilmKovasi : MainAPI() {
                 .trim()
                 .trim('"', '\'', '(', ')', '[', ']', '{', '}', ';', ',', '.')
 
-            val url = fixUrlNull(cleaned) ?: return
-            if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return
-            if (url == data || url == sourceUrl || url.contains("filmkovasi.co", true)) return
+                val url = fixUrlNull(cleaned) ?: return
+                if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) return
+                if (url == data || url == sourceUrl || url.contains("filmkovasi.co", true)) return
 
-            val lower = url.lowercase()
-            val looksLikePlayer = listOf(
-                "embed", "player", "stream", "video", "watch", "play/",
-                "moviesapi", "vidsrc", "2embed", "autoembed", "smashystream",
-                "multiembed", "youtube.com/embed", "youtu.be/"
-            ).any { lower.contains(it) }
+                val lower = url.lowercase()
+                val looksLikePlayer = listOf(
+                    "embed", "player", "stream", "video", "watch", "play/",
+                    "moviesapi", "vidsrc", "2embed", "autoembed", "smashystream",
+                    "multiembed", "youtube.com/embed", "youtu.be/"
+                ).any { lower.contains(it) }
 
-            val looksLikeAsset = listOf(
-                ".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".gif",
-                "googletagmanager", "google-analytics", "recaptcha"
-            ).any { lower.contains(it) }
+                val looksLikeAsset = listOf(
+                    ".js", ".css", ".png", ".jpg", ".jpeg", ".webp", ".gif",
+                    "googletagmanager", "google-analytics", "recaptcha"
+                ).any { lower.contains(it) }
 
-            if (looksLikePlayer && !looksLikeAsset) scriptUrls.add(url)
-        }
-
-        sourceDocument.select("script").forEach { script ->
-            val text = script.data().ifBlank { script.html() }
-            if (text.isBlank()) return@forEach
-
-            atobRegex.findAll(text).forEach { match ->
-                val encoded = match.groupValues[1]
-                try {
-                    val decoded = Base64.decode(encoded, Base64.DEFAULT).toString(Charsets.UTF_8)
-                    absoluteUrlRegex.findAll(decoded).forEach { addScriptUrl(it.value) }
-                } catch (_: Throwable) {
-                    // Ignore unrelated/non-Base64 atob payloads.
-                }
+                if (looksLikePlayer && !looksLikeAsset) scriptUrls.add(url)
             }
 
-            absoluteUrlRegex.findAll(text).forEach { addScriptUrl(it.value) }
-        }
+            sourceDocument.select("script").forEach { script ->
+                val text = script.data().ifBlank { script.html() }
+                if (text.isBlank()) return@forEach
 
-        scriptUrls.distinct().forEach { playerUrl ->
-            debugFilmKovasi("SCRIPT_PLAYER", "$label -> $playerUrl")
-            tryExtractor(playerUrl, sourceUrl)
-        }
+                atobRegex.findAll(text).forEach { match ->
+                    val encoded = match.groupValues[1]
+                    try {
+                        val decoded = Base64.decode(encoded, Base64.DEFAULT).toString(Charsets.UTF_8)
+                        absoluteUrlRegex.findAll(decoded).forEach { addScriptUrl(it.value) }
+                    } catch (_: Throwable) {
+                        // Ignore unrelated/non-Base64 atob payloads.
+                    }
+                }
+
+                absoluteUrlRegex.findAll(text).forEach { addScriptUrl(it.value) }
+            }
+
+            scriptUrls.distinct().forEach { playerUrl ->
+                debugFilmKovasi("SCRIPT_PLAYER", "$label -> $playerUrl")
+                tryExtractor(playerUrl, sourceUrl)
+            }
 
         // Some providers place the player URL in a data-* attribute on a div.
             sourceDocument.select(
