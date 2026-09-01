@@ -24,6 +24,7 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
+import com.lagradost.cloudstream3.utils.M3u8Helper.Companion.generateM3u8
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
@@ -164,20 +165,206 @@ class FilmKovasi : MainAPI() {
         }.getOrNull()?.takeIf { it.startsWith("http://", true) || it.startsWith("https://", true) }
     }
 
-    private suspend fun resolveRuntimePlayer(playerUrl: String, referer: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    private suspend fun emitM3u8(
+        nameSuffix: String,
+        masterUrl: String,
+        referer: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val links = runCatching {
+            generateM3u8(
+                "FilmKovası$nameSuffix",
+                masterUrl,
+                referer,
+                headers = mapOf(
+                    "Referer" to referer,
+                    "Origin" to URI(referer).let { "${it.scheme}://${it.host}" }
+                )
+            )
+        }.getOrDefault(emptyList())
+        if (links.isEmpty()) {
+            callback(
+                newExtractorLink(
+                    "FilmKovası",
+                    "FilmKovası$nameSuffix",
+                    masterUrl,
+                    ExtractorLinkType.M3U8
+                ) {
+                    this.referer = referer
+                    this.headers = mapOf(
+                        "Referer" to referer,
+                        "Origin" to URI(referer).let { "${it.scheme}://${it.host}" }
+                    )
+                }
+            )
+        } else {
+            links.forEach(callback)
+        }
+        return true
+    }
+
+    private suspend fun resolveCloudOrchestra(
+        playerUrl: String,
+        referer: String,
+        suffix: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        debugFilmKovasi("CLOUD_ORCHESTRA", playerUrl)
+        val baseOrigin = runCatching {
+            URI(playerUrl).let { "${it.scheme}://${it.host}" }
+        }.getOrNull() ?: return false
+
+        val player = runCatching {
+            app.get(
+                playerUrl,
+                referer = referer,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                )
+            )
+        }.getOrNull() ?: return false
+        val html = player.text
+        debugFilmKovasi("CLOUD_HTML", "${html.length} bytes")
+
+        fun absoluteFrom(raw: String, base: String = playerUrl): String? = normalize(raw, base)
+
+        var rcpUrl = Regex(
+            """(?:src|url)\\s*[:=]\\s*[\\\"']((?:https?:)?//[^\\\"']+/rcp/[^\\\"']+|/rcp/[^\\\"']+)""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it) }
+
+        if (rcpUrl == null) {
+            rcpUrl = Regex(
+                """((?:https?:)?//[^\\\"'\\s<>]+/rcp/[^\\\"'\\s<>]+)""",
+                RegexOption.IGNORE_CASE
+            ).find(html)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it) }
+        }
+
+        var rcpHostReferer = baseOrigin + "/"
+        var prorcpUrl: String? = Regex(
+            """src\\s*:\\s*['\"](/prorcp/[^'\"]+)['\"]""",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it) }
+
+        if (rcpUrl != null) {
+            rcpHostReferer = runCatching {
+                URI(rcpUrl).let { "${it.scheme}://${it.host}/" }
+            }.getOrDefault(rcpHostReferer)
+            val rcpHtml = runCatching {
+                app.get(
+                    rcpUrl,
+                    referer = referer,
+                    headers = mapOf("User-Agent" to USER_AGENT, "Accept" to "text/html,*/*")
+                ).text
+            }.getOrNull() ?: return false
+            debugFilmKovasi("RCP_HTML", "${rcpHtml.length} bytes")
+            prorcpUrl = Regex(
+                """src\\s*:\\s*['\"](/prorcp/[^'\"]+)['\"]""",
+                RegexOption.IGNORE_CASE
+            ).find(rcpHtml)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it, rcpUrl) }
+        }
+
+        if (prorcpUrl == null && playerUrl.contains("/prorcp/", true)) {
+            prorcpUrl = playerUrl
+        }
+
+        if (prorcpUrl == null) {
+            val masterInline = Regex(
+                """master_urls\\s*=\\s*['\"]([^'\"]+)['\"]""",
+                RegexOption.IGNORE_CASE
+            ).find(html)?.groupValues?.getOrNull(1)
+            if (masterInline != null) {
+                return finishCloudMaster(masterInline, rcpHostReferer, suffix, callback)
+            }
+            return false
+        }
+
+        val prorcpHtml = runCatching {
+            app.get(
+                prorcpUrl,
+                referer = rcpHostReferer,
+                headers = mapOf("User-Agent" to USER_AGENT, "Accept" to "text/html,*/*")
+            ).text
+        }.getOrNull() ?: return false
+        debugFilmKovasi("PRORCP_HTML", "${prorcpHtml.length} bytes")
+
+        val master = Regex(
+            """master_urls\\s*=\\s*['\"]([^'\"]+)['\"]""",
+            RegexOption.IGNORE_CASE
+        ).find(prorcpHtml)?.groupValues?.getOrNull(1) ?: return false
+        return finishCloudMaster(master, rcpHostReferer, suffix, callback)
+    }
+
+    private suspend fun finishCloudMaster(
+        rawMaster: String,
+        referer: String,
+        suffix: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val master = rawMaster
+            .replace("\\/", "/")
+            .replace("\\u0026", "&")
+            .split(" or ")
+            .map { it.trim() }
+            .firstOrNull { it.startsWith("http://", true) || it.startsWith("https://", true) }
+            ?: return false
+
+        if (!master.contains("__TOKEN__")) {
+            return emitM3u8(suffix, master, referer, callback)
+        }
+
+        val cdnHost = runCatching { URI(master).host }.getOrNull() ?: return false
+        val token = runCatching {
+            app.get(
+                "https://$cdnHost/generate.php",
+                referer = referer,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Accept" to "*/*"
+                )
+            ).text.trim()
+        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return false
+
+        val finalUrl = master.replace("__TOKEN__", token)
+        debugFilmKovasi("FINAL_M3U8", finalUrl)
+        return emitM3u8(suffix, finalUrl, "https://$cdnHost/", callback)
+    }
+
+    private suspend fun resolveRuntimePlayer(
+        playerUrl: String,
+        referer: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        if (playerUrl.contains("cloudorchestranova.com", true)) {
+            if (resolveCloudOrchestra(playerUrl, referer, " [CloudOrchestra]", callback)) {
+                return true
+            }
+        }
+
         debugFilmKovasi("WEBVIEW_PLAYER", playerUrl)
         var captured: okhttp3.Request? = null
-        val mediaRegex = Regex("(?i)^https?://.+\\.(?:m3u8|mp4)(?:[?#].*)?$")
-        val resolver = WebViewResolver(interceptUrl = mediaRegex, additionalUrls = listOf(mediaRegex), userAgent = USER_AGENT, useOkhttp = false, timeout = 45_000L)
+        val mediaRegex = Regex("(?i).*(?:\\.m3u8(?:[?#].*)?|\\.mp4(?:[?#].*)?).*$")
+        val resolver = WebViewResolver(
+            interceptUrl = mediaRegex,
+            additionalUrls = listOf(mediaRegex),
+            userAgent = USER_AGENT,
+            useOkhttp = false,
+            timeout = 45_000L
+        )
         val result = runCatching {
             resolver.resolveUsingWebView(playerUrl, referer = referer) { request ->
-                if (mediaRegex.matches(request.url.toString())) { captured = request; true } else false
+                if (mediaRegex.matches(request.url.toString())) {
+                    captured = request
+                    true
+                } else false
             }
         }.getOrNull() ?: return false
-        val request = captured ?: result.first ?: result.second.lastOrNull() ?: return false
+        val request = captured ?: result.first ?: result.second.firstOrNull() ?: return false
         val mediaUrl = request.url.toString()
         if (!mediaRegex.matches(mediaUrl)) return false
-        val mediaReferer = request.header("Referer") ?: "https://cloudorchestranova.com/"
+        val mediaReferer = request.header("Referer") ?: referer
         val mediaUa = request.header("User-Agent") ?: USER_AGENT
         val type = if (Regex("(?i)\\.m3u8(?:[?#]|$)").containsMatchIn(mediaUrl)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
         callback(newExtractorLink("FilmKovası", "FilmKovası", mediaUrl, type) {
@@ -188,56 +375,126 @@ class FilmKovasi : MainAPI() {
         return true
     }
 
-    private suspend fun resolveDataApi(sourceUrl: String, apiPath: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    private suspend fun resolveDataApi(
+        sourceUrl: String,
+        apiPath: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         val apiUrl = normalize(apiPath, sourceUrl) ?: return false
         debugFilmKovasi("DATA_API", apiUrl)
         val response = runCatching {
-            app.get(apiUrl, referer = sourceUrl, headers = mapOf("User-Agent" to USER_AGENT, "Accept" to "application/json,text/plain,*/*"))
+            app.get(
+                apiUrl,
+                referer = sourceUrl,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Accept" to "application/json,text/plain,*/*"
+                )
+            )
         }.getOrNull() ?: return false
-        val src = Regex(""""src"\s*:\s*"([^"]+)"""").find(response.text)?.groupValues?.getOrNull(1)?.replace("\\/", "/")?.replace("\\u0026", "&") ?: return false
+        debugFilmKovasi("DATA_API_STATUS", response.code.toString())
+        val src = Regex("""\"src\"\\s*:\\s*\"([^\"]+)\"""")
+            .find(response.text)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.replace("\\/", "/")
+            ?.replace("\\u0026", "&")
+            ?: return false
         val player = normalize(src, apiUrl) ?: return false
+        debugFilmKovasi("DATA_API_SRC", player)
         return resolveRuntimePlayer(player, apiUrl, subtitleCallback, callback)
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         debugFilmKovasi("LOADLINKS_DATA", data)
-        val firstDocument = runCatching { app.get(data, referer = mainUrl + "/", headers = browserHeaders()).document }.getOrNull() ?: return false
+        val firstDocument = runCatching {
+            app.get(data, referer = mainUrl + "/", headers = browserHeaders()).document
+        }.getOrNull() ?: return false
         val sourcePages = firstDocument.select("a[href]").mapNotNull { element ->
             val href = normalize(element.attr("href"), data) ?: return@mapNotNull null
             if (!href.startsWith(mainUrl, true) || href == data) return@mapNotNull null
-            val number = Regex("/(\\d+)/?$").find(href)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return@mapNotNull null
+            val number = Regex("/(\\d+)/?$").find(href)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                ?: return@mapNotNull null
             if (number < 2) return@mapNotNull null
             href
         }.distinct()
         var found = false
         val playerUrls = linkedMapOf<String, String>()
         for (sourceUrl in (listOf(data) + sourcePages).distinct()) {
-            val document = runCatching { app.get(sourceUrl, referer = if (sourceUrl == data) mainUrl + "/" else data, headers = browserHeaders()).document }.getOrNull() ?: continue
-            val dataApis = document.select("iframe[data-api]").map { it.attr("data-api") }.filter { it.isNotBlank() }.distinct()
-            for (apiPath in dataApis) if (resolveDataApi(sourceUrl, apiPath, subtitleCallback, callback)) found = true
-            document.select("iframe[src],iframe[data-src],iframe[data-url],iframe[data-embed],iframe[data-player],embed[src],object[data],video[src],video[data-src],video source[src],video source[data-src],[data-url],[data-embed],[data-player],[data-video]").forEach { element ->
-                listOf(element.attr("src"), element.attr("data-src"), element.attr("data-url"), element.attr("data-embed"), element.attr("data-player"), element.attr("data-video"), element.attr("data")).forEach { raw ->
+            val document = runCatching {
+                app.get(
+                    sourceUrl,
+                    referer = if (sourceUrl == data) mainUrl + "/" else data,
+                    headers = browserHeaders()
+                ).document
+            }.getOrNull() ?: continue
+
+            val dataApis = document.select("iframe[data-api]")
+                .map { it.attr("data-api") }
+                .filter { it.isNotBlank() }
+                .distinct()
+            for (apiPath in dataApis) {
+                if (resolveDataApi(sourceUrl, apiPath, subtitleCallback, callback)) found = true
+            }
+
+            document.select(
+                "iframe[src],iframe[data-src],iframe[data-url],iframe[data-embed],iframe[data-player]," +
+                    "embed[src],object[data],video[src],video[data-src],video source[src],video source[data-src]," +
+                    "[data-url],[data-embed],[data-player],[data-video]"
+            ).forEach { element ->
+                listOf(
+                    element.attr("src"),
+                    element.attr("data-src"),
+                    element.attr("data-url"),
+                    element.attr("data-embed"),
+                    element.attr("data-player"),
+                    element.attr("data-video"),
+                    element.attr("data")
+                ).forEach { raw ->
                     val candidate = normalize(raw, sourceUrl) ?: return@forEach
                     if (candidate == data || candidate.startsWith(mainUrl, true)) return@forEach
                     if (candidate.contains("google.com", true) || candidate.contains("doubleclick", true)) return@forEach
                     playerUrls.putIfAbsent(candidate, sourceUrl)
                 }
             }
+
             document.select("script").forEach { script ->
                 val text = script.data().ifBlank { script.html() }
-                Regex("""atob\(\s*[\"']([^\"']+)[\"']\s*\)""", RegexOption.IGNORE_CASE).findAll(text).forEach { match ->
-                    runCatching { Base64.decode(match.groupValues[1], Base64.DEFAULT).toString(Charsets.UTF_8) }.getOrNull()?.let { decoded ->
-                        Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(decoded).forEach { matchUrl ->
-                            val candidate = normalize(matchUrl.value, sourceUrl) ?: return@forEach
-                            if (!candidate.startsWith(mainUrl, true)) playerUrls.putIfAbsent(candidate, sourceUrl)
+                Regex("""atob\(\s*[\"']([^\"']+)[\"']\s*\)""", RegexOption.IGNORE_CASE)
+                    .findAll(text)
+                    .forEach { match ->
+                        runCatching {
+                            Base64.decode(match.groupValues[1], Base64.DEFAULT).toString(Charsets.UTF_8)
+                        }.getOrNull()?.let { decoded ->
+                            Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+                                .findAll(decoded)
+                                .forEach { matchUrl ->
+                                    val candidate = normalize(matchUrl.value, sourceUrl) ?: return@forEach
+                                    if (!candidate.startsWith(mainUrl, true)) playerUrls.putIfAbsent(candidate, sourceUrl)
+                                }
                         }
                     }
-                }
             }
         }
+
         for ((playerUrl, referer) in playerUrls) {
-            if (resolveRuntimePlayer(playerUrl, referer, subtitleCallback, callback)) { found = true; continue }
-            val extracted = runCatching { loadExtractor(playerUrl, referer = referer, subtitleCallback = subtitleCallback) { link -> callback(link) } }.getOrDefault(false)
+            if (resolveRuntimePlayer(playerUrl, referer, subtitleCallback, callback)) {
+                found = true
+                continue
+            }
+            val extracted = runCatching {
+                loadExtractor(
+                    playerUrl,
+                    referer = referer,
+                    subtitleCallback = subtitleCallback
+                ) { link -> callback(link) }
+            }.getOrDefault(false)
             if (extracted) found = true
         }
         debugFilmKovasi("LOADLINKS_RESULT", found.toString())
