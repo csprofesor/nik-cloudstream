@@ -32,6 +32,7 @@ jobs:
         with:
           ref: "builds"
           path: "builds"
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Eski Derlemeleri Temizle
@@ -85,18 +86,12 @@ jobs:
           shopt -s globstar
           ./gradlew make makePluginsJson --stacktrace
 
-          # Anizm ve HintFilmIzle için her derlemede yeni URL + sürüm bilgisi üret.
-          # Böylece CloudStream/CDN eski .cs3 dosyasını önbellekten kullanmaz.
           python3 - <<'PY'
-          import json, re, os, subprocess
+          import json, os, subprocess
           p = "build/plugins.json"
           with open(p, encoding="utf-8") as f:
               data = json.load(f)
 
-          # CloudStream yalnızca sürüm numarası yükseldiğinde eklentiyi yeniden
-          # indirir. GitHub Actions'ın varsayılan sığ checkout'u commit sayısını
-          # her çalışmada 1 yapabildiğinden, monotonik workflow run numarasını
-          # kullanıyoruz.
           commit_count = int(os.environ.get("GITHUB_RUN_NUMBER") or subprocess.check_output(
               ["git", "rev-list", "--count", "HEAD"], text=True
           ).strip())
@@ -126,11 +121,9 @@ jobs:
                       "apiVersion": 1,
                   }
                   data.append(entry)
-
               entry["version"] = versions[internal_name]
               entry["url"] = f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}?v={sha}"
-          
-          # HintFilmIzle'nin özel metadata alanlarını koru.
+
           hint = next(x for x in data if x.get("internalName") == "HintFilmIzle")
           hint.update({
               "status": 1,
@@ -151,40 +144,18 @@ jobs:
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=36"#' build/plugins.json
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=13"#' build/plugins.json
           sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84"#' build/plugins.json
-          python3 - <<'PY'
-          import json, os
-          p = "build/plugins.json"
-          with open(p, encoding="utf-8") as f:
-              data = json.load(f)
-          if not any(x.get("internalName") == "HintFilmIzle" for x in data):
-              size = os.path.getsize("HintFilmIzle/build/outputs/aar/HintFilmIzle-release.aar") if os.path.exists("HintFilmIzle/build/outputs/aar/HintFilmIzle-release.aar") else 0
-              data.append({
-                  "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3",
-                  "status": 1,
-                  "version": 1,
-                  "name": "HintFilmİzle",
-                  "internalName": "HintFilmIzle",
-                  "authors": ["csprofesor"],
-                  "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-                  "fileSize": size,
-                  "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
-                  "language": "tr",
-                  "tvTypes": ["Movie", "TvSeries"],
-                  "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
-                  "apiVersion": 1
-              })
-              with open(p, "w", encoding="utf-8") as f:
-                  json.dump(data, f, ensure_ascii=False, indent=2)
-          PY
           cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
           cp build/plugins.json $GITHUB_WORKSPACE/builds
           cp repo.json $GITHUB_WORKSPACE/builds/repo.json
 
       - name: Derlemeleri Yükle
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           cd $GITHUB_WORKSPACE/builds
           git config --local user.email "actions@github.com"
           git config --local user.name "GitHub Actions"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git add .
           git commit -m "Yeni Derleme: $GITHUB_SHA" || exit 0
-          git push --force
+          git push --force origin builds
