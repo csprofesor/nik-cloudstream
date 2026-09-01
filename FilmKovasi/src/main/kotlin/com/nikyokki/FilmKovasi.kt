@@ -566,10 +566,17 @@ class FilmKovasi : MainAPI() {
             }
         }
 
-        // Prefer the verified CloudOrchestra player over generic provider frames.
-        val orderedPlayers = playerUrls.entries.sortedWith(
-            compareByDescending<Map.Entry<String, String>> { it.key.contains("cloudorchestranova.com", true) }
-                .thenBy { it.key }
+        // Do not fall back to arbitrary embed/trailer players. The verified
+        // movie path is CloudOrchestra/Vidsrc; generic embeds can stall WebView
+        // and return YouTube trailers instead of the requested movie.
+        val preferredPlayers = playerUrls.entries.filter {
+            it.key.contains("cloudorchestranova.com", true) ||
+                it.key.contains("vidsrc", true)
+        }
+        val orderedPlayers = preferredPlayers.sortedWith(
+            compareByDescending<Map.Entry<String, String>> {
+                it.key.contains("cloudorchestranova.com", true)
+            }.thenBy { it.key }
         )
         debugFilmKovasi("PLAYER_URLS", orderedPlayers.joinToString(" || ") { it.key + " <- " + it.value })
         for ((playerUrl, referer) in orderedPlayers) {
