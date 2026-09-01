@@ -563,7 +563,7 @@ class FilmKovasi : MainAPI() {
                 .thenBy { it.key }
         )
         debugFilmKovasi("PLAYER_URLS", orderedPlayers.joinToString(" || ") { it.key + " <- " + it.value })
-        for ((playerUrl, referer) in orderedPlayers)
+        for ((playerUrl, referer) in orderedPlayers) {
             debugFilmKovasi("PLAYER_TRY", playerUrl + " REF=" + referer)
             if (resolveRuntimePlayer(playerUrl, referer, subtitleCallback, callback)) {
                 found = true
