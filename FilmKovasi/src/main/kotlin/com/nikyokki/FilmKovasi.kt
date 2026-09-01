@@ -550,6 +550,12 @@ class FilmKovasi : MainAPI() {
                                 .findAll(cleanDecoded)
                                 .forEach { matchUrl ->
                                     val candidate = normalize(matchUrl.value, sourceUrl) ?: return@forEach
+                                    if (candidate.contains("youtube.com", true) ||
+                                        candidate.contains("youtu.be", true) ||
+                                        candidate.contains("youtube-nocookie.com", true) ||
+                                        candidate.contains("googlevideo.com", true) ||
+                                        candidate.contains("google.com", true) ||
+                                        candidate.contains("doubleclick", true)) return@forEach
                                     if (!candidate.startsWith(mainUrl, true)) playerUrls.putIfAbsent(candidate, sourceUrl)
                                 }
                         }
@@ -565,6 +571,16 @@ class FilmKovasi : MainAPI() {
         debugFilmKovasi("PLAYER_URLS", orderedPlayers.joinToString(" || ") { it.key + " <- " + it.value })
         for ((playerUrl, referer) in orderedPlayers) {
             debugFilmKovasi("PLAYER_TRY", playerUrl + " REF=" + referer)
+
+            // Final HLS URLs should be emitted directly; opening an already
+            // resolved .m3u8 in WebView can stall Android Chromium.
+            if (Regex("""(?i)\\.m3u8(?:[?#].*)?$""").matches(playerUrl)) {
+                val direct = emitM3u8(" [Direct HLS]", playerUrl, referer, callback)
+                debugFilmKovasi("DIRECT_HLS", playerUrl + " :: " + direct)
+                if (direct) found = true
+                continue
+            }
+
             if (resolveRuntimePlayer(playerUrl, referer, subtitleCallback, callback)) {
                 found = true
                 continue
