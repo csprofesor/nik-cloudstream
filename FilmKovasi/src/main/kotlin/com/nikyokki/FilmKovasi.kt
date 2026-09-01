@@ -523,6 +523,12 @@ class FilmKovasi : MainAPI() {
                     val candidate = normalize(raw, sourceUrl) ?: return@forEach
                     if (candidate == data || candidate.startsWith(mainUrl, true)) return@forEach
                     if (candidate.contains("google.com", true) || candidate.contains("doubleclick", true)) return@forEach
+                    // Do not hand YouTube/Google video frames to generic extractors.
+                    // FilmKovası's verified path is CloudOrchestra -> Vidsrc API/WASM -> HLS.
+                    if (candidate.contains("youtube.com", true) ||
+                        candidate.contains("youtu.be", true) ||
+                        candidate.contains("youtube-nocookie.com", true) ||
+                        candidate.contains("googlevideo.com", true)) return@forEach
                     playerUrls.putIfAbsent(candidate, sourceUrl)
                 }
             }
@@ -551,8 +557,15 @@ class FilmKovasi : MainAPI() {
             }
         }
 
-        debugFilmKovasi("PLAYER_URLS", playerUrls.entries.joinToString(" || ") { it.key + " <- " + it.value })
-        for ((playerUrl, referer) in playerUrls) {
+        // Prefer the verified CloudOrchestra player over generic provider frames.
+        val orderedPlayers = playerUrls.entries.sortedWith(
+            compareByDescending<Map.Entry<String, String>> { it.key.contains("cloudorchestranova.com", true) }
+                .thenBy { it.key }
+        )
+        debugFilmKovasi("PLAYER_URLS", orderedPlayers.joinToString(" || ") { it.key + " <- " + it.value })
+        for ((entry) in orderedPlayers) {
+            val playerUrl = entry.key
+            val referer = entry.value
             debugFilmKovasi("PLAYER_TRY", playerUrl + " REF=" + referer)
             if (resolveRuntimePlayer(playerUrl, referer, subtitleCallback, callback)) {
                 found = true
