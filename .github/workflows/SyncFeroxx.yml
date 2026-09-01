@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sync-feroxx-master
+  cancel-in-progress: false
+
 jobs:
   sync:
     if: ${{ !contains(github.event.head_commit.message, '[feroxx-sync]') }}
@@ -16,7 +20,7 @@ jobs:
       - name: Checkout target repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 2
 
       - name: Sync plugins from Feroxx
         shell: bash
@@ -41,9 +45,6 @@ jobs:
               'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
           }
 
-          # Feroxx is the only external source for plugin synchronization.
-          # Existing plugins are updated from Feroxx and verified missing
-          # plugins are added from Feroxx as well.
           required_missing = {
               'AltiYuzAltmisAltiFilmIzle',
               'AsyaAnimeleri',
@@ -74,7 +75,6 @@ jobs:
                   shutil.rmtree(dst)
               shutil.copytree(src, dst)
 
-          # Keep repository ownership metadata as csprofesor.
           for gradle in root.glob('*/build.gradle.kts'):
               text = gradle.read_text(encoding='utf-8')
               text = re.sub(
@@ -91,10 +91,18 @@ jobs:
           set -euo pipefail
           git config user.name "csprofesor"
           git config user.email "199635364+csprofesor@users.noreply.github.com"
+
+          # Another master commit can land while the sync job is running.
+          # Rebase the generated sync commit onto the newest remote master
+          # before pushing, avoiding the previous "fetch first" failure.
+          git fetch origin master
+          git rebase origin/master
+
           git add -A
           if git diff --cached --quiet; then
             echo 'No plugin changes.'
             exit 0
           fi
           git commit -m "Sync plugins from Feroxx [feroxx-sync]"
-          git push
+          git rebase origin/master
+          git push origin HEAD:master
