@@ -40,9 +40,9 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=7c7041bf69e1",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=18e2206feac2",
     "status": 1,
-    "version": 535,
+    "version": 536,
     "name": "Anizm",
     "internalName": "Anizm",
     "authors": [
@@ -287,14 +287,14 @@
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3",
     "status": 1,
-    "version": 57,
+    "version": 58,
     "name": "DiziMom",
     "internalName": "DiziMom",
     "authors": [
       "csprofesor"
     ],
     "description": "Binlerce yerli yabancı dizi arşivi, tüm sezonlar, kesintisiz bölümler. Sadece dizi izle, Dizimom heryerde seninle!",
-    "fileSize": 34842,
+    "fileSize": 34833,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -302,7 +302,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.plus&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-410707792f79dad393acfd7672ff99a9b83db62827c76a0b60e19b14f0685288"
+    "fileHash": "sha256-6f0d38ac6872a9b51d6d558f560289474459d69b8f346c218e29f1d8a63070d9"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3",
@@ -328,14 +328,14 @@
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84",
     "status": 1,
-    "version": 85,
+    "version": 86,
     "name": "DiziPalOriginal",
     "internalName": "DiziPalOriginal",
     "authors": [
       "csprofesor"
     ],
     "description": "en yeni dizileri güvenli ve hızlı şekilde sunar.",
-    "fileSize": 25010,
+    "fileSize": 25014,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -344,7 +344,7 @@
     ],
     "iconUrl": "https://chessplyimages.cfd/uploads/site/favicon-32x32.png",
     "apiVersion": 1,
-    "fileHash": "sha256-ecfa458d41d6d472cfd1275bc4dac38229f1f8ea49aa24153fb15828edf55630"
+    "fileHash": "sha256-c12d0f05dbda11d93e89796adcec655e4e282d9161ec1394e567c44c15c64240"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziYou.cs3",
@@ -437,7 +437,7 @@
       "csprofesor"
     ],
     "description": "Film Kovası ile en güncel ve sorunsuz Full HD Film izle keyfi.",
-    "fileSize": 55199,
+    "fileSize": 55742,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -445,7 +445,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.co&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-aa26faf00da22e2f60ec07227d5d1d8472e89b986bb115e166aba9e4e7d48074"
+    "fileHash": "sha256-2c980ff800119f59e327f8c3b93e167f99a55c9cdd259f51e01bbe87d9d1f204"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3",
@@ -631,9 +631,9 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=7c7041bf69e1",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=18e2206feac2",
     "status": 1,
-    "version": 535,
+    "version": 536,
     "name": "HintFilmİzle",
     "internalName": "HintFilmIzle",
     "authors": [
@@ -797,14 +797,14 @@
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/RecTV.cs3",
     "status": 1,
-    "version": 111,
+    "version": 112,
     "name": "RecTV",
     "internalName": "RecTV",
     "authors": [
       "csprofesor"
     ],
     "description": "RecTv APK, Türkiye’deki en popüler Çevrimiçi Medya Akış platformlarından biridir. Filmlerin, Canlı Sporların, Web Dizilerinin ve çok daha fazlasının keyfini ücretsiz çıkarın.",
-    "fileSize": 28843,
+    "fileSize": 28846,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -814,7 +814,7 @@
     ],
     "iconUrl": "https://rectv.org.tr/wp-content/uploads/2024/11/rectv-modified.webp",
     "apiVersion": 1,
-    "fileHash": "sha256-3f1f504892b9c0b42b757bdc438cb3672725b6f92ad497dc6470264fa3bb222b"
+    "fileHash": "sha256-75523577d2c6f1d5f899fa8b3574490c6c4bcac2c00cd222c9fa61b611082226"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/RoketDizi.cs3",
