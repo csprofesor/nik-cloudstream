@@ -480,8 +480,13 @@ class FilmKovasi : MainAPI() {
                         runCatching {
                             Base64.decode(match.groupValues[1], Base64.DEFAULT).toString(Charsets.UTF_8)
                         }.getOrNull()?.let { decoded ->
-                            Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
-                                .findAll(decoded)
+                            val cleanDecoded = decoded
+                                .replace("\\/", "/")
+                                .replace("\\u0026", "&")
+                                .replace("\\"", "\"")
+
+                            Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
+                                .findAll(cleanDecoded)
                                 .forEach { matchUrl ->
                                     val candidate = normalize(matchUrl.value, sourceUrl) ?: return@forEach
                                     if (!candidate.startsWith(mainUrl, true)) playerUrls.putIfAbsent(candidate, sourceUrl)
