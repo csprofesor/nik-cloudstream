@@ -589,7 +589,21 @@ class FilmKovasi : MainAPI() {
                         it.key.contains("vidsrc", true)
                 }.thenBy { it.key }
             )
-        debugFilmKovasi("PLAYER_URLS", orderedPlayers.joinToString(" || ") { it.key + " <- " + it.value })
+        // Drop malformed fragments such as "movie" before opening WebView.
+        // Keep every valid provider so a failed one can fall through to the next.
+        val validPlayers = orderedPlayers.filter { entry ->
+            val url = entry.key.trim()
+            runCatching {
+                val uri = java.net.URI(url)
+                (uri.scheme.equals("http", true) || uri.scheme.equals("https", true)) &&
+                    !uri.host.isNullOrBlank() &&
+                    !uri.host.equals("movie", true) &&
+                    !uri.host.equals("localhost", true) &&
+                    !uri.host.equals("127.0.0.1", true)
+            }.getOrDefault(false)
+        }
+        debugFilmKovasi("PLAYER_URLS", validPlayers.joinToString(" || ") { it.key + " <- " + it.value })
+        for ((playerUrl, referer) in validPlayers) {
         for ((playerUrl, referer) in orderedPlayers) {
             debugFilmKovasi("PLAYER_TRY", playerUrl + " REF=" + referer)
 
