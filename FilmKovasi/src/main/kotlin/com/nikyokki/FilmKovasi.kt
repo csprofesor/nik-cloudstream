@@ -538,7 +538,7 @@ class FilmKovasi : MainAPI() {
                             val cleanDecoded = decoded
                                 .replace("\\/", "/")
                                 .replace("\\u0026", "&")
-                                .replace("\\"", "\"")
+                                .replace("\\\"", "\"")
 
                             Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
                                 .findAll(cleanDecoded)
