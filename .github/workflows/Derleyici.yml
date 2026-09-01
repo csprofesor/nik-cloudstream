@@ -33,7 +33,8 @@ jobs:
           ref: "builds"
           path: "builds"
           fetch-depth: 0
-          persist-credentials: false
+          persist-credentials: true
+          token: ${{ github.token }}
 
       - name: Eski Derlemeleri Temizle
         run: find $GITHUB_WORKSPACE/builds -name '*.cs3' -delete
@@ -91,52 +92,19 @@ jobs:
           p = "build/plugins.json"
           with open(p, encoding="utf-8") as f:
               data = json.load(f)
-
-          commit_count = int(os.environ.get("GITHUB_RUN_NUMBER") or subprocess.check_output(
-              ["git", "rev-list", "--count", "HEAD"], text=True
-          ).strip())
+          commit_count = int(os.environ.get("GITHUB_RUN_NUMBER") or subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip())
           sha = os.environ.get("GITHUB_SHA", "")[:12]
-
-          versions = {
-              "Anizm": commit_count,
-              "HintFilmIzle": commit_count,
-          }
-
-          files = {
-              "Anizm": "Anizm.cs3",
-              "HintFilmIzle": "HintFilmIzle.cs3",
-          }
-
+          versions = {"Anizm": commit_count, "HintFilmIzle": commit_count}
+          files = {"Anizm": "Anizm.cs3", "HintFilmIzle": "HintFilmIzle.cs3"}
           for internal_name, filename in files.items():
               entry = next((x for x in data if x.get("internalName") == internal_name), None)
               if entry is None:
-                  entry = {
-                      "url": f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}",
-                      "status": 1,
-                      "version": versions[internal_name],
-                      "name": "HintFilmİzle" if internal_name == "HintFilmIzle" else "Anizm",
-                      "internalName": internal_name,
-                      "authors": ["csprofesor"],
-                      "language": "tr",
-                      "apiVersion": 1,
-                  }
+                  entry = {"url": f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}", "status": 1, "version": versions[internal_name], "name": "HintFilmİzle" if internal_name == "HintFilmIzle" else "Anizm", "internalName": internal_name, "authors": ["csprofesor"], "language": "tr", "apiVersion": 1}
                   data.append(entry)
               entry["version"] = versions[internal_name]
               entry["url"] = f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}?v={sha}"
-
           hint = next(x for x in data if x.get("internalName") == "HintFilmIzle")
-          hint.update({
-              "status": 1,
-              "name": "HintFilmİzle",
-              "authors": ["csprofesor"],
-              "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-              "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
-              "language": "tr",
-              "tvTypes": ["Movie", "TvSeries"],
-              "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
-              "apiVersion": 1,
-          })
-
+          hint.update({"status": 1, "name": "HintFilmİzle", "authors": ["csprofesor"], "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler", "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream", "language": "tr", "tvTypes": ["Movie", "TvSeries"], "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%", "apiVersion": 1})
           with open(p, "w", encoding="utf-8") as f:
               json.dump(data, f, ensure_ascii=False, indent=2)
           PY
@@ -149,13 +117,10 @@ jobs:
           cp repo.json $GITHUB_WORKSPACE/builds/repo.json
 
       - name: Derlemeleri Yükle
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           cd $GITHUB_WORKSPACE/builds
-          git config --local user.email "actions@github.com"
-          git config --local user.name "GitHub Actions"
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
           git add .
           git commit -m "Yeni Derleme: $GITHUB_SHA" || exit 0
-          git push --force origin builds
+          git push origin HEAD:builds --force
