@@ -604,7 +604,6 @@ class FilmKovasi : MainAPI() {
         }
         debugFilmKovasi("PLAYER_URLS", validPlayers.joinToString(" || ") { it.key + " <- " + it.value })
         for ((playerUrl, referer) in validPlayers) {
-        for ((playerUrl, referer) in orderedPlayers) {
             debugFilmKovasi("PLAYER_TRY", playerUrl + " REF=" + referer)
 
             // Final HLS URLs should be emitted directly; opening an already
