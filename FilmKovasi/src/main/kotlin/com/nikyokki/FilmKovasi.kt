@@ -341,7 +341,7 @@ class FilmKovasi : MainAPI() {
             debugFilmKovasi("CLOUD_WEBVIEW", playerUrl)
 
             val providerRegex = Regex(
-                """(?i)^https?://scintillatingsycophant\\.space/.+\\.m3u8(?:[?#].*)?$"""
+                """(?i)^https?://scintillatingsycophant\\.space/.+\.m3u8(?:[?#].*)?$"""
             )
 
             val result = runCatching {
@@ -391,7 +391,7 @@ class FilmKovasi : MainAPI() {
 
         debugFilmKovasi("WEBVIEW_PLAYER", playerUrl)
 
-        val mediaRegex = Regex("""(?i).*\\.m3u8(?:[?#].*)?$""")
+        val mediaRegex = Regex("""(?i).*\.m3u8(?:[?#].*)?$""")
 
         val result = runCatching {
             WebViewResolver(
@@ -574,7 +574,7 @@ class FilmKovasi : MainAPI() {
 
             // Final HLS URLs should be emitted directly; opening an already
             // resolved .m3u8 in WebView can stall Android Chromium.
-            if (Regex("""(?i)\\.m3u8(?:[?#].*)?$""").matches(playerUrl)) {
+            if (Regex("""(?i)\.m3u8(?:[?#].*)?$""").matches(playerUrl)) {
                 val direct = emitM3u8(" [Direct HLS]", playerUrl, referer, callback)
                 debugFilmKovasi("DIRECT_HLS", playerUrl + " :: " + direct)
                 if (direct) found = true
