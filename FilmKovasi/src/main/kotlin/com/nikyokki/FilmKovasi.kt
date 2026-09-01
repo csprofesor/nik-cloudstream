@@ -337,6 +337,39 @@ class FilmKovasi : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        // The browser trace shows the working chain as:
+        // FilmKovası -> vsembed/vidsrc -> cloudorchestranova -> scintillatingsycophant -> HLS.
+        // CloudOrchestra is not always present in FilmKovası's static HTML, so when
+        // a TMDB-backed Vidsrc player is available, follow that browser chain first.
+        if (playerUrl.contains("vsembed.ru/embed/movie/", true) ||
+            playerUrl.contains("vidsrc.to/embed/movie/", true)) {
+            val cloudEmbedRegex = Regex(
+                """(?i)^https?://cloudorchestranova\\.com/embed/(?:movie|player)/[^?#]+(?:[?#].*)?$"""
+            )
+            val bridge = runCatching {
+                WebViewResolver(
+                    interceptUrl = cloudEmbedRegex,
+                    additionalUrls = listOf(cloudEmbedRegex),
+                    userAgent = USER_AGENT,
+                    useOkhttp = false,
+                    timeout = 20_000L
+                ).resolveUsingWebView(
+                    playerUrl,
+                    referer = referer
+                )
+            }.getOrNull()
+
+            val cloudRequest = bridge?.first ?: bridge?.second?.firstOrNull()
+            val cloudUrl = cloudRequest?.url?.toString()
+            if (!cloudUrl.isNullOrBlank()) {
+                debugFilmKovasi("VIDSRC_CLOUD", cloudUrl)
+                if (resolveRuntimePlayer(cloudUrl, playerUrl, subtitleCallback, callback)) {
+                    return true
+                }
+            }
+            debugFilmKovasi("VIDSRC_CLOUD", "CloudOrchestra HLS zinciri başarısız")
+        }
+
         if (playerUrl.contains("cloudorchestranova.com", true)) {
             debugFilmKovasi("CLOUD_WEBVIEW", playerUrl)
 
@@ -344,7 +377,7 @@ class FilmKovasi : MainAPI() {
             // generate.php only returns a token; the playable source is the
             // subsequent master.m3u8 request.
             val providerRegex = Regex(
-                """(?i)^https?://scintillatingsycophant\\.space/.+?(?:generate\\.php|master\\.m3u8|index\\.m3u8)(?:[?#].*)?$"""
+                """(?i)^https?://scintillatingsycophant\\.space/.+/(?:master|index)\\.m3u8(?:[?#].*)?$"""
             )
 
             val result = runCatching {
@@ -580,6 +613,21 @@ class FilmKovasi : MainAPI() {
                     }
             }
         }
+
+        // Some FilmKovası pages expose only a provider ID (e.g. video_id=...)
+        // while the working browser path creates a VSEmbed/VidSrc iframe dynamically.
+        // Reconstruct those bridge URLs so the same chain can be followed in WebView.
+        val discoveredTmdbIds = playerUrls.keys.flatMap { url ->
+            listOfNotNull(
+                Regex("""(?i)[?&]video_id=(\\d+)""").find(url)?.groupValues?.getOrNull(1),
+                Regex("""(?i)/embed/movie/(\\d+)""").find(url)?.groupValues?.getOrNull(1)
+            )
+        }.distinct()
+        discoveredTmdbIds.forEach { id ->
+            playerUrls.putIfAbsent("https://vsembed.ru/embed/movie/$id/", data)
+            playerUrls.putIfAbsent("https://vidsrc.to/embed/movie/$id", data)
+        }
+        debugFilmKovasi("TMDB_BRIDGES", discoveredTmdbIds.joinToString(" || "))
 
         // Try every discovered provider, but never use YouTube/trailer URLs.
         // CloudOrchestra/Vidsrc is tried first because it is the verified movie
