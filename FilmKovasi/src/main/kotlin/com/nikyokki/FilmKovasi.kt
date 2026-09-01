@@ -337,6 +337,73 @@ class FilmKovasi : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        /*
+         * CloudOrchestra executes the JavaScript/WASM player in the WebView and
+         * produces the real scintillatingsycophant.space HLS URL at runtime.
+         * Prefer that path over parsing the player HTML, because the stream_urls
+         * value is intentionally protected and is decrypted by the browser.
+         */
+        if (playerUrl.contains("cloudorchestranova.com", true)) {
+            debugFilmKovasi("CLOUD_WEBVIEW", playerUrl)
+
+            val providerRegex = Regex(
+                """(?i)^https?://scintillatingsycophant\\.space/.+\\.m3u8(?:[?#].*)?$"""
+            )
+
+            val captured = runCatching {
+                val resolver = WebViewResolver(
+                    interceptUrl = providerRegex,
+                    additionalUrls = listOf(providerRegex),
+                    userAgent = null,
+                    useOkhttp = false,
+                    timeout = 60_000L
+                )
+
+                var intercepted: okhttp3.Request? = null
+
+                val result = resolver.resolveUsingWebView(
+                    playerUrl,
+                    referer = referer,
+                    headers = mapOf(
+                        "Referer" to referer,
+                        "User-Agent" to USER_AGENT
+                    )
+                ) { request ->
+                    if (providerRegex.containsMatchIn(request.url.toString())) {
+                        intercepted = request
+                        true
+                    } else {
+                        false
+                    }
+                }
+
+                intercepted ?: result.first ?: result.second.firstOrNull()
+            }.getOrNull()
+
+            if (captured != null) {
+                val mediaUrl = captured!!.url.toString()
+                val mediaReferer = captured!!.header("Referer") ?: referer
+                val mediaUa = captured!!.header("User-Agent") ?: USER_AGENT
+
+                callback(
+                    newExtractorLink(
+                        "FilmKovası",
+                        "FilmKovası [CloudOrchestra]",
+                        mediaUrl,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = mediaReferer
+                        this.headers = mapOf("User-Agent" to mediaUa)
+                    }
+                )
+
+                debugFilmKovasi("CLOUD_WEBVIEW_MEDIA", mediaUrl)
+                return true
+            }
+
+            debugFilmKovasi("CLOUD_WEBVIEW", "HLS yakalanamadı, HTML çözümleyici deneniyor")
+        }
+
         if (playerUrl.contains("cloudorchestranova.com", true)) {
             if (resolveCloudOrchestra(playerUrl, referer, " [CloudOrchestra]", callback)) {
                 return true
@@ -344,33 +411,46 @@ class FilmKovasi : MainAPI() {
         }
 
         debugFilmKovasi("WEBVIEW_PLAYER", playerUrl)
-        var captured: okhttp3.Request? = null
-        val mediaRegex = Regex("(?i).*(?:\\.m3u8(?:[?#].*)?|\\.mp4(?:[?#].*)?).*$")
+        val mediaRegex = Regex("(?i).*\\.m3u8(?:[?#].*)?$")
         val resolver = WebViewResolver(
             interceptUrl = mediaRegex,
             additionalUrls = listOf(mediaRegex),
-            userAgent = USER_AGENT,
+            userAgent = null,
             useOkhttp = false,
             timeout = 45_000L
         )
+
         val result = runCatching {
-            resolver.resolveUsingWebView(playerUrl, referer = referer) { request ->
-                if (mediaRegex.matches(request.url.toString())) {
-                    captured = request
-                    true
-                } else false
-            }
+            resolver.resolveUsingWebView(
+                playerUrl,
+                referer = referer,
+                headers = mapOf(
+                    "Referer" to referer,
+                    "User-Agent" to USER_AGENT
+                )
+            )
         }.getOrNull() ?: return false
-        val request = captured ?: result.first ?: result.second.firstOrNull() ?: return false
+
+        val request = result.first ?: result.second.firstOrNull() ?: return false
         val mediaUrl = request.url.toString()
+
         if (!mediaRegex.matches(mediaUrl)) return false
+
         val mediaReferer = request.header("Referer") ?: referer
         val mediaUa = request.header("User-Agent") ?: USER_AGENT
-        val type = if (Regex("(?i)\\.m3u8(?:[?#]|$)").containsMatchIn(mediaUrl)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-        callback(newExtractorLink("FilmKovası", "FilmKovası", mediaUrl, type) {
-            this.referer = mediaReferer
-            this.headers = mapOf("User-Agent" to mediaUa)
-        })
+
+        callback(
+            newExtractorLink(
+                "FilmKovası",
+                "FilmKovası",
+                mediaUrl,
+                ExtractorLinkType.M3U8
+            ) {
+                this.referer = mediaReferer
+                this.headers = mapOf("User-Agent" to mediaUa)
+            }
+        )
+
         debugFilmKovasi("WEBVIEW_MEDIA", mediaUrl)
         return true
     }
