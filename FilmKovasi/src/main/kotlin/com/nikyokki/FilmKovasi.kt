@@ -529,14 +529,24 @@ class FilmKovasi : MainAPI() {
                     element.attr("data")
                 ).forEach { raw ->
                     val candidate = normalize(raw, sourceUrl) ?: return@forEach
+                    val uri = runCatching { java.net.URI(candidate) }.getOrNull()
+                        ?: return@forEach
+
+                    // Only accept complete absolute web URLs. This prevents
+                    // fragments such as "https://movie", "https://vid" or
+                    // "https://player." from becoming WebView targets.
+                    if (!uri.scheme.equals("http", true) && !uri.scheme.equals("https", true)) return@forEach
+                    val host = uri.host?.trim()?.lowercase() ?: return@forEach
+                    if (host.isBlank() || !host.contains(".")) return@forEach
                     if (candidate == data || candidate.startsWith(mainUrl, true)) return@forEach
-                    if (candidate.contains("google.com", true) || candidate.contains("doubleclick", true)) return@forEach
-                    // Do not hand YouTube/Google video frames to generic extractors.
-                    // FilmKovası's verified path is CloudOrchestra -> Vidsrc API/WASM -> HLS.
+
                     if (candidate.contains("youtube.com", true) ||
                         candidate.contains("youtu.be", true) ||
                         candidate.contains("youtube-nocookie.com", true) ||
-                        candidate.contains("googlevideo.com", true)) return@forEach
+                        candidate.contains("googlevideo.com", true) ||
+                        candidate.contains("google.com", true) ||
+                        candidate.contains("doubleclick", true)) return@forEach
+
                     playerUrls.putIfAbsent(candidate, sourceUrl)
                 }
             }
