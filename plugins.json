@@ -40,9 +40,9 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=ad13d44a25ba",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=9fe441cf0a0b",
     "status": 1,
-    "version": 543,
+    "version": 544,
     "name": "Anizm",
     "internalName": "Anizm",
     "authors": [
@@ -437,7 +437,7 @@
       "csprofesor"
     ],
     "description": "Film Kovası ile en güncel ve sorunsuz Full HD Film izle keyfi.",
-    "fileSize": 56642,
+    "fileSize": 56995,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -445,7 +445,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.co&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-0029a0c21a04b55ce034f5969f751ace9ca3b6da1fe63c788b857d7355100f09"
+    "fileHash": "sha256-a53aa4e1c52ffbcfd27b319285fa475cd12597420e970c86b4ce279180f8dd68"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3",
@@ -631,9 +631,9 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=ad13d44a25ba",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=9fe441cf0a0b",
     "status": 1,
-    "version": 543,
+    "version": 544,
     "name": "HintFilmİzle",
     "internalName": "HintFilmIzle",
     "authors": [
