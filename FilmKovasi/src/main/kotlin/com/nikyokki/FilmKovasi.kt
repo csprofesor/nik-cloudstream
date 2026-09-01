@@ -416,6 +416,9 @@ class FilmKovasi : MainAPI() {
         val firstDocument = runCatching {
             app.get(data, referer = mainUrl + "/", headers = browserHeaders()).document
         }.getOrNull() ?: return false
+        debugFilmKovasi("FIRST_HTML", firstDocument.html().take(12000))
+        debugFilmKovasi("FIRST_MEDIA", firstDocument.select("iframe,embed,video,source").joinToString(" || ") { it.outerHtml() }.take(12000))
+        debugFilmKovasi("FIRST_DATA", firstDocument.select("[data-url],[data-src],[data-api],[data-embed],[data-player],[data-video]").joinToString(" || ") { it.outerHtml() }.take(12000))
         val sourcePages = firstDocument.select("a[href]").mapNotNull { element ->
             val href = normalize(element.attr("href"), data) ?: return@mapNotNull null
             if (!href.startsWith(mainUrl, true) || href == data) return@mapNotNull null
@@ -424,6 +427,7 @@ class FilmKovasi : MainAPI() {
             if (number < 2) return@mapNotNull null
             href
         }.distinct()
+        debugFilmKovasi("SOURCE_PAGES", sourcePages.joinToString(" || "))
         var found = false
         val playerUrls = linkedMapOf<String, String>()
         for (sourceUrl in (listOf(data) + sourcePages).distinct()) {
@@ -435,10 +439,14 @@ class FilmKovasi : MainAPI() {
                 ).document
             }.getOrNull() ?: continue
 
+            debugFilmKovasi("SOURCE_HTML", sourceUrl + " :: " + document.html().take(12000))
+            debugFilmKovasi("SOURCE_MEDIA", sourceUrl + " :: " + document.select("iframe,embed,video,source").joinToString(" || ") { it.outerHtml() }.take(12000))
+
             val dataApis = document.select("iframe[data-api]")
                 .map { it.attr("data-api") }
                 .filter { it.isNotBlank() }
                 .distinct()
+            debugFilmKovasi("DATA_APIS", sourceUrl + " :: " + dataApis.joinToString(" || "))
             for (apiPath in dataApis) {
                 if (resolveDataApi(sourceUrl, apiPath, subtitleCallback, callback)) found = true
             }
@@ -483,7 +491,9 @@ class FilmKovasi : MainAPI() {
             }
         }
 
+        debugFilmKovasi("PLAYER_URLS", playerUrls.entries.joinToString(" || ") { it.key + " <- " + it.value })
         for ((playerUrl, referer) in playerUrls) {
+            debugFilmKovasi("PLAYER_TRY", playerUrl + " REF=" + referer)
             if (resolveRuntimePlayer(playerUrl, referer, subtitleCallback, callback)) {
                 found = true
                 continue
@@ -495,6 +505,7 @@ class FilmKovasi : MainAPI() {
                     subtitleCallback = subtitleCallback
                 ) { link -> callback(link) }
             }.getOrDefault(false)
+            debugFilmKovasi("EXTRACTOR_RESULT", playerUrl + " :: " + extracted)
             if (extracted) found = true
         }
         debugFilmKovasi("LOADLINKS_RESULT", found.toString())
