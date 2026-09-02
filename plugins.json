@@ -40,9 +40,9 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=e928b55177b7",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=1e8024d10185",
     "status": 1,
-    "version": 550,
+    "version": 552,
     "name": "Anizm",
     "internalName": "Anizm",
     "authors": [
@@ -307,14 +307,14 @@
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3",
     "status": 1,
-    "version": 105,
+    "version": 106,
     "name": "DiziPal",
     "internalName": "DiziPal",
     "authors": [
       "csprofesor"
     ],
     "description": "en yeni dizileri güvenli ve hızlı şekilde sunar.",
-    "fileSize": 29478,
+    "fileSize": 29473,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -323,7 +323,7 @@
     ],
     "iconUrl": "https://dizipal1563.com/assets/favicon/favicon-32x32.png?v=3",
     "apiVersion": 1,
-    "fileHash": "sha256-c7136dc0c32ea0f39aff8e3e7c7b54d0814a736acdb06f969051880db116905f"
+    "fileHash": "sha256-8455c789c3f261c6c3f5367abf52eb294c87427d31a965a7ac99a1dbac384d6e"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84",
@@ -430,22 +430,22 @@
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmKovasi.cs3",
     "status": 1,
-    "version": 13,
+    "version": 1,
     "name": "FilmKovasi",
     "internalName": "FilmKovasi",
     "authors": [
       "csprofesor"
     ],
-    "description": "Film Kovası ile en güncel ve sorunsuz Full HD Film izle keyfi.",
-    "fileSize": 51462,
+    "description": "Film Kovasi ⚡ ile en güncel ve sorunsuz Full HD Film izle keyfi her yerde seninle! 1080p online film izleme ayrıcalığıyla Film Kovası'nın Tadını Çıkarın.",
+    "fileSize": 19696,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
       "Movie"
     ],
-    "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.co&sz=%size%",
+    "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.tv&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-6f699e07446b8adaf9f70265858f8388e8a4efc6608953904aff5f3566ac6ec5"
+    "fileHash": "sha256-8031ded9e5c7f18b7323b04d674f039d1a31e7f73dd4950cff5f0b158842e3ba"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3",
@@ -631,9 +631,9 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=e928b55177b7",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=1e8024d10185",
     "status": 1,
-    "version": 550,
+    "version": 552,
     "name": "HintFilmİzle",
     "internalName": "HintFilmIzle",
     "authors": [
@@ -649,7 +649,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-ed46594db9ac5a229dc68c9f06dd79f87dd7f3c9d7e93a333dff72877557e58b"
+    "fileHash": "sha256-4483a24cf212a4a33fd78e26cf16adf196c63d924719aefaf689ffa0f514a5f9"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3",
