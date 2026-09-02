@@ -18,7 +18,6 @@ import com.lagradost.cloudstream3.USER_AGENT
 import com.lagradost.cloudstream3.app
 import com.lagradost.cloudstream3.fixUrlNull
 import com.lagradost.cloudstream3.mainPageOf
-import com.lagradost.cloudstream3.network.WebViewResolver
 import com.lagradost.cloudstream3.newHomePageResponse
 import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
@@ -203,274 +202,6 @@ class FilmKovasi : MainAPI() {
         return true
     }
 
-    private suspend fun resolveCloudOrchestra(
-        playerUrl: String,
-        referer: String,
-        suffix: String,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        debugFilmKovasi("CLOUD_ORCHESTRA", playerUrl)
-        val baseOrigin = runCatching {
-            URI(playerUrl).let { "${it.scheme}://${it.host}" }
-        }.getOrNull() ?: return false
-
-        val player = runCatching {
-            app.get(
-                playerUrl,
-                referer = referer,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                )
-            )
-        }.getOrNull() ?: return false
-        val html = player.text
-        debugFilmKovasi("CLOUD_HTML", "${html.length} bytes")
-
-        fun absoluteFrom(raw: String, base: String = playerUrl): String? = normalize(raw, base)
-
-        var rcpUrl = Regex(
-            """(?:src|url)\\s*[:=]\\s*[\\\"']((?:https?:)?//[^\\\"']+/rcp/[^\\\"']+|/rcp/[^\\\"']+)""",
-            RegexOption.IGNORE_CASE
-        ).find(html)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it) }
-
-        if (rcpUrl == null) {
-            rcpUrl = Regex(
-                """((?:https?:)?//[^\\\"'\\s<>]+/rcp/[^\\\"'\\s<>]+)""",
-                RegexOption.IGNORE_CASE
-            ).find(html)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it) }
-        }
-
-        var rcpHostReferer = baseOrigin + "/"
-        var prorcpUrl: String? = Regex(
-            """src\\s*:\\s*['\"](/prorcp/[^'\"]+)['\"]""",
-            RegexOption.IGNORE_CASE
-        ).find(html)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it) }
-
-        if (rcpUrl != null) {
-            rcpHostReferer = runCatching {
-                URI(rcpUrl).let { "${it.scheme}://${it.host}/" }
-            }.getOrDefault(rcpHostReferer)
-            val rcpHtml = runCatching {
-                app.get(
-                    rcpUrl,
-                    referer = referer,
-                    headers = mapOf("User-Agent" to USER_AGENT, "Accept" to "text/html,*/*")
-                ).text
-            }.getOrNull() ?: return false
-            debugFilmKovasi("RCP_HTML", "${rcpHtml.length} bytes")
-            prorcpUrl = Regex(
-                """src\\s*:\\s*['\"](/prorcp/[^'\"]+)['\"]""",
-                RegexOption.IGNORE_CASE
-            ).find(rcpHtml)?.groupValues?.getOrNull(1)?.let { absoluteFrom(it, rcpUrl) }
-        }
-
-        if (prorcpUrl == null && playerUrl.contains("/prorcp/", true)) {
-            prorcpUrl = playerUrl
-        }
-
-        if (prorcpUrl == null) {
-            val masterInline = Regex(
-                """master_urls\\s*=\\s*['\"]([^'\"]+)['\"]""",
-                RegexOption.IGNORE_CASE
-            ).find(html)?.groupValues?.getOrNull(1)
-            if (masterInline != null) {
-                return finishCloudMaster(masterInline, rcpHostReferer, suffix, callback)
-            }
-            return false
-        }
-
-        val prorcpHtml = runCatching {
-            app.get(
-                prorcpUrl,
-                referer = rcpHostReferer,
-                headers = mapOf("User-Agent" to USER_AGENT, "Accept" to "text/html,*/*")
-            ).text
-        }.getOrNull() ?: return false
-        debugFilmKovasi("PRORCP_HTML", "${prorcpHtml.length} bytes")
-
-        val master = Regex(
-            """master_urls\\s*=\\s*['\"]([^'\"]+)['\"]""",
-            RegexOption.IGNORE_CASE
-        ).find(prorcpHtml)?.groupValues?.getOrNull(1) ?: return false
-        return finishCloudMaster(master, rcpHostReferer, suffix, callback)
-    }
-
-    private suspend fun finishCloudMaster(
-        rawMaster: String,
-        referer: String,
-        suffix: String,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        val master = rawMaster
-            .replace("\\/", "/")
-            .replace("\\u0026", "&")
-            .split(" or ")
-            .map { it.trim() }
-            .firstOrNull { it.startsWith("http://", true) || it.startsWith("https://", true) }
-            ?: return false
-
-        if (!master.contains("__TOKEN__")) {
-            return emitM3u8(suffix, master, referer, callback)
-        }
-
-        val cdnHost = runCatching { URI(master).host }.getOrNull() ?: return false
-        val token = runCatching {
-            app.get(
-                "https://$cdnHost/generate.php",
-                referer = referer,
-                headers = mapOf(
-                    "User-Agent" to USER_AGENT,
-                    "Accept" to "*/*"
-                )
-            ).text.trim()
-        }.getOrNull()?.takeIf { it.isNotBlank() } ?: return false
-
-        val finalUrl = master.replace("__TOKEN__", token)
-        debugFilmKovasi("FINAL_M3U8", finalUrl)
-        return emitM3u8(suffix, finalUrl, "https://$cdnHost/", callback)
-    }
-
-    private suspend fun resolveRuntimePlayer(
-        playerUrl: String,
-        referer: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        // The browser trace shows the working chain as:
-        // FilmKovası -> vsembed/vidsrc -> cloudorchestranova -> scintillatingsycophant -> HLS.
-        // CloudOrchestra is not always present in FilmKovası's static HTML, so when
-        // a TMDB-backed Vidsrc player is available, follow that browser chain first.
-        if (playerUrl.contains("vsembed.ru/embed/movie/", true) ||
-            playerUrl.contains("vidsrc.to/embed/movie/", true)) {
-            val cloudEmbedRegex = Regex(
-                """(?i)^https?://cloudorchestranova\\.com/embed/(?:movie|player)/[^?#]+(?:[?#].*)?$"""
-            )
-            val bridge = runCatching {
-                WebViewResolver(
-                    interceptUrl = cloudEmbedRegex,
-                    additionalUrls = listOf(cloudEmbedRegex),
-                    userAgent = USER_AGENT,
-                    useOkhttp = false,
-                    timeout = 20_000L
-                ).resolveUsingWebView(
-                    playerUrl,
-                    referer = referer
-                )
-            }.getOrNull()
-
-            val cloudRequest = bridge?.first ?: bridge?.second?.firstOrNull()
-            val cloudUrl = cloudRequest?.url?.toString()
-            if (!cloudUrl.isNullOrBlank()) {
-                debugFilmKovasi("VIDSRC_CLOUD", cloudUrl)
-                if (resolveRuntimePlayer(cloudUrl, playerUrl, subtitleCallback, callback)) {
-                    return true
-                }
-            }
-            debugFilmKovasi("VIDSRC_CLOUD", "CloudOrchestra HLS zinciri başarısız")
-        }
-
-        if (playerUrl.contains("cloudorchestranova.com", true)) {
-            debugFilmKovasi("CLOUD_WEBVIEW", playerUrl)
-
-            // Match the exact CDN endpoints seen in the browser trace.
-            // generate.php only returns a token; the playable source is the
-            // subsequent master.m3u8 request.
-            val providerRegex = Regex(
-                """(?i)^https?://scintillatingsycophant\\.space/.+/(?:master|index)\\.m3u8(?:[?#].*)?$"""
-            )
-
-            val result = runCatching {
-                WebViewResolver(
-                    interceptUrl = providerRegex,
-                    additionalUrls = listOf(providerRegex),
-                    userAgent = USER_AGENT,
-                    useOkhttp = false,
-                    timeout = 20_000L
-                ).resolveUsingWebView(
-                    playerUrl,
-                    referer = referer
-                )
-            }.getOrNull()
-
-            val request = result?.first ?: result?.second?.firstOrNull()
-
-            if (request != null) {
-                val mediaUrl = request.url.toString()
-                debugFilmKovasi("CLOUD_WEBVIEW_INTERCEPT", mediaUrl)
-
-                if (mediaUrl.contains(".m3u8", true)) {
-                    val mediaReferer = request.header("Referer") ?: referer
-                    val mediaUa = request.header("User-Agent") ?: USER_AGENT
-                    callback(
-                        newExtractorLink(
-                            "FilmKovası",
-                            "FilmKovası [CloudOrchestra]",
-                            mediaUrl,
-                            ExtractorLinkType.M3U8
-                        ) {
-                            this.referer = mediaReferer
-                            this.headers = mapOf(
-                                "User-Agent" to mediaUa,
-                                "Accept" to "*/*"
-                            )
-                        }
-                    )
-                    debugFilmKovasi("CLOUD_WEBVIEW_MEDIA", mediaUrl)
-                    return true
-                }
-            }
-
-            debugFilmKovasi("CLOUD_WEBVIEW", "HLS yakalanamadı, HTML çözümleyici deneniyor")
-        }
-
-        if (playerUrl.contains("cloudorchestranova.com", true)) {
-            if (resolveCloudOrchestra(playerUrl, referer, " [CloudOrchestra]", callback)) {
-                return true
-            }
-        }
-
-        debugFilmKovasi("WEBVIEW_PLAYER", playerUrl)
-
-        val mediaRegex = Regex("""(?i)https?://[^\s"'<>]+\.m3u8(?:[?#].*)?$""")
-
-        val result = runCatching {
-            WebViewResolver(
-                interceptUrl = mediaRegex,
-                additionalUrls = listOf(mediaRegex),
-                userAgent = null,
-                useOkhttp = false,
-                timeout = 45_000L
-            ).resolveUsingWebView(
-                playerUrl,
-                referer = referer
-            )
-        }.getOrNull() ?: return false
-
-        val request = result.first ?: result.second.firstOrNull() ?: return false
-        val mediaUrl = request.url.toString()
-
-        if (!mediaRegex.matches(mediaUrl)) return false
-
-        val mediaReferer = request.header("Referer") ?: referer
-        val mediaUa = request.header("User-Agent") ?: USER_AGENT
-
-        callback(
-            newExtractorLink(
-                "FilmKovası",
-                "FilmKovası",
-                mediaUrl,
-                ExtractorLinkType.M3U8
-            ) {
-                this.referer = mediaReferer
-                this.headers = mapOf("User-Agent" to mediaUa)
-            }
-        )
-
-        debugFilmKovasi("WEBVIEW_MEDIA", mediaUrl)
-        return true
-    }
-
     private suspend fun resolveDataApi(
         sourceUrl: String,
         apiPath: String,
@@ -490,16 +221,77 @@ class FilmKovasi : MainAPI() {
             )
         }.getOrNull() ?: return false
         debugFilmKovasi("DATA_API_STATUS", response.code.toString())
-        val src = Regex("""\"src\"\\s*:\\s*\"([^\"]+)\"""")
-            .find(response.text)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.replace("\\/", "/")
-            ?.replace("\\u0026", "&")
-            ?: return false
-        val player = normalize(src, apiUrl) ?: return false
-        debugFilmKovasi("DATA_API_SRC", player)
-        return resolveRuntimePlayer(player, apiUrl, subtitleCallback, callback)
+        val body = response.text
+        val candidates = Regex(
+            """(?i)(?:["'](?:src|file|url|source|playlist)["']\s*:\s*["']|(?:src|file|url)\s*=\s*["'])(https?://[^"'\\s<>]+)"""
+        ).findAll(body).mapNotNull { normalize(it.groupValues[1], apiUrl) }.toList()
+        for (candidate in candidates) {
+            if (candidate.contains(".m3u8", true)) {
+                if (emitM3u8(" [API]", candidate, apiUrl, callback)) return true
+            }
+            val extracted = runCatching {
+                loadExtractor(candidate, referer = apiUrl, subtitleCallback = subtitleCallback) {
+                    callback(it)
+                }
+            }.getOrDefault(false)
+            if (extracted) return true
+        }
+        return false
+    }
+
+    private suspend fun resolveHttpPlayer(
+        playerUrl: String,
+        referer: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        debugFilmKovasi("HTTP_PLAYER", playerUrl)
+        val response = runCatching {
+            app.get(
+                playerUrl,
+                referer = referer,
+                headers = mapOf(
+                    "User-Agent" to USER_AGENT,
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                )
+            )
+        }.getOrNull() ?: return false
+
+        val html = response.text
+        val urls = linkedSetOf<String>()
+
+        // Common HTML5/player formats used by static embeds.
+        Regex(
+            """(?i)(?:file|src|source|url|hls|playlist)\s*["']?\s*[:=]\s*["'](https?://[^"'\\s<>]+)"""
+        ).findAll(html).forEach { m ->
+            normalize(m.groupValues[1], playerUrl)?.let(urls::add)
+        }
+
+        Regex(
+            """(?i)https?://[^"'\\s<>]+\.m3u8(?:[?#][^"'\\s<>]*)?"""
+        ).findAll(html).forEach { m ->
+            normalize(m.value, playerUrl)?.let(urls::add)
+        }
+
+        for (candidate in urls) {
+            if (candidate.contains(".m3u8", true)) {
+                if (emitM3u8(" [HTTP]", candidate, playerUrl, callback)) return true
+            }
+            val extracted = runCatching {
+                loadExtractor(candidate, referer = playerUrl, subtitleCallback = subtitleCallback) {
+                    callback(it)
+                }
+            }.getOrDefault(false)
+            if (extracted) return true
+        }
+
+        // If the page itself is an extractor-supported provider, let the
+        // CloudStream extractor registry handle it after static parsing.
+        return runCatching {
+            loadExtractor(playerUrl, referer = referer, subtitleCallback = subtitleCallback) {
+                callback(it)
+            }
+        }.getOrDefault(false)
     }
 
     override suspend fun loadLinks(
@@ -702,27 +494,14 @@ class FilmKovasi : MainAPI() {
         for ((playerUrl, referer) in validPlayers) {
             debugFilmKovasi("PLAYER_TRY", playerUrl + " REF=" + referer)
 
-            // Final HLS URLs should be emitted directly; opening an already
-            // resolved .m3u8 in WebView can stall Android Chromium.
-            if (Regex("""(?i)\.m3u8(?:[?#].*)?$""").matches(playerUrl)) {
-                val direct = emitM3u8(" [Direct HLS]", playerUrl, referer, callback)
-                debugFilmKovasi("DIRECT_HLS", playerUrl + " :: " + direct)
-                if (direct) found = true
-                continue
-            }
-
-            // Let CloudStream's standard extractor registry handle provider
-            // pages. This avoids forcing FilmKovası to execute a provider's
-            // JavaScript player inside Android WebView.
-            val extracted = runCatching {
-                loadExtractor(
-                    playerUrl,
-                    referer = referer,
-                    subtitleCallback = subtitleCallback
-                ) { link -> callback(link) }
-            }.getOrDefault(false)
-            debugFilmKovasi("EXTRACTOR_RESULT", playerUrl + " :: " + extracted)
-            if (extracted) found = true
+            val ok = resolveHttpPlayer(
+                playerUrl,
+                referer,
+                subtitleCallback,
+                callback
+            )
+            debugFilmKovasi("PLAYER_RESULT", playerUrl + " :: " + ok)
+            if (ok) found = true
         }
         debugFilmKovasi("LOADLINKS_RESULT", found.toString())
         return found
