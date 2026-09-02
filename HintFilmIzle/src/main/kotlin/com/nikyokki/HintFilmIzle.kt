@@ -722,7 +722,14 @@ class HintFilmIzle : MainAPI() {
                 Log.e("HintFilmIzle", "KINESCOPE_WEBVIEW_RESOLVE_FAILED", it)
             }.getOrNull()
 
+            val resolverLink = resolved?.first
             val capturedRequests = resolved?.second.orEmpty()
+
+            val resolverManifestUrl = resolverLink?.url?.toString()?.takeIf {
+                it.contains("kinescopecdn.net", true) && it.contains(".m3u8", true)
+            }
+
+            Log.d("HintFilmIzle", "KINESCOPE_RESOLVER_LINK=" + resolverManifestUrl.orEmpty())
 
             // Diagnostic dump: include every captured Kinescope/player request.
             // URLs are enough to compare two different film embeds without
@@ -747,9 +754,12 @@ class HintFilmIzle : MainAPI() {
                 Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$url")
             }
 
-            val manifestCandidates = allUrls
-                .filter { it.contains(".m3u8", true) }
-                .distinct()
+            val manifestCandidates = buildList {
+                resolverManifestUrl?.let { add(it) }
+                addAll(allUrls.filter {
+                    it.contains(".m3u8", true) && it.contains("kinescopecdn.net", true)
+                })
+            }.distinct()
 
             Log.d(
                 "HintFilmIzle",
@@ -793,11 +803,11 @@ class HintFilmIzle : MainAPI() {
 
             val manifestRequest = capturedRequests.lastOrNull {
                 it.url.toString() == manifestUrl
-            } ?: return false
+            }
 
             val nativeManifestUrl = manifestUrl
 
-            val captured = manifestRequest.headers
+            val captured = manifestRequest?.headers.orEmpty()
             fun capturedHeader(name: String): String? =
                 captured[name]?.takeIf { it.isNotBlank() }
 
@@ -811,8 +821,7 @@ class HintFilmIzle : MainAPI() {
              * request. The signed URL + Referer are the relevant inputs.
              */
             val hlsHeaders = linkedMapOf<String, String>(
-                "Referer" to (capturedHeader("Referer")
-                    ?: iframeUrl.substringBefore("?").trimEnd('/') + "/"),
+                "Referer" to (capturedHeader("Referer") ?: iframeUrl),
                 "User-Agent" to userAgent
             )
 
