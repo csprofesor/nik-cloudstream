@@ -711,10 +711,9 @@ class FilmKovasi : MainAPI() {
                 continue
             }
 
-            if (resolveRuntimePlayer(playerUrl, referer, subtitleCallback, callback)) {
-                found = true
-                continue
-            }
+            // Let CloudStream's standard extractor registry handle provider
+            // pages. This avoids forcing FilmKovası to execute a provider's
+            // JavaScript player inside Android WebView.
             val extracted = runCatching {
                 loadExtractor(
                     playerUrl,
