@@ -635,7 +635,7 @@ class HintFilmIzle : MainAPI() {
             val resolver = WebViewResolver(
                 // Do not stop on the first request. The player first fetches a
                 // JSON/API payload and only then obtains the encrypted HLS data.
-                interceptUrl = Regex("""https?://[^"'\\s<>]*kinescopecdn\\.net/hls/[^"'\\s<>]+\\.m3u8(?:\\?[^"'\\s<>]*)?""", RegexOption.IGNORE_CASE),
+                interceptUrl = Regex("""https?://[^"'s<>]*kinescopecdn.net/hls/[^"'s<>]+.m3u8(?:?[^s"'<>]*)?""", RegexOption.IGNORE_CASE),
                 additionalUrls = listOf(
                     // Keep API/config/player requests while waiting for the
                     // final HLS request. interceptUrl must NOT match the embed
