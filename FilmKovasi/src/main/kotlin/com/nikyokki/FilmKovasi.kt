@@ -584,6 +584,44 @@ class FilmKovasi : MainAPI() {
                 }
             }
 
+            // The site uses lazy-loading: the visible iframe is often about:blank,
+            // while the real provider URL is present in data-litespeed-src or inline HTML.
+            // Read those attributes and only accept known provider hosts.
+            document.select("[data-litespeed-src],[data-fku],[data-src],[data-url],[data-embed],[data-player]").forEach { element ->
+                listOf(
+                    element.attr("data-litespeed-src"),
+                    element.attr("data-src"),
+                    element.attr("data-url"),
+                    element.attr("data-embed"),
+                    element.attr("data-player")
+                ).forEach { raw ->
+                    val candidate = normalize(raw, sourceUrl) ?: return@forEach
+                    val host = runCatching { URI(candidate).host?.lowercase() }.getOrNull() ?: return@forEach
+                    val known = host == "multiembed.mov" ||
+                        host == "player.autoembed.cc" ||
+                        host == "www.2embed.cc" ||
+                        host == "2embed.cc" ||
+                        host == "filmizle1.com" ||
+                        host == "vsembed.ru" ||
+                        host == "vidsrc.to" ||
+                        host == "cloudorchestranova.com" ||
+                        host == "scintillatingsycophant.space"
+                    if (known && !candidate.contains("youtube", true)) {
+                        playerUrls.putIfAbsent(candidate, sourceUrl)
+                    }
+                }
+            }
+
+            // Also recover provider URLs embedded directly in the page source.
+            val rawHtml = document.html()
+            Regex(
+                """https?://(?:www\\.)?(?:multiembed\\.mov|player\\.autoembed\\.cc|(?:www\\.)?2embed\\.cc|filmizle1\\.com|vsembed\\.ru|vidsrc\\.to|cloudorchestranova\\.com)(?:/[^"'<>\\s]*)?""",
+                RegexOption.IGNORE_CASE
+            ).findAll(rawHtml).forEach { match ->
+                val candidate = normalize(match.value, sourceUrl) ?: return@forEach
+                playerUrls.putIfAbsent(candidate, sourceUrl)
+            }
+
             document.select("script").forEach { script ->
                 val text = script.data().ifBlank { script.html() }
                 Regex("""atob\(\s*[\"']([^\"']+)[\"']\s*\)""", RegexOption.IGNORE_CASE)
@@ -619,8 +657,8 @@ class FilmKovasi : MainAPI() {
         // Reconstruct those bridge URLs so the same chain can be followed in WebView.
         val discoveredTmdbIds = playerUrls.keys.flatMap { url ->
             listOfNotNull(
-                Regex("""(?i)[?&]video_id=(\\d+)""").find(url)?.groupValues?.getOrNull(1),
-                Regex("""(?i)/embed/movie/(\\d+)""").find(url)?.groupValues?.getOrNull(1)
+                Regex("""(?i)[?&]video_id=(\d+)""").find(url)?.groupValues?.getOrNull(1),
+                Regex("""(?i)/embed/movie/(\d+)""").find(url)?.groupValues?.getOrNull(1)
             )
         }.distinct()
         discoveredTmdbIds.forEach { id ->
