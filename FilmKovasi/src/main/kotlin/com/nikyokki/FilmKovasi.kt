@@ -122,7 +122,7 @@ class FilmKovasi : MainAPI() {
             this.plot = description
             this.year = year
             this.tags = tags
-            this.rating = rating?.toRatingInt()
+            this.score = rating?.toFloatOrNull()?.let { Score.from10(it) }
             addActors(actors?.map { com.lagradost.cloudstream3.Actor(it) })
             addTrailer(trailer)
         }
