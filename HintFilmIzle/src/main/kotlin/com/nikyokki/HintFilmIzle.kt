@@ -727,27 +727,21 @@ class HintFilmIzle : MainAPI() {
                 Log.e("HintFilmIzle", "KINESCOPE_WEBVIEW_RESOLVE_FAILED", it)
             }.getOrNull()
 
-            fun hasKinescopeManifest(result: Pair<*, *>?): Boolean {
-                val linkUrl = result?.first?.let { it::class.java.getMethod("getUrl").invoke(it)?.toString() }
-                if (linkUrl?.contains("kinescopecdn.net", true) == true &&
-                    linkUrl.contains(".m3u8", true)
-                ) return true
-
-                val requests = result?.second as? Collection<*> ?: return false
-                return requests.any { request ->
-                    val u = runCatching {
-                        request!!::class.java.getMethod("getUrl").invoke(request)?.toString()
-                    }.getOrNull()
-                    u?.contains("kinescopecdn.net", true) == true && u.contains(".m3u8", true)
-                }
-            }
+            val firstLinkUrl = firstResolved?.first?.url?.toString().orEmpty()
+            val firstRequests = firstResolved?.second.orEmpty()
+            val firstHasManifest =
+                firstLinkUrl.contains("kinescopecdn.net", true) && firstLinkUrl.contains(".m3u8", true) ||
+                    firstRequests.any {
+                        it.url.toString().contains("kinescopecdn.net", true) &&
+                            it.url.toString().contains(".m3u8", true)
+                    }
 
             val videoId = Regex("""/embed/(\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
                 .find(iframeUrl)?.groupValues?.getOrNull(1)
 
             val kinescopeDirect = videoId?.let { "https://kinescope.io/embed/$it" }
 
-            val resolved = if (!hasKinescopeManifest(firstResolved) && kinescopeDirect != null) {
+            val resolved = if (!firstHasManifest && kinescopeDirect != null) {
                 Log.d("HintFilmIzle", "KINESCOPE_PROXY_NO_MANIFEST_FALLBACK=$kinescopeDirect")
                 runCatching {
                     resolver.resolveUsingWebView(
