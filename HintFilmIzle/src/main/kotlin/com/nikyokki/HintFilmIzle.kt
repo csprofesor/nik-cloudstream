@@ -708,19 +708,40 @@ class HintFilmIzle : MainAPI() {
                 }
             )
 
+            val resolveHeaders = mapOf(
+                "Referer" to parentUrl,
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+                "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
+            )
+
+            // HintFilmIzle's player proxy can fail in Android WebView (the
+            // observed result was chrome-error://chromewebdata/). Kinescope
+            // officially supports /embed/<VIDEO_ID>, so use the video id as a
+            // direct fallback instead of stopping at the dead proxy host.
+            val kinescopeDirect = Regex("""/embed/(\\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
+                .find(iframeUrl)?.groupValues?.getOrNull(1)
+                ?.let { "https://kinescope.io/embed/$it" }
+
             val resolved = runCatching {
                 resolver.resolveUsingWebView(
                     url = iframeUrl,
                     referer = parentUrl,
-                    headers = mapOf(
-                        "Referer" to parentUrl,
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
-                    )
+                    headers = resolveHeaders
                 )
             }.onFailure {
                 Log.e("HintFilmIzle", "KINESCOPE_WEBVIEW_RESOLVE_FAILED", it)
-            }.getOrNull()
+            }.getOrNull() ?: kinescopeDirect?.let { fallback ->
+                Log.d("HintFilmIzle", "KINESCOPE_DIRECT_FALLBACK=$fallback")
+                runCatching {
+                    resolver.resolveUsingWebView(
+                        url = fallback,
+                        referer = parentUrl,
+                        headers = resolveHeaders
+                    )
+                }.onFailure {
+                    Log.e("HintFilmIzle", "KINESCOPE_DIRECT_FALLBACK_FAILED", it)
+                }.getOrNull()
+            }
 
             val resolverLink = resolved?.first
             val capturedRequests = resolved?.second.orEmpty()
