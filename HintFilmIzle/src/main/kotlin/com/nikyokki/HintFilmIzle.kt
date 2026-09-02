@@ -714,15 +714,10 @@ class HintFilmIzle : MainAPI() {
                 "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
             )
 
-            // HintFilmIzle's player proxy can fail in Android WebView (the
-            // observed result was chrome-error://chromewebdata/). Kinescope
-            // officially supports /embed/<VIDEO_ID>, so use the video id as a
-            // direct fallback instead of stopping at the dead proxy host.
-            val kinescopeDirect = Regex("""/embed/(\\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
-                .find(iframeUrl)?.groupValues?.getOrNull(1)
-                ?.let { "https://kinescope.io/embed/$it" }
-
-            val resolved = runCatching {
+            // The site proxy can return chrome-error://chromewebdata/ in Android
+            // WebView. Try it first, but do not treat a non-null resolver result
+            // as success unless it actually captured an HLS manifest.
+            val firstResolved = runCatching {
                 resolver.resolveUsingWebView(
                     url = iframeUrl,
                     referer = parentUrl,
@@ -730,17 +725,41 @@ class HintFilmIzle : MainAPI() {
                 )
             }.onFailure {
                 Log.e("HintFilmIzle", "KINESCOPE_WEBVIEW_RESOLVE_FAILED", it)
-            }.getOrNull() ?: kinescopeDirect?.let { fallback ->
-                Log.d("HintFilmIzle", "KINESCOPE_DIRECT_FALLBACK=$fallback")
+            }.getOrNull()
+
+            fun hasKinescopeManifest(result: Pair<*, *>?): Boolean {
+                val linkUrl = result?.first?.let { it::class.java.getMethod("getUrl").invoke(it)?.toString() }
+                if (linkUrl?.contains("kinescopecdn.net", true) == true &&
+                    linkUrl.contains(".m3u8", true)
+                ) return true
+
+                val requests = result?.second as? Collection<*> ?: return false
+                return requests.any { request ->
+                    val u = runCatching {
+                        request!!::class.java.getMethod("getUrl").invoke(request)?.toString()
+                    }.getOrNull()
+                    u?.contains("kinescopecdn.net", true) == true && u.contains(".m3u8", true)
+                }
+            }
+
+            val videoId = Regex("""/embed/(\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
+                .find(iframeUrl)?.groupValues?.getOrNull(1)
+
+            val kinescopeDirect = videoId?.let { "https://kinescope.io/embed/$it" }
+
+            val resolved = if (!hasKinescopeManifest(firstResolved) && kinescopeDirect != null) {
+                Log.d("HintFilmIzle", "KINESCOPE_PROXY_NO_MANIFEST_FALLBACK=$kinescopeDirect")
                 runCatching {
                     resolver.resolveUsingWebView(
-                        url = fallback,
+                        url = kinescopeDirect,
                         referer = parentUrl,
                         headers = resolveHeaders
                     )
                 }.onFailure {
                     Log.e("HintFilmIzle", "KINESCOPE_DIRECT_FALLBACK_FAILED", it)
-                }.getOrNull()
+                }.getOrNull() ?: firstResolved
+            } else {
+                firstResolved
             }
 
             val resolverLink = resolved?.first
