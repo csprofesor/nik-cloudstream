@@ -267,10 +267,10 @@ class HintFilmIzle : MainAPI() {
                     """https?://[^"'\\s<>]*(?:/hls/[^"'\\s<>]*|\\.m3u8(?:\\?[^"'\\s<>]*)?)""",
                     RegexOption.IGNORE_CASE
                 ),
-                additionalUrls = listOf(
-                    Regex("""https?://[^"'\\s<>]*kinescopecdn\\.net/[^"'\\s<>]*""", RegexOption.IGNORE_CASE),
-                    Regex("""https?://[^"'\\s<>]*kinescope\\.io/[^"'\\s<>]*""", RegexOption.IGNORE_CASE)
-                ),
+                // Do not capture generic Kinescope/analytics resources.
+                // They can include Yandex/GA requests and make the resolver return an ad URL.
+                // HLS manifests are already covered by interceptUrl above.
+                additionalUrls = emptyList(),
                 userAgent = userAgent,
                 useOkhttp = false,
                 timeout = 45_000L,
