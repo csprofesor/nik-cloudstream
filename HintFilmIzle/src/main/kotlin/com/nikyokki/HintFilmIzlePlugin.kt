@@ -30,6 +30,8 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 import java.net.URI
 import java.net.URLEncoder
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 class HintFilmIzle : MainAPI() {
     override var mainUrl = "https://www.hintfilmizle.com"
@@ -254,6 +256,25 @@ class HintFilmIzle : MainAPI() {
         return u.contains("/ads/") || u.contains("ads.") || u.contains("/advert") || u.contains("doubleclick.net") || u.contains("googlesyndication.com")
     }
 
+    @Serializable
+    private data class PlaymateStreamInfo(@SerialName("sx") val sx: String)
+
+    private suspend fun loadPlaymate(playerUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean {
+        return runCatching {
+            val id = playerUrl.substringAfterLast('/').substringBefore('?').trim()
+            if (id.isBlank()) return false
+            val response = app.post("https://playmate.to/api/s", json = mapOf("c" to id, "d" to "web"),
+                headers = mapOf("User-Agent" to "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0")).parsed<PlaymateStreamInfo>()
+            if (!response.sx.startsWith("http", true) || !response.sx.contains(".m3u8", true)) return false
+            callback(newExtractorLink(source = name, name = "HintFilmİzle Playmate", url = response.sx, type = ExtractorLinkType.M3U8) {
+                referer = parentUrl
+                headers = mapOf("Referer" to parentUrl)
+                quality = getQualityFromName(response.sx)
+            })
+            true
+        }.getOrElse { Log.e("HintFilmIzle", "PLAYMATE_FAILED", it); false }
+    }
+
     private suspend fun loadKinescope(iframeUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean {
         return runCatching {
             val userAgent =
@@ -444,6 +465,17 @@ class HintFilmIzle : MainAPI() {
             )
 
             if (manifestCandidates.isEmpty()) {
+                val directId = videoId?.takeIf { it.isNotBlank() }
+                if (directId != null) {
+                    val directManifest = "https://kinescope.io/$directId/master.m3u8"
+                    callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = directManifest, type = ExtractorLinkType.M3U8) {
+                        referer = livePlayerUrl
+                        headers = mapOf("Referer" to livePlayerUrl, "User-Agent" to userAgent)
+                        quality = getQualityFromName(directManifest)
+                    })
+                    Log.d("HintFilmIzle", "KINESCOPE_DIRECT_FALLBACK=" + directManifest)
+                    return true
+                }
                 Log.e("HintFilmIzle", "KINESCOPE_NO_HLS_CANDIDATE")
                 return false
             }
