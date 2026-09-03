@@ -36,8 +36,8 @@ jobs:
           persist-credentials: true
           token: ${{ github.token }}
 
-      - name: Eski Derlemeleri Temizle
-        run: find $GITHUB_WORKSPACE/builds -name '*.cs3' -delete
+      - name: HintFilmIzle Derlemesini Temizle
+        run: rm -f "$GITHUB_WORKSPACE/builds/HintFilmIzle.cs3"
 
       - name: Cache Temizle
         run: |
@@ -53,80 +53,18 @@ jobs:
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
 
-      - name: Güncel Domainleri Uygula
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          sed -i 's#https://dizigom101.com#https://www.dizigom.love#g' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
-          sed -i 's#https://www.dizimom.bid#https://www.dizimom.work#g; s#https://www.dizimom.surf#https://www.dizimom.work#g' DiziMom/src/main/kotlin/com/keyiflerolsun/DiziMom.kt
-          sed -i 's#https://dizipal1214.com#https://dizipalt.com#g' DiziPal/src/main/kotlin/com/keyiflerolsun/DiziPal.kt
-          sed -i 's#https://www.setfilmizle.uk#https://setfilmizle.ltd#g; s#https://setfilmizle.uk#https://setfilmizle.ltd#g' SetFilmIzle/src/main/kotlin/com/keyiflerolsun/SetFilmIzle.kt
-          sed -i 's#dizigom1.co#www.dizigom.love#g; s/tvTypes = listOf("Movie")/tvTypes = listOf("TvSeries")/' DiziGom/build.gradle.kts
-          sed -i 's#www.dizibox.de#www.dizibox.live#g' DiziBox/build.gradle.kts
-          sed -i 's#dizikorea.vip#dizikorea3.com#g' DiziKorea/build.gradle.kts
-          sed -i 's#www.dizimom.tv#www.dizimom.work#g; s#www.dizimom.surf#www.dizimom.work#g' DiziMom/build.gradle.kts
-          sed -i 's#dizipal683.com#dizipalt.com#g' DiziPal/build.gradle.kts
-          sed -i 's#dizilla.club#dizilla.now#g; s#dizilla40.com#dizilla.now#g' Dizilla/build.gradle.kts
-          sed -i 's#https://dizilla40.com#https://dizilla.now#g; s#https://dizilla.to#https://dizilla.now#g' Dizilla/src/main/kotlin/com/keyiflerolsun/Dizilla.kt
-          sed -i 's#https://www.setfilmizle.uk#https://setfilmizle.ltd#g; s#https://setfilmizle.uk#https://setfilmizle.ltd#g' SetFilmIzle/build.gradle.kts
-          sed -i 's#dizimag.net#dizimag.com.tr#g' DiziMag/build.gradle.kts
-
-      - name: TurkAnime Kotlin Uyumluluk Düzeltmesi
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          sed -i 's/private fun iframe2AesLink/private suspend fun iframe2AesLink/' TurkAnime/src/main/kotlin/com/keyiflerolsun/TurkAnime.kt
-
-      - name: DiziGom Kotlin Uyumluluk Düzeltmesi
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          sed -i 's/yield(img.parent()?.attr("style"))/yield(img.parent()?.attr("style").orEmpty())/' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
-          sed -i 's/yield(backgroundUrl())/yield(backgroundUrl().orEmpty())/' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
-
-      - name: HintFilmIzle Kinescope API Düzeltmesi
-        run: |
-          cd $GITHUB_WORKSPACE/src
-          python3 "$GITHUB_WORKSPACE/src/tools/patch_hintfilmizle_kinescope.sh"
-
-      - name: Eklentileri Derle
+      - name: HintFilmIzle Derle
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
-          shopt -s globstar
-          ./gradlew make makePluginsJson --stacktrace
+          ./gradlew :HintFilmIzle:make --stacktrace
 
-          python3 - <<'PY'
-          import json, os, subprocess
-          p = "build/plugins.json"
-          with open(p, encoding="utf-8") as f:
-              data = json.load(f)
-          commit_count = int(os.environ.get("GITHUB_RUN_NUMBER") or subprocess.check_output(["git", "rev-list", "--count", "HEAD"], text=True).strip())
-          sha = os.environ.get("GITHUB_SHA", "")[:12]
-          versions = {"Anizm": commit_count, "HintFilmIzle": commit_count}
-          files = {"Anizm": "Anizm.cs3", "HintFilmIzle": "HintFilmIzle.cs3"}
-          for internal_name, filename in files.items():
-              entry = next((x for x in data if x.get("internalName") == internal_name), None)
-              if entry is None:
-                  entry = {"url": f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}", "status": 1, "version": versions[internal_name], "name": "HintFilmİzle" if internal_name == "HintFilmIzle" else "Anizm", "internalName": internal_name, "authors": ["csprofesor"], "language": "tr", "apiVersion": 1}
-                  data.append(entry)
-              entry["version"] = versions[internal_name]
-              entry["url"] = f"https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{filename}?v={sha}"
-          hint = next(x for x in data if x.get("internalName") == "HintFilmIzle")
-          hint.update({"status": 1, "name": "HintFilmİzle", "authors": ["csprofesor"], "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler", "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream", "language": "tr", "tvTypes": ["Movie", "TvSeries"], "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%", "apiVersion": 1})
-          with open(p, "w", encoding="utf-8") as f:
-              json.dump(data, f, ensure_ascii=False, indent=2)
-          PY
-
-          sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=36"#' build/plugins.json
-          sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=13"#' build/plugins.json
-          sed -i 's#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3"#https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=84"#' build/plugins.json
-          cp **/build/*.cs3 $GITHUB_WORKSPACE/builds
-          cp build/plugins.json $GITHUB_WORKSPACE/builds
-          cp repo.json $GITHUB_WORKSPACE/builds/repo.json
-
-      - name: Derlemeleri Yükle
+      - name: HintFilmIzle Derlemesini Yükle
         run: |
           cd $GITHUB_WORKSPACE/builds
+          cp $GITHUB_WORKSPACE/src/HintFilmIzle/build/*.cs3 ./HintFilmIzle.cs3
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add .
-          git commit -m "Yeni Derleme: $GITHUB_SHA" || exit 0
+          git add HintFilmIzle.cs3
+          git commit -m "Yeni HintFilmIzle Derlemesi: $GITHUB_SHA" || exit 0
           git push origin HEAD:builds --force
