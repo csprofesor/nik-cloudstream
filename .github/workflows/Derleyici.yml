@@ -83,7 +83,7 @@ jobs:
       - name: HintFilmIzle Kinescope API Düzeltmesi
         run: |
           cd $GITHUB_WORKSPACE/src
-          python3 "$GITHUB_WORKSPACE/src/tools/patch_hintfilmizle_kinescope.py"
+          python3 "$GITHUB_WORKSPACE/src/tools/patch_hintfilmizle_kinescope.sh"
 
       - name: Eklentileri Derle
         run: |
