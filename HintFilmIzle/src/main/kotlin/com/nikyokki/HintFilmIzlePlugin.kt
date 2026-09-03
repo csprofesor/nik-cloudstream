@@ -257,7 +257,7 @@ class HintFilmIzle : MainAPI() {
     }
 
     @Serializable
-    private data class PlaymateStreamInfo(@SerialName("sx") val sx: String)
+    private data class PlaymateStreamInfo(@SerialName("sx") val sx: String? = null)
 
     private suspend fun loadPlaymate(playerUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean {
         return runCatching {
@@ -265,11 +265,11 @@ class HintFilmIzle : MainAPI() {
             if (id.isBlank()) return false
             val response = app.post("https://playmate.to/api/s", json = mapOf("c" to id, "d" to "web"),
                 headers = mapOf("User-Agent" to "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0")).parsed<PlaymateStreamInfo>()
-            if (!response.sx.startsWith("http", true) || !response.sx.contains(".m3u8", true)) return false
-            callback(newExtractorLink(source = name, name = "HintFilmİzle Playmate", url = response.sx, type = ExtractorLinkType.M3U8) {
+            val stream = response.sx?.trim()?.takeIf { it.startsWith("http", true) && it.contains(".m3u8", true) } ?: return false
+            callback(newExtractorLink(source = name, name = "HintFilmİzle Playmate", url = stream, type = ExtractorLinkType.M3U8) {
                 referer = parentUrl
                 headers = mapOf("Referer" to parentUrl)
-                quality = getQualityFromName(response.sx)
+                quality = getQualityFromName(stream)
             })
             true
         }.getOrElse { Log.e("HintFilmIzle", "PLAYMATE_FAILED", it); false }
@@ -577,9 +577,7 @@ class HintFilmIzle : MainAPI() {
         document.select(
             "iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], iframe[data-frame], frame[src], " +
                 "video[src], video[data-src], video[data-url], video source[src], video source[data-src], video source[data-url], " +
-                "a[href], a[data-url], a[data-embed], a[data-frame], a[data-video], a[data-player], button[data-url], " +
-                "button[data-embed], button[data-frame], button[data-video], button[data-player], [onclick], [data-url], " +
-                "[data-embed], [data-frame], [data-video], [data-player]"
+                "button[data-url], button[data-embed], button[data-frame], button[data-video], button[data-player], [data-url], [data-embed], [data-frame], [data-video], [data-player]"
         ).forEach { element ->
             Log.d("HintFilmIzle", "ELEMENT tag=${element.tagName()} class=${element.className()} id=${element.id()}")
             listOf(
