@@ -357,7 +357,8 @@ class HintFilmIzle : MainAPI() {
             // captured URL can contain the signed/query parameters required by
             // the video's access policy. Use the public master URL only as a
             // fallback when no playable manifest was captured.
-            val manifestCandidates = capturedManifests            Log.d("HintFilmIzle", "KINESCOPE_EMBED_ID=${embedId.orEmpty()}")
+            val manifestCandidates = capturedManifests
+            Log.d("HintFilmIzle", "KINESCOPE_EMBED_ID=${embedId.orEmpty()}")
             Log.d("HintFilmIzle", "KINESCOPE_DIRECT_MASTER_DISABLED=true")
             Log.d("HintFilmIzle", "KINESCOPE_CAPTURED_MANIFESTS=${capturedManifests.joinToString(" || ")}")
             Log.d("HintFilmIzle", "KINESCOPE_MANIFEST_CANDIDATES=${manifestCandidates.joinToString(" || ")}")
@@ -431,7 +432,16 @@ class HintFilmIzle : MainAPI() {
         fun addUrl(value: String?, base: String = data) {
             if (value.isNullOrBlank()) return
             val cleaned = value.replace("\\/", "/").replace("\\u0026", "&").replace("&amp;", "&").trim().trim('"', '\'')
-            playerUrl(cleaned, base)?.let { url ->
+            playerUrl(cleaned, base)?.let { rawUrl ->
+                val url = if (rawUrl.contains("player.hintfilmizle.com/embed/", true)) {
+                    val id = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+                        .find(rawUrl)?.groupValues?.getOrNull(1)
+                    if (id != null) {
+                        "https://river-3-329.kinescopecdn.net/677113747/embed/" +
+                            id + "?design=3&lang=" +
+                            URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")
+                    } else rawUrl
+                } else rawUrl
                 if (!isIgnoredPlayer(url) && !isTrailerPlayer(url) && !url.startsWith(mainUrl, true)) players.add(url)
             }
             Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(cleaned)
