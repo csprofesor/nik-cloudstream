@@ -266,7 +266,7 @@ class HintFilmIzle : MainAPI() {
                 // Match the actual HLS resource requested by Kinescope.
                 // Keep this regex simple so Kotlin raw-string escaping cannot break it.
                 interceptUrl = Regex(
-                    """https?://.*(?:/hls/.*\\.m3u8(?:\\?.*)?|\\.m3u8(?:\\?.*)?)""",
+                    """https?://.*(?:/hls/.*\.m3u8(?:\?.*)?|\.m3u8(?:\?.*)?)""",
                     RegexOption.IGNORE_CASE
                 ),
                 // Do not capture generic Kinescope/analytics resources.
