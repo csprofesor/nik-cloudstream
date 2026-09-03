@@ -841,9 +841,9 @@ class HintFilmIzle : MainAPI() {
 
             val nativeManifestUrl = manifestUrl
 
-            val captured = manifestRequest?.headers.orEmpty()
+            val captured = manifestRequest?.headers
             fun capturedHeader(name: String): String? =
-                captured[name]?.takeIf { it.isNotBlank() }
+                captured?.get(name)?.takeIf { it.isNotBlank() }
 
             val userAgent = capturedHeader("User-Agent")
                 ?: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
