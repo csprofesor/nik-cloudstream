@@ -565,6 +565,50 @@ class HintFilmIzle : MainAPI() {
         Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())
             .forEach { addUrl(it.value.replace("\\/", "/")) }
 
+        // The player is often embedded inside a script/JSON blob rather than an iframe.
+        // Inspect raw HTML so dynamically generated player URLs are not missed.
+        val rawHtml = document.html()
+            .replace("\\/", "/")
+            .replace("\\u002F", "/")
+            .replace("\\u0026", "&")
+            .replace("&amp;", "&")
+
+        Regex("""(?:https?:)?//[^\"'\\s<>]+/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+            .findAll(rawHtml).forEach { match ->
+                val full = match.value.let { if (it.startsWith("//")) "https:$it" else it }
+                val host = runCatching { URI(full).host.orEmpty().lowercase() }.getOrDefault("")
+                if (host == "player.hintfilmizle.com") {
+                    val id = match.groupValues.getOrNull(1)
+                    if (!id.isNullOrBlank()) {
+                        val rendexEmbed = "https://river-3-329.kinescopecdn.net/677113747/embed/$id" +
+                            "?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}"
+                        players.add(rendexEmbed)
+                        Log.d("HintFilmIzle", "KINESCOPE_RAW_PLAYER=$rendexEmbed")
+                    }
+                }
+            }
+
+        Regex("""https?://[^\"'\\s<>]*kinescopecdn\\.net/[^\"'\\s<>]*/embed/[A-Za-z0-9_-]+[^\"'\\s<>]*""", RegexOption.IGNORE_CASE)
+            .findAll(rawHtml).forEach { match ->
+                val url = match.value.trimEnd('\"', '\'', ')', ']', ';', ',')
+                if (!isIgnoredPlayer(url) && !isTrailerPlayer(url)) {
+                    players.add(url)
+                    Log.d("HintFilmIzle", "KINESCOPE_RAW_CDN=$url")
+                }
+            }
+
+        // Some pages keep only the embed id in a JS configuration object.
+        Regex("""(?:player(?:\\.hintfilmizle\\.com)?|kinescope)[^\"'\\s<>]{0,120}embed[^\"'\\s<>]{0,120}""", RegexOption.IGNORE_CASE)
+            .findAll(rawHtml).forEach { match ->
+                val id = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+                    .find(match.value)?.groupValues?.getOrNull(1)
+                if (!id.isNullOrBlank()) {
+                    val rendexEmbed = "https://river-3-329.kinescopecdn.net/677113747/embed/$id" +
+                        "?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}"
+                    players.add(rendexEmbed)
+                    Log.d("HintFilmIzle", "KINESCOPE_RAW_ID=$rendexEmbed")
+                }
+            }
         // Rendex creates the actual Kinescope CDN embed dynamically. The legacy
         // player.hintfilmizle.com hostname is NXDOMAIN, so do not resolve it.
         // Browser captures show the generated embed as:
