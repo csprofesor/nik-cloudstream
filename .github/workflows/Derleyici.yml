@@ -50,30 +50,6 @@ jobs:
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
 
-      - name: HintFilmIzle Kinescope Yamasını Uygula
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("src/HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzle.kt")
-          text = path.read_text(encoding="utf-8")
-
-          old_resolve = '''            val resolved = resolver.resolveUsingWebView(url = iframeUrl, referer = parentUrl, headers = resolveHeaders)\n            val resolverLinkUrl = resolved.first?.url?.toString().orEmpty()\n            val captured = resolved.second.orEmpty()\n            val urls = buildList {\n                if (resolverLinkUrl.isNotBlank()) add(resolverLinkUrl)\n                addAll(captured.map { it.url.toString() })\n            }.distinct()\n'''
-          new_resolve = '''            var resolved = resolver.resolveUsingWebView(url = iframeUrl, referer = parentUrl, headers = resolveHeaders)\n            var resolverLinkUrl = resolved.first?.url?.toString().orEmpty()\n            var captured = resolved.second.orEmpty()\n            var urls = buildList {\n                if (resolverLinkUrl.isNotBlank()) add(resolverLinkUrl)\n                addAll(captured.map { it.url.toString() })\n            }.distinct()\n\n            // Some HintFilmIzle pages expose the Kinescope player through the\n            // parent page only. Retry there when the standalone player did not\n            // produce a manifest.\n            if (!urls.any { it.contains(".m3u8", true) }) {\n                runCatching {\n                    resolved = resolver.resolveUsingWebView(url = parentUrl, referer = parentUrl, headers = resolveHeaders)\n                    resolverLinkUrl = resolved.first?.url?.toString().orEmpty()\n                    captured = resolved.second.orEmpty()\n                    urls = buildList {\n                        if (resolverLinkUrl.isNotBlank()) add(resolverLinkUrl)\n                        addAll(captured.map { it.url.toString() })\n                    }.distinct()\n                    Log.d("HintFilmIzle", "KINESCOPE_PARENT_FALLBACK_OK=${urls.size}")\n                }.onFailure {\n                    Log.e("HintFilmIzle", "KINESCOPE_PARENT_FALLBACK_FAILED", it)\n                }\n            }\n'''
-          if old_resolve not in text:
-              raise SystemExit("Kinescope resolve block not found")
-          text = text.replace(old_resolve, new_resolve, 1)
-
-          marker = '''        Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())\n'''
-          insertion = '''        // Rendex can create the Kinescope iframe dynamically from data attributes.\n        // Build a real embed URL so WebView can follow the redirect and capture\n        // the signed Kinescope HLS manifest.\n        document.select("[data-id][data-publisher-id]").forEach { element ->\n            val id = element.attr("data-id").trim()\n            val publisher = element.attr("data-publisher-id").trim()\n            if (id.isNotBlank() && publisher.isNotBlank()) {\n                addUrl("https://kinescope.io/embed/$id")\n                Log.d("HintFilmIzle", "KINESCOPE_RENDEX_ID=$id PUBLISHER=$publisher")\n            }\n        }\n\n        Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())\n'''
-          if marker not in text:
-              raise SystemExit("Kinescope HTML marker not found")
-          text = text.replace(marker, insertion, 1)
-
-          path.write_text(text, encoding="utf-8")
-          print("HintFilmIzle Kinescope patch applied")
-          PY
-
       - name: Tüm Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
