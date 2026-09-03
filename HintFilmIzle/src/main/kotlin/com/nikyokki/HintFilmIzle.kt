@@ -719,7 +719,7 @@ class HintFilmIzle : MainAPI() {
             // as success unless it actually captured an HLS manifest.
             val firstResolved = runCatching {
                 resolver.resolveUsingWebView(
-                    url = iframeUrl,
+                    url = parentUrl,
                     referer = parentUrl,
                     headers = resolveHeaders
                 )
@@ -736,25 +736,11 @@ class HintFilmIzle : MainAPI() {
                             it.url.toString().contains(".m3u8", true)
                     }
 
-            val videoId = Regex("""/embed/(\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
-                .find(iframeUrl)?.groupValues?.getOrNull(1)
-
-            val kinescopeDirect = videoId?.let { "https://kinescope.io/embed/$it" }
-
-            val resolved = if (!firstHasManifest && kinescopeDirect != null) {
-                Log.d("HintFilmIzle", "KINESCOPE_PROXY_NO_MANIFEST_FALLBACK=$kinescopeDirect")
-                runCatching {
-                    resolver.resolveUsingWebView(
-                        url = kinescopeDirect,
-                        referer = parentUrl,
-                        headers = resolveHeaders
-                    )
-                }.onFailure {
-                    Log.e("HintFilmIzle", "KINESCOPE_DIRECT_FALLBACK_FAILED", it)
-                }.getOrNull() ?: firstResolved
-            } else {
-                firstResolved
-            }
+            // The player proxy can fail as a standalone WebView URL. The
+            // parent HintFilmIzle page is reachable and contains the iframe;
+            // resolving from the parent lets WebView follow the real redirect
+            // to the dynamic river-*.kinescopecdn.net player.
+            val resolved = firstResolved
 
             val resolverLink = resolved?.first
             val capturedRequests = resolved?.second.orEmpty()
