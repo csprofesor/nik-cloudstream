@@ -292,7 +292,7 @@ class HintFilmIzle : MainAPI() {
             )
 
             val resolveHeaders = mapOf(
-                "Referer" to parentUrl,
+                "Referer" to iframeUrl,
                 "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
                 "User-Agent" to userAgent
             )
@@ -356,9 +356,8 @@ class HintFilmIzle : MainAPI() {
             val request = captured.lastOrNull { it.url.toString() == manifestUrl }
             fun header(name: String): String? = request?.headers?.get(name)?.takeIf { it.isNotBlank() }
             val headers = linkedMapOf(
-                "Referer" to (header("Referer") ?: parentUrl),
+                "Referer" to (header("Referer") ?: iframeUrl),
                 "User-Agent" to (header("User-Agent") ?: userAgent),
-                "Origin" to (header("Origin") ?: mainUrl),
                 "Accept" to (header("Accept") ?: "*/*")
             )
             header("Accept-Language")?.let { headers["Accept-Language"] = it }
@@ -449,6 +448,8 @@ class HintFilmIzle : MainAPI() {
                     append(design)
                     append("&lang=")
                     append(playerLang)
+                    append("&nc=")
+                    append(System.currentTimeMillis() / 1000L)
                     if (voiceover.isNotBlank()) {
                         append("&voiceover=")
                         append(URLEncoder.encode(voiceover, "UTF-8"))
