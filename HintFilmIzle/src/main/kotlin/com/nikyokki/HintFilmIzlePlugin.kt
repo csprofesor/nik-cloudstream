@@ -289,7 +289,7 @@ class HintFilmIzle : MainAPI() {
                 additionalUrls = emptyList(),
                 userAgent = userAgent,
                 useOkhttp = false,
-                timeout = 45_000L,
+                timeout = 60_000L,
                 script = """
                     (function() {
                         try {
@@ -415,10 +415,8 @@ class HintFilmIzle : MainAPI() {
 
             val livePlayerUrl = if (videoId != null) {
                 val nonce = System.currentTimeMillis()
-                "https://river-3-329.kinescopecdn.net/677113747/embed/" +
-                    videoId + "?design=3&lang=" +
-                    URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") +
-                    "&nc=" + nonce
+                "https://kinescope.io/embed/" +
+                    videoId + "?autoplay=1&muted=1&nc=" + nonce
             } else {
                 iframeUrl
             }
