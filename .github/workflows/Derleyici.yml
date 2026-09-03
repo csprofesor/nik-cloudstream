@@ -36,9 +36,6 @@ jobs:
           persist-credentials: true
           token: ${{ github.token }}
 
-      - name: HintFilmIzle Derlemesini Temizle
-        run: rm -f "$GITHUB_WORKSPACE/builds/HintFilmIzle.cs3"
-
       - name: Cache Temizle
         run: |
           rm -rf ~/.gradle/caches
@@ -53,18 +50,19 @@ jobs:
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
 
-      - name: HintFilmIzle Derle
+      - name: Tüm Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
-          ./gradlew :HintFilmIzle:make --stacktrace
+          ./gradlew make --stacktrace
 
-      - name: HintFilmIzle Derlemesini Yükle
+      - name: Tüm Derlemeleri Yükle
         run: |
           cd $GITHUB_WORKSPACE/builds
-          cp $GITHUB_WORKSPACE/src/HintFilmIzle/build/*.cs3 ./HintFilmIzle.cs3
+          find . -maxdepth 1 -name "*.cs3" -type f -delete
+          find "$GITHUB_WORKSPACE/src" -mindepth 2 -path "*/build/*.cs3" -type f -exec cp {} "$GITHUB_WORKSPACE/builds/" \;
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add HintFilmIzle.cs3
-          git commit -m "Yeni HintFilmIzle Derlemesi: $GITHUB_SHA" || exit 0
+          git add *.cs3
+          git commit -m "Yeni tüm eklenti derlemeleri: $GITHUB_SHA" || exit 0
           git push origin HEAD:builds --force
