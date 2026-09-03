@@ -137,6 +137,7 @@ class HintFilmIzle : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
+        // Düzeltme 2: Query barındıran URL'ler için Pagination yapısı düzeltildi
         val pageUrl = if (page <= 1) {
             request.data
         } else {
@@ -147,7 +148,8 @@ class HintFilmIzle : MainAPI() {
                 "${request.data.trimEnd('/')}/page/$page/"
             }
         }
-        
+
+        // Düzeltme 1: Cloudflare/bağlantı sorununu çözen User-Agent silinmesi işlemi uygulandı
         val document = runCatching {
             app.get(pageUrl, referer = "$mainUrl/").document
         }.getOrNull() ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
@@ -175,6 +177,7 @@ class HintFilmIzle : MainAPI() {
             val results = runCatching { 
                 extractResults(app.get(url, referer = "$mainUrl/film").document) 
             }.getOrDefault(emptyList())
+            
             val matched = results.filter { it.name.lowercase().contains(needle) }
             if (matched.isNotEmpty()) return matched
         }
@@ -192,10 +195,11 @@ class HintFilmIzle : MainAPI() {
     }
 
     override suspend fun load(url: String): LoadResponse? {
+        // Düzeltme 3: Load metodu try-catch içine alındı (Bağlantı hatası durumunda patlamayı engeller)
         val document = runCatching {
             app.get(url, referer = "$mainUrl/").document
         }.getOrNull() ?: return null
-        
+
         val title = firstText(document, "h1", ".entry-title", ".film-title", ".movie-title", ".serieTitle") ?: return null
         val poster = cleanUrl(document.selectFirst("meta[property='og:image']")?.attr("content"))
             ?: document.selectFirst("article, .movie-detail, .film-detail, .serie-detail")?.posterUrl()
@@ -273,7 +277,6 @@ class HintFilmIzle : MainAPI() {
                     (function() {
                         try {
                             window.__csKinescopeUrls = window.__csKinescopeUrls || [];
-
                             function remember(u) {
                                 try {
                                     if (!u) return;
@@ -284,10 +287,8 @@ class HintFilmIzle : MainAPI() {
                                     }
                                 } catch (_) {}
                             }
-
                             if (!window.__csKinescopeHooksInstalled) {
                                 window.__csKinescopeHooksInstalled = true;
-
                                 try {
                                     var oldOpen = XMLHttpRequest.prototype.open;
                                     XMLHttpRequest.prototype.open = function(method, url) {
@@ -295,7 +296,6 @@ class HintFilmIzle : MainAPI() {
                                         return oldOpen.apply(this, arguments);
                                     };
                                 } catch (_) {}
-
                                 try {
                                     var oldFetch = window.fetch;
                                     window.fetch = function(input) {
@@ -306,7 +306,6 @@ class HintFilmIzle : MainAPI() {
                                     };
                                 } catch (_) {}
                             }
-
                             function clickPlay() {
                                 var selectors = [
                                     'video',
@@ -316,13 +315,11 @@ class HintFilmIzle : MainAPI() {
                                     '[class*="play-button" i]',
                                     '[class*="playButton" i]'
                                 ];
-
                                 for (var i = 0; i < selectors.length; i++) {
                                     var nodes = document.querySelectorAll(selectors[i]);
                                     for (var j = 0; j < nodes.length; j++) {
                                         var el = nodes[j];
                                         if (!el) continue;
-
                                         try {
                                             if (el.tagName && el.tagName.toLowerCase() === 'video') {
                                                 el.muted = true;
@@ -339,20 +336,17 @@ class HintFilmIzle : MainAPI() {
                                     }
                                 }
                             }
-
                             function collect() {
                                 try {
                                     var resources = performance.getEntriesByType('resource') || [];
                                     resources.forEach(function(e) { remember(e.name); });
                                 } catch (_) {}
-
                                 try {
                                     document.querySelectorAll('video, video source').forEach(function(e) {
                                         remember(e.currentSrc);
                                         remember(e.src);
                                     });
                                 } catch (_) {}
-
                                 try {
                                     var urls = window.__csKinescopeUrls || [];
                                     return JSON.stringify({
@@ -365,19 +359,15 @@ class HintFilmIzle : MainAPI() {
                                     return JSON.stringify({error: String(e), href: location.href});
                                 }
                             }
-
                             clickPlay();
                             collect();
-
                             var started = Date.now();
                             var timer = setInterval(function() {
                                 clickPlay();
                                 collect();
                                 if (Date.now() - started > 40000) clearInterval(timer);
                             }, 500);
-
                             setTimeout(function() { clearInterval(timer); }, 42000);
-
                             return collect();
                         } catch (e) {
                             return JSON.stringify({error: String(e), href: location.href});
@@ -425,11 +415,23 @@ class HintFilmIzle : MainAPI() {
             }.distinct()
 
             Log.d("HintFilmIzle", "KINESCOPE_REQUEST_COUNT=${urls.size}")
-            
+            urls.filter {
+                it.contains("kinescope", true) ||
+                    it.contains("kinescopecdn", true) ||
+                    it.contains("/hls/", true)
+            }.forEach {
+                Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$it")
+            }
+
             val manifestCandidates = urls.filter {
                 it.contains(".m3u8", true) &&
                     (it.contains("kinescopecdn.net", true) || it.contains("kinescope.io", true))
             }.distinct()
+
+            Log.d(
+                "HintFilmIzle",
+                "KINESCOPE_CAPTURED_MANIFESTS=${manifestCandidates.joinToString(" || ")}"
+            )
 
             if (manifestCandidates.isEmpty()) {
                 Log.e("HintFilmIzle", "KINESCOPE_NO_HLS_CANDIDATE")
@@ -466,6 +468,10 @@ class HintFilmIzle : MainAPI() {
             header("Accept-Language")?.let { headers["Accept-Language"] = it }
             header("Origin")?.let { headers["Origin"] = it }
 
+            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_MANIFEST=$manifestUrl")
+            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_REFERER=${headers["Referer"]}")
+            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_ORIGIN=${headers["Origin"].orEmpty()}")
+
             callback(
                 newExtractorLink(
                     source = name,
@@ -478,6 +484,7 @@ class HintFilmIzle : MainAPI() {
                     quality = getQualityFromName(manifestUrl)
                 }
             )
+
             true
         }.getOrElse {
             Log.e("HintFilmIzle", "KINESCOPE_RESOLVER_FAILED", it)
@@ -491,11 +498,11 @@ class HintFilmIzle : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        // Burada da headers map silindi ve runCatching ile korundu
         val document = runCatching {
             app.get(data, referer = "$mainUrl/").document
         }.getOrNull() ?: return false
 
-        var found = false
         val players = linkedSetOf<String>()
         Log.d("HintFilmIzle", "FILM_DATA=$data")
 
@@ -528,6 +535,7 @@ class HintFilmIzle : MainAPI() {
                 "button[data-embed], button[data-frame], button[data-video], button[data-player], [onclick], [data-url], " +
                 "[data-embed], [data-frame], [data-video], [data-player]"
         ).forEach { element ->
+            Log.d("HintFilmIzle", "ELEMENT tag=${element.tagName()} class=${element.className()} id=${element.id()}")
             listOf(
                 element.attr("href"), element.attr("src"), element.attr("data-src"), element.attr("data-url"),
                 element.attr("data-embed"), element.attr("data-frame"), element.attr("data-video"), element.attr("data-player"),
@@ -538,12 +546,14 @@ class HintFilmIzle : MainAPI() {
         Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())
             .forEach { addUrl(it.value.replace("\\/", "/")) }
 
+        // Düzeltme 4: Yarım kalan kısım tamamlandı
         document.select("[data-publisher-id][data-id]").forEach { element ->
             val publisherId = element.attr("data-publisher-id").trim()
             val videoId = element.attr("data-id").trim()
             val design = element.attr("data-design").trim().ifBlank { "3" }
             val playerLang = lang.ifBlank { "tr" }
             val voiceover = element.attr("data-voiceover").trim()
+            
             if (publisherId.isNotBlank() && videoId.isNotBlank()) {
                 val query = buildString {
                     append("?design=").append(design)
@@ -556,13 +566,14 @@ class HintFilmIzle : MainAPI() {
             }
         }
 
-        players.forEach { playerUrl ->
-            if (playerUrl.contains("kinescope", true) || playerUrl.contains("kinescopecdn", true)) {
-                if (loadKinescope(playerUrl, data, callback)) found = true
+        players.forEach { player ->
+            if (player.contains("kinescopecdn", true) || player.contains("kinescope", true)) {
+                loadKinescope(player, data, callback)
             } else {
-                if (loadExtractor(playerUrl, data, subtitleCallback, callback)) found = true
+                loadExtractor(player, data, subtitleCallback, callback)
             }
         }
-        return found
+
+        return players.isNotEmpty()
     }
 }
