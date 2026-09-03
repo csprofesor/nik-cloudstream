@@ -40,9 +40,9 @@
     "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=1e8024d10185",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=bf148b80ac37",
     "status": 1,
-    "version": 552,
+    "version": 562,
     "name": "Anizm",
     "internalName": "Anizm",
     "authors": [
@@ -428,26 +428,6 @@
     "fileHash": "sha256-3e4a185d2f152f73496ead0a4b83ea47fba3f4b213ceb9c2111ab590abbc4a65"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmKovasi.cs3",
-    "status": 1,
-    "version": 1,
-    "name": "FilmKovasi",
-    "internalName": "FilmKovasi",
-    "authors": [
-      "csprofesor"
-    ],
-    "description": "Film Kovasi ⚡ ile en güncel ve sorunsuz Full HD Film izle keyfi her yerde seninle! 1080p online film izleme ayrıcalığıyla Film Kovası'nın Tadını Çıkarın.",
-    "fileSize": 19696,
-    "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
-    "language": "tr",
-    "tvTypes": [
-      "Movie"
-    ],
-    "iconUrl": "https://www.google.com/s2/favicons?domain=filmkovasi.tv&sz=%size%",
-    "apiVersion": 1,
-    "fileHash": "sha256-8031ded9e5c7f18b7323b04d674f039d1a31e7f73dd4950cff5f0b158842e3ba"
-  },
-  {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3",
     "status": 1,
     "version": 58,
@@ -631,16 +611,16 @@
     "fileHash": "sha256-069398ea9a445846acffd586f497c29471779632d26901e59238fa504761a467"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=1e8024d10185",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=bf148b80ac37",
     "status": 1,
-    "version": 552,
+    "version": 562,
     "name": "HintFilmİzle",
     "internalName": "HintFilmIzle",
     "authors": [
       "csprofesor"
     ],
     "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-    "fileSize": 45469,
+    "fileSize": 47593,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -649,7 +629,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-4483a24cf212a4a33fd78e26cf16adf196c63d924719aefaf689ffa0f514a5f9"
+    "fileHash": "sha256-2c1e472bcd239586ddcef268f725fb247ce52158666d6fd44b92f08060a3f099"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3",
