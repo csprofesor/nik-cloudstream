@@ -432,6 +432,34 @@ class HintFilmIzle : MainAPI() {
         Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())
             .forEach { addUrl(it.value.replace("\\/", "/")) }
 
+        // Rendex creates the actual Kinescope CDN embed dynamically. The legacy
+        // player.hintfilmizle.com hostname is NXDOMAIN, so do not resolve it.
+        // Browser captures show the generated embed as:
+        // https://river-3-329.kinescopecdn.net/<publisher>/embed/<video>?design=3&lang=tr
+        // followed by a short-lived signed /hls/.../index.m3u8 request.
+        document.select("[data-publisher-id][data-id]").forEach { element ->
+            val publisherId = element.attr("data-publisher-id").trim()
+            val videoId = element.attr("data-id").trim()
+            val design = element.attr("data-design").trim().ifBlank { "3" }
+            val playerLang = lang.ifBlank { "tr" }
+            val voiceover = element.attr("data-voiceover").trim()
+            if (publisherId.isNotBlank() && videoId.isNotBlank()) {
+                val query = buildString {
+                    append("?design=")
+                    append(design)
+                    append("&lang=")
+                    append(playerLang)
+                    if (voiceover.isNotBlank()) {
+                        append("&voiceover=")
+                        append(URLEncoder.encode(voiceover, "UTF-8"))
+                    }
+                }
+                val rendexEmbed = "https://river-3-329.kinescopecdn.net/$publisherId/embed/$videoId$query"
+                players.add(rendexEmbed)
+                Log.d("HintFilmIzle", "KINESCOPE_RENDEX_EMBED=$rendexEmbed")
+            }
+        }
+
         Log.d("HintFilmIzle", "PLAYER_LIST=${players.joinToString(" || ")}")
         val kinescopePlayers = players.filter { it.contains("kinescope", true) || it.contains("player.hintfilmizle.com", true) }
         Log.d("HintFilmIzle", "KINESCOPE_PLAYERS=${kinescopePlayers.joinToString(" || ")}")
