@@ -263,8 +263,10 @@ class HintFilmIzle : MainAPI() {
                     "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 
             val resolver = WebViewResolver(
+                // Match the actual HLS resource requested by Kinescope.
+                // Keep this regex simple so Kotlin raw-string escaping cannot break it.
                 interceptUrl = Regex(
-                    """https?://[^"'\\s<>]*(?:/hls/[^"'\\s<>]*|\\.m3u8(?:\\?[^"'\\s<>]*)?)""",
+                    """https?://.*(?:/hls/.*\\.m3u8(?:\\?.*)?|\\.m3u8(?:\\?.*)?)""",
                     RegexOption.IGNORE_CASE
                 ),
                 // Do not capture generic Kinescope/analytics resources.
