@@ -58,11 +58,48 @@ jobs:
 
       - name: Tüm Derlemeleri Yükle
         run: |
+          set -euo pipefail
           cd $GITHUB_WORKSPACE/builds
           find . -maxdepth 1 -name "*.cs3" -type f -delete
           find "$GITHUB_WORKSPACE/src" -mindepth 2 -path "*/build/*.cs3" -type f -exec cp {} "$GITHUB_WORKSPACE/builds/" \;
+
+          # Keep the plugin manifest synchronized with the actual binary.
+          # In particular, stale SHA-256 metadata causes CloudStream to reject
+          # a freshly rebuilt .cs3 as an invalid/corrupt repository asset.
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import json
+          import os
+
+          root = Path.cwd()
+          manifest = root / "plugins.json"
+          target = root / "HintFilmIzle.cs3"
+          if manifest.exists() and target.exists():
+              data = json.loads(manifest.read_text(encoding="utf-8"))
+              digest = hashlib.sha256(target.read_bytes()).hexdigest()
+              size = target.stat().st_size
+              cache = os.environ.get("GITHUB_SHA", "build")
+              updated = False
+              for item in data:
+                  if item.get("internalName") == "HintFilmIzle":
+                      item["fileSize"] = size
+                      item["fileHash"] = f"sha256-{digest}"
+                      base = "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3"
+                      item["url"] = f"{base}?v={cache}"
+                      updated = True
+                      break
+              if not updated:
+                  print("HintFilmIzle metadata entry not found; refusing to create a duplicate entry")
+              else:
+                  manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                  print(f"HintFilmIzle metadata updated: size={size} sha256={digest}")
+          else:
+              print("HintFilmIzle.cs3 or plugins.json missing; metadata not updated")
+          PY
+
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add *.cs3
+          git add *.cs3 plugins.json
           git commit -m "Yeni tüm eklenti derlemeleri: $GITHUB_SHA" || exit 0
           git push origin HEAD:builds --force
