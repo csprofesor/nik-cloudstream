@@ -10,3 +10,4 @@ cloudstream {
 }
 
 // Published in the main repository plugin list
+// Build trigger
