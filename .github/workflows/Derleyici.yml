@@ -55,7 +55,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          path = Path("$GITHUB_WORKSPACE/src/HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzle.kt")
+          path = Path("src/HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzle.kt")
           text = path.read_text(encoding="utf-8")
 
           old_resolve = '''            val resolved = resolver.resolveUsingWebView(url = iframeUrl, referer = parentUrl, headers = resolveHeaders)\n            val resolverLinkUrl = resolved.first?.url?.toString().orEmpty()\n            val captured = resolved.second.orEmpty()\n            val urls = buildList {\n                if (resolverLinkUrl.isNotBlank()) add(resolverLinkUrl)\n                addAll(captured.map { it.url.toString() })\n            }.distinct()\n'''
@@ -64,8 +64,8 @@ jobs:
               raise SystemExit("Kinescope resolve block not found")
           text = text.replace(old_resolve, new_resolve, 1)
 
-          marker = '''        Regex("""https?:\\\\?/\\\\?/[^"'\\\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())\n'''
-          insertion = '''        // Rendex can create the Kinescope iframe dynamically from data attributes.\n        // Build a real embed URL so WebView can follow the redirect and capture\n        // the signed Kinescope HLS manifest.\n        document.select("[data-id][data-publisher-id]").forEach { element ->\n            val id = element.attr("data-id").trim()\n            val publisher = element.attr("data-publisher-id").trim()\n            if (id.isNotBlank() && publisher.isNotBlank()) {\n                addUrl("https://kinescope.io/embed/$id")\n                Log.d("HintFilmIzle", "KINESCOPE_RENDEX_ID=$id PUBLISHER=$publisher")\n            }\n        }\n\n        Regex("""https?:\\\\?/\\\\?/[^"'\\\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())\n'''
+          marker = '''        Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())\n'''
+          insertion = '''        // Rendex can create the Kinescope iframe dynamically from data attributes.\n        // Build a real embed URL so WebView can follow the redirect and capture\n        // the signed Kinescope HLS manifest.\n        document.select("[data-id][data-publisher-id]").forEach { element ->\n            val id = element.attr("data-id").trim()\n            val publisher = element.attr("data-publisher-id").trim()\n            if (id.isNotBlank() && publisher.isNotBlank()) {\n                addUrl("https://kinescope.io/embed/$id")\n                Log.d("HintFilmIzle", "KINESCOPE_RENDEX_ID=$id PUBLISHER=$publisher")\n            }\n        }\n\n        Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())\n'''
           if marker not in text:
               raise SystemExit("Kinescope HTML marker not found")
           text = text.replace(marker, insertion, 1)
