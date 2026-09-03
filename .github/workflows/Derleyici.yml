@@ -78,7 +78,8 @@ jobs:
       - name: DiziGom Kotlin Uyumluluk Düzeltmesi
         run: |
           cd $GITHUB_WORKSPACE/src
-          sed -i 's/yield(img.parent()?.attr("style").orEmpty())/yield(img.parent()?.attr("style").orEmpty())/; s/yield(backgroundUrl().orEmpty())/yield(backgroundUrl().orEmpty())/' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
+          sed -i 's/yield(img.parent()?.attr("style"))/yield(img.parent()?.attr("style").orEmpty())/' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
+          sed -i 's/yield(backgroundUrl())/yield(backgroundUrl().orEmpty())/' DiziGom/src/main/kotlin/com/nikyokki/DiziGom.kt
 
       - name: HintFilmIzle Kinescope API Düzeltmesi
         run: |
