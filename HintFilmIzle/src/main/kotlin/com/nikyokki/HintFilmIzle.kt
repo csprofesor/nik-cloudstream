@@ -256,7 +256,7 @@ class HintFilmIzle : MainAPI() {
                 pageUrl,
                 referer = "$mainUrl/",
                 headers = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                    "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
                     "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                     "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
                 )
@@ -642,8 +642,8 @@ class HintFilmIzle : MainAPI() {
                     // page itself, otherwise WebViewResolver stops immediately.
                     Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
                 ),
-                userAgent = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+                    "(KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
                 useOkhttp = false,
                 timeout = 30_000L,
                 script = """
