@@ -554,7 +554,7 @@ class HintFilmIzle : MainAPI() {
 
         fun addUrl(value: String?, base: String = data) {
             if (value.isNullOrBlank()) return
-            val cleaned = value.replace("\\/\/", "/").replace("\\u0026", "&").replace("&amp;", "&").trim().trim('"', '\'')
+            val cleaned = value.replace("\\/", "/").replace("\\u0026", "&").replace("&amp;", "&").trim().trim('"', '\'')
             val url = playerUrl(cleaned, base) ?: return
             if (isIgnoredPlayer(url) || isTrailerPlayer(url) || url.startsWith(mainUrl, true)) return
 
