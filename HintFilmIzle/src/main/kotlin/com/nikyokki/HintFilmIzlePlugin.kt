@@ -44,7 +44,6 @@ class HintFilmIzle : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/film?order=DESC&orderby=date" to "Yeni Filmler",
-        "$mainUrl/trendler" to "Trendler",
         "$mainUrl/tur/aile-filmleri" to "Aile",
         "$mainUrl/tur/aksiyon-filmleri" to "Aksiyon",
         "$mainUrl/tur/animasyon-filmleri" to "Animasyon",
@@ -116,11 +115,27 @@ class HintFilmIzle : MainAPI() {
             ?: path.substringAfterLast("/").replace(Regex("[-_]+"), " ").replace(Regex("\\b\\w"), { it.value.uppercase() }).trim()
         if (title.length > 180 || title.equals("film", true) || title.equals("dizi", true) || title.equals("filmler", true)) return null
         val poster = card.posterUrl() ?: posterUrl()
+        val rating = cardRating(card)
         return if (path.startsWith("/dizi/")) {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster }
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                posterUrl = poster
+                score = Score.from10(rating)
+            }
         } else {
-            newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster }
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                posterUrl = poster
+                score = Score.from10(rating)
+            }
         }
+    }
+
+    private fun cardRating(card: Element): String? {
+        val text = card.text()
+        return Regex("""(?<!\d)(?:10(?:[.,]0+)?|[1-9](?:[.,]\d{1,3})?)(?!\d)""")
+            .findAll(text)
+            .mapNotNull { it.value.replace(',', '.').toFloatOrNull() }
+            .firstOrNull { it > 0f && it <= 10f }
+            ?.toString()
     }
 
     private fun extractResults(document: org.jsoup.nodes.Document): List<SearchResponse> {
@@ -147,7 +162,22 @@ class HintFilmIzle : MainAPI() {
                 "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
             )).document
         }.getOrNull() ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
-        val results = extractResults(document)
+        val firstPageResults = extractResults(document).toMutableList()
+        if (firstPageResults.size < 10) {
+            for (nextPage in 2..3) {
+                val extraUrl = request.data.trimEnd('/') + "/page/" + nextPage + "/"
+                val extra = runCatching {
+                    extractResults(app.get(extraUrl, referer = pageUrl, headers = mapOf(
+                        "User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36",
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )).document)
+                }.getOrDefault(emptyList())
+                firstPageResults.addAll(extra.filterNot { item -> firstPageResults.any { it.url == item.url } })
+                if (firstPageResults.size >= 10 || extra.isEmpty()) break
+            }
+        }
+        val results = firstPageResults.distinctBy { it.url }
         return newHomePageResponse(request.name, results, hasNext = results.isNotEmpty())
     }
 
@@ -202,7 +232,15 @@ class HintFilmIzle : MainAPI() {
         val poster = cleanUrl(document.selectFirst("meta[property='og:image']")?.attr("content"))
             ?: document.selectFirst("article, .movie-detail, .film-detail, .serie-detail")?.posterUrl()
         val bodyText = document.text()
-        val description = firstText(document, ".description", ".film-description", ".movie-description", ".serieDescription", ".plot", ".entry-content p")
+        val description = firstText(
+            document,
+            ".description", ".film-description", ".movie-description", ".serieDescription",
+            ".plot", ".summary", ".synopsis", ".film-summary", ".movie-summary",
+            ".entry-content p", ".entry-content > p",
+            "[class*='description' i]", "[class*='summary' i]", "[class*='synopsis' i]"
+        ) ?: document.select("h2, h3, h4").firstOrNull { it.text().contains("Genel Bakış", true) }
+            ?.parent()?.select("p")?.joinToString(" ") { it.text().trim() }?.trim()
+                ?.takeIf { it.isNotBlank() }
         val year = Regex("\\b(19|20)\\d{2}\\b").find(bodyText)?.value?.toIntOrNull()
         val rating = findNumber(bodyText, "IMDb", "IMDB")
         val tags = document.select(".genres a, .genre a, .genreList a, .categories a, .post-categories a").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
