@@ -480,8 +480,8 @@ class HintFilmIzle : MainAPI() {
             )
 
             val resolved = resolver.resolveUsingWebView(
-                url = livePlayerUrl,
-                referer = parentUrl,
+                url = parentUrl,
+                referer = "$mainUrl/",
                 headers = resolveHeaders
             )
 
