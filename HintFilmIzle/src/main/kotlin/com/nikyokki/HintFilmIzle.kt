@@ -330,13 +330,25 @@ class HintFilmIzle : MainAPI() {
                 scriptCallback = { result -> Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result") }
             )
 
+            val livePlayerUrl = if (iframeUrl.contains("player.hintfilmizle.com/embed/", true)) {
+                val id = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+                    .find(iframeUrl)?.groupValues?.getOrNull(1)
+                if (id != null) {
+                    "https://river-3-329.kinescopecdn.net/677113747/embed/" +
+                        id + "?design=3&lang=" +
+                        URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")
+                } else iframeUrl
+            } else iframeUrl
+
+            Log.d("HintFilmIzle", "KINESCOPE_LIVE_PLAYER=$livePlayerUrl")
+
             val resolveHeaders = mapOf(
-                "Referer" to iframeUrl,
+                "Referer" to parentUrl,
                 "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
                 "User-Agent" to userAgent
             )
 
-            val resolved = resolver.resolveUsingWebView(url = iframeUrl, referer = parentUrl, headers = resolveHeaders)
+            val resolved = resolver.resolveUsingWebView(url = livePlayerUrl, referer = parentUrl, headers = resolveHeaders)
             val resolverLinkUrl = resolved.first?.url?.toString().orEmpty()
             val captured = resolved.second.orEmpty()
             val urls = buildList {
@@ -344,6 +356,7 @@ class HintFilmIzle : MainAPI() {
                 addAll(captured.map { it.url.toString() })
             }.distinct()
 
+            Log.d("HintFilmIzle", "KINESCOPE_RESOLVER_URL=$livePlayerUrl")
             Log.d("HintFilmIzle", "KINESCOPE_REQUEST_COUNT=${urls.size}")
             urls.filter { it.contains("kinescope", true) || it.contains("kinescopecdn", true) }
                 .forEach { Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$it") }
