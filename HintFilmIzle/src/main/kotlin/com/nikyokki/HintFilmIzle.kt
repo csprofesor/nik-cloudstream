@@ -314,16 +314,24 @@ class HintFilmIzle : MainAPI() {
 
             val directMaster = embedId?.let { "https://kinescope.io/$it/master.m3u8" }
 
-            val manifestCandidates = buildList {
-                addAll(urls.filter {
-                    it.contains(".m3u8", true) &&
-                        (it.contains("kinescopecdn.net", true) || it.contains("kinescope.io", true))
-                })
-                directMaster?.let { add(it) }
+            val capturedManifests = urls.filter {
+                it.contains(".m3u8", true) &&
+                    (it.contains("kinescopecdn.net", true) || it.contains("kinescope.io", true))
             }.distinct()
+
+            // Prefer the real manifest captured from the Kinescope player. The
+            // captured URL can contain the signed/query parameters required by
+            // the video's access policy. Use the public master URL only as a
+            // fallback when no playable manifest was captured.
+            val manifestCandidates = if (capturedManifests.isNotEmpty()) {
+                capturedManifests
+            } else {
+                listOfNotNull(directMaster)
+            }
 
             Log.d("HintFilmIzle", "KINESCOPE_EMBED_ID=${embedId.orEmpty()}")
             Log.d("HintFilmIzle", "KINESCOPE_DIRECT_MASTER=${directMaster.orEmpty()}")
+            Log.d("HintFilmIzle", "KINESCOPE_CAPTURED_MANIFESTS=${capturedManifests.joinToString(" || ")}")
             Log.d("HintFilmIzle", "KINESCOPE_MANIFEST_CANDIDATES=${manifestCandidates.joinToString(" || ")}")
 
             if (manifestCandidates.isEmpty()) {
@@ -333,7 +341,6 @@ class HintFilmIzle : MainAPI() {
 
             fun score(url: String): Int {
                 var value = 0
-                if (directMaster != null && url == directMaster) value += 1500
                 if (embedId != null && url.contains(embedId, true)) value += 1000
                 if (url.contains("master.m3u8", true)) value += 500
                 if (url.contains("kinescopecdn.net", true)) value += 100
@@ -350,11 +357,15 @@ class HintFilmIzle : MainAPI() {
             fun header(name: String): String? = request?.headers?.get(name)?.takeIf { it.isNotBlank() }
             val headers = linkedMapOf(
                 "Referer" to (header("Referer") ?: parentUrl),
-                "User-Agent" to (header("User-Agent") ?: userAgent)
+                "User-Agent" to (header("User-Agent") ?: userAgent),
+                "Origin" to (header("Origin") ?: mainUrl),
+                "Accept" to (header("Accept") ?: "*/*")
             )
             header("Accept-Language")?.let { headers["Accept-Language"] = it }
 
             Log.d("HintFilmIzle", "KINESCOPE_SELECTED_MANIFEST=$manifestUrl")
+            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_REFERER=${headers["Referer"]}")
+            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_ORIGIN=${headers["Origin"]}")
             callback(newExtractorLink(
                 source = name,
                 name = "HintFilmİzle Kinescope",
