@@ -448,16 +448,28 @@ class HintFilmIzle : MainAPI() {
                 }
             )
 
-            val videoId = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
-                .find(iframeUrl)?.groupValues?.getOrNull(1)
-
-            val livePlayerUrl = if (videoId != null) {
-                val nonce = System.currentTimeMillis()
-                "https://kinescope.io/embed/" +
-                    videoId + "?autoplay=1&muted=1&nc=" + nonce
-            } else {
-                iframeUrl
-            }
+            // Use the real HintFilmIzle/Rendex embed URL.
+            // Do not replace river-*/{publisher}/embed/{video} with
+            // kinescope.io/embed/{video}; that loses publisher, voiceover,
+            // language and design parameters used by the site.
+            // Refresh nc on every playback so the WebView follows the
+            // browser flow and does not reuse a cached embed.
+            val livePlayerUrl = runCatching {
+                val uri = URI(iframeUrl)
+                val query = uri.rawQuery.orEmpty()
+                val refreshedQuery = if (query.isBlank()) {
+                    "autoplay=1&muted=1&nc=" + System.currentTimeMillis()
+                } else {
+                    val params = query.split("&")
+                        .filter { it.isNotBlank() && !it.startsWith("nc=", true) }
+                        .toMutableList()
+                    params.add("autoplay=1")
+                    params.add("muted=1")
+                    params.add("nc=" + System.currentTimeMillis())
+                    params.joinToString("&")
+                }
+                URI(uri.scheme, uri.authority, uri.path, refreshedQuery, uri.fragment).toString()
+            }.getOrElse { iframeUrl }
 
             Log.d("HintFilmIzle", "KINESCOPE_LIVE_PLAYER=$livePlayerUrl")
 
