@@ -425,6 +425,61 @@ class HintFilmIzle : MainAPI() {
 
             Log.d("HintFilmIzle", "KINESCOPE_LIVE_PLAYER=$livePlayerUrl")
 
+            // Kinescope now exposes the signed HLS/DASH source in the embed page's playerOptions.
+            // Prefer this over WebView request interception: the browser screenshot shows that the
+            // CDN segment URLs are signed with expires/sign, so guessing a CDN path is unreliable.
+            runCatching {
+                val page = app.get(
+                    iframeUrl,
+                    headers = mapOf(
+                        "Referer" to parentUrl,
+                        "User-Agent" to userAgent,
+                        "Accept" to "text/html,application/xhtml+xml"
+                    )
+                ).text
+
+                val normalized = page
+                    .replace("\\u0026", "&")
+                    .replace("\\/", "/")
+                    .replace("&amp;", "&")
+
+                val candidates = buildList {
+                    Regex("""(?i)(?:dash|hls)\s*:\s*\{[^}]*?["']?src["']?\s*:\s*["']([^"']+.m3u8[^"']*)["']""")
+                        .findAll(normalized).forEach { add(it.groupValues[1]) }
+                    Regex("""(?i)["']src["']\s*:\s*["'](https?[^"']+.m3u8[^"']*)["']""")
+                        .findAll(normalized).forEach { add(it.groupValues[1]) }
+                    Regex("""https?://[^"'<\\s]+\.m3u8(?:\?[^"'<\\s]*)?""")
+                        .findAll(normalized).forEach { add(it.value) }
+                }.map { it.replace("\\u0026", "&").replace("\\/", "/") }.distinct()
+
+                val manifest = candidates.firstOrNull {
+                    it.contains(".m3u8", true) && it.contains("expires=", true)
+                } ?: candidates.firstOrNull()
+
+                if (!manifest.isNullOrBlank()) {
+                    val finalManifest = if (manifest.startsWith("http", true)) manifest
+                    else java.net.URI(iframeUrl).resolve(manifest).toString()
+                    Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST=$finalManifest")
+                    callback(newExtractorLink(
+                        source = name,
+                        name = "HintFilmİzle Kinescope",
+                        url = finalManifest,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        referer = parentUrl
+                        headers = mapOf(
+                            "Referer" to parentUrl,
+                            "User-Agent" to userAgent
+                        )
+                        quality = getQualityFromName(finalManifest)
+                    })
+                    return true
+                }
+                Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST_NOT_FOUND")
+            }.onFailure {
+                Log.e("HintFilmIzle", "KINESCOPE_HTML_PARSE_FAILED", it)
+            }
+
             val resolveHeaders = mapOf(
                 "Referer" to parentUrl,
                 "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
