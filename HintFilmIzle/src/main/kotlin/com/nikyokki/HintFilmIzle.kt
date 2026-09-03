@@ -259,7 +259,7 @@ class HintFilmIzle : MainAPI() {
             val userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
             val resolver = WebViewResolver(
                 interceptUrl = Regex(
-                    """https?://[^"'\\s<>]*kinescopecdn\.net/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?""",
+                    """https?://[^"'\s<>]+\.m3u8(?:\?[^"'\s<>]*)?""",
                     RegexOption.IGNORE_CASE
                 ),
                 additionalUrls = listOf(
@@ -278,21 +278,26 @@ class HintFilmIzle : MainAPI() {
                                     'button[aria-label*="Play" i]',
                                     'button[title*="Play" i]',
                                     '[data-testid*="play" i]',
-                                    '.kinescope-player__play',
-                                    '.player__play',
-                                    '.play-button'
+                                    '[class*="play" i]',
+                                    '[class*="Play" i]'
                                 ];
-                                for (var i = 0; i < selectors.length; i++) {
-                                    var el = document.querySelector(selectors[i]);
-                                    if (el) {
-                                        try { el.click(); } catch (_) {}
-                                        break;
+                                var clicked = false;
+                                for (var i = 0; i < selectors.length && !clicked; i++) {
+                                    var nodes = document.querySelectorAll(selectors[i]);
+                                    for (var j = 0; j < nodes.length; j++) {
+                                        var el = nodes[j];
+                                        if (el && el.offsetWidth > 0 && el.offsetHeight > 0) {
+                                            try { el.click(); clicked = true; } catch (_) {}
+                                            if (clicked) break;
+                                        }
                                     }
                                 }
-                                var v = document.querySelector('video');
+                                var v = document.querySelector("video");
                                 if (v) {
                                     try {
                                         v.muted = true;
+                                        v.setAttribute("muted", "");
+                                        v.autoplay = true;
                                         var p = v.play();
                                         if (p && p.catch) p.catch(function(){});
                                     } catch (_) {}
