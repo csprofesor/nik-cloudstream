@@ -256,22 +256,18 @@ class HintFilmIzle : MainAPI() {
 
     private suspend fun loadKinescope(iframeUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean {
         return runCatching {
-            /*
-             * HintFilmIzle now creates the player through Rendex:
-             * data-publisher-id + data-id -> dynamic river-*.kinescopecdn.net embed.
-             * We therefore resolve the actual player URL in WebView and wait for
-             * the signed /hls/<publisher>/<content>/<content>.mp4/index.m3u8 request.
-             */
+            val userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
             val resolver = WebViewResolver(
                 interceptUrl = Regex(
-                    """https?://[^"'\\s<>]*kinescopecdn\.net/hls/[^"'\\s<>]+/index\.m3u8(?:\?[^"'\\s<>]*)?""",
+                    """https?://[^"'\\s<>]*kinescopecdn\.net/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?""",
                     RegexOption.IGNORE_CASE
                 ),
                 additionalUrls = listOf(
                     Regex("""https?://[^"'\\s<>]*kinescopecdn\.net/[^"'\\s<>]*""", RegexOption.IGNORE_CASE),
+                    Regex("""https?://[^"'\\s<>]*kinescope\.io/[^"'\\s<>]*""", RegexOption.IGNORE_CASE),
                     Regex("""https?://[^"'\\s<>]*kinescope[^"'\\s<>]*""", RegexOption.IGNORE_CASE)
                 ),
-                userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36",
+                userAgent = userAgent,
                 useOkhttp = false,
                 timeout = 45_000L,
                 script = """
@@ -280,7 +276,7 @@ class HintFilmIzle : MainAPI() {
                             var v = document.querySelector('video');
                             var resources = performance.getEntriesByType('resource')
                                 .map(function(e) { return e.name; })
-                                .filter(function(u) { return /m3u8|kinescope|kinescopecdn|hls/i.test(u); });
+                                .filter(function(u) { return /m3u8|kinescope|kinescopecdn|hls|master/i.test(u); });
                             return JSON.stringify({
                                 href: location.href,
                                 videoCurrentSrc: v ? (v.currentSrc || v.src || '') : '',
@@ -298,7 +294,7 @@ class HintFilmIzle : MainAPI() {
             val resolveHeaders = mapOf(
                 "Referer" to parentUrl,
                 "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                "User-Agent" to "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36"
+                "User-Agent" to userAgent
             )
 
             val resolved = resolver.resolveUsingWebView(url = iframeUrl, referer = parentUrl, headers = resolveHeaders)
@@ -313,24 +309,35 @@ class HintFilmIzle : MainAPI() {
             urls.filter { it.contains("kinescope", true) || it.contains("kinescopecdn", true) }
                 .forEach { Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$it") }
 
-            val manifestCandidates = urls.filter {
-                it.contains("kinescopecdn.net", true) && it.contains("/hls/", true) && it.contains(".m3u8", true)
+            val embedId = Regex("""/embed/([A-Za-z0-9_-]+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
+                .find(iframeUrl)?.groupValues?.getOrNull(1)
+
+            val directMaster = embedId?.let { "https://kinescope.io/$it/master.m3u8" }
+
+            val manifestCandidates = buildList {
+                addAll(urls.filter {
+                    it.contains(".m3u8", true) &&
+                        (it.contains("kinescopecdn.net", true) || it.contains("kinescope.io", true))
+                })
+                directMaster?.let { add(it) }
             }.distinct()
 
+            Log.d("HintFilmIzle", "KINESCOPE_EMBED_ID=${embedId.orEmpty()}")
+            Log.d("HintFilmIzle", "KINESCOPE_DIRECT_MASTER=${directMaster.orEmpty()}")
             Log.d("HintFilmIzle", "KINESCOPE_MANIFEST_CANDIDATES=${manifestCandidates.joinToString(" || ")}")
+
             if (manifestCandidates.isEmpty()) {
                 Log.e("HintFilmIzle", "KINESCOPE_NO_HLS_CANDIDATE")
                 return false
             }
 
-            val embedId = Regex("""/embed/(\\d+)(?:[/?#]|$)""", RegexOption.IGNORE_CASE)
-                .find(iframeUrl)?.groupValues?.getOrNull(1)
-
             fun score(url: String): Int {
                 var value = 0
+                if (directMaster != null && url == directMaster) value += 1500
                 if (embedId != null && url.contains(embedId, true)) value += 1000
-                if (url.contains("/hls/", true)) value += 100
-                if (url.contains("/index.m3u8", true)) value += 50
+                if (url.contains("master.m3u8", true)) value += 500
+                if (url.contains("kinescopecdn.net", true)) value += 100
+                if (url.contains("/hls/", true)) value += 50
                 if (url.contains("preview", true) || url.contains("trailer", true)) value -= 500
                 if (url.contains("/ad", true) || url.contains("ads", true)) value -= 500
                 return value
@@ -343,7 +350,7 @@ class HintFilmIzle : MainAPI() {
             fun header(name: String): String? = request?.headers?.get(name)?.takeIf { it.isNotBlank() }
             val headers = linkedMapOf(
                 "Referer" to (header("Referer") ?: parentUrl),
-                "User-Agent" to (header("User-Agent") ?: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/151.0.0.0 Safari/537.36")
+                "User-Agent" to (header("User-Agent") ?: userAgent)
             )
             header("Accept-Language")?.let { headers["Accept-Language"] = it }
 
