@@ -444,21 +444,26 @@ class HintFilmIzle : MainAPI() {
             val voiceover = element.attr("data-voiceover").trim()
             if (publisherId.isNotBlank() && videoId.isNotBlank()) {
                 val query = buildString {
-                    append("?design=")
-                    append(design)
-                    append("&lang=")
-                    append(playerLang)
-                    append("&nc=")
-                    append(System.currentTimeMillis() / 1000L)
-                    if (voiceover.isNotBlank()) {
-                        append("&voiceover=")
-                        append(URLEncoder.encode(voiceover, "UTF-8"))
-                    }
+                    append("?design=").append(design)
+                    append("&lang=").append(playerLang)
+                    if (voiceover.isNotBlank()) append("&voiceover=").append(URLEncoder.encode(voiceover, "UTF-8"))
                 }
-                val rendexEmbed = "https://river-3-329.kinescopecdn.net/$publisherId/embed/$videoId$query"
+                val rendexEmbed = "https://river-3-329.kinescopecdn.net/$" + "publisherId/embed/$" + "videoId$query"
                 players.add(rendexEmbed)
-                Log.d("HintFilmIzle", "KINESCOPE_RENDEX_EMBED=$rendexEmbed")
+                Log.d("HintFilmIzle", "KINESCOPE_RENDEX_EMBED=$" + "rendexEmbed")
             }
+        }
+
+        // The site exposes player.hintfilmizle.com/embed/<id>, while the
+        // captured working browser session shows Rendex serving that player
+        // from the Kinescope CDN with publisher 677113747.
+        players.toList().filter { it.contains("player.hintfilmizle.com/embed/", true) }.forEach { player ->
+            val videoId = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+                .find(player)?.groupValues?.getOrNull(1) ?: return@forEach
+            val playerLang = lang.ifBlank { "tr" }
+            val rendexEmbed = "https://river-3-329.kinescopecdn.net/677113747/embed/$" + "videoId?design=3&lang=" + URLEncoder.encode(playerLang, "UTF-8")
+            players.add(rendexEmbed)
+            Log.d("HintFilmIzle", "KINESCOPE_RENDEX_FROM_IFRAME=$" + "rendexEmbed")
         }
 
         Log.d("HintFilmIzle", "PLAYER_LIST=${players.joinToString(" || ")}")
