@@ -448,7 +448,7 @@ class HintFilmIzle : MainAPI() {
                     append("&lang=").append(playerLang)
                     if (voiceover.isNotBlank()) append("&voiceover=").append(URLEncoder.encode(voiceover, "UTF-8"))
                 }
-                val rendexEmbed = "https://river-3-329.kinescopecdn.net/$" + "publisherId/embed/$" + "videoId$query"
+                val rendexEmbed = "https://river-3-329.kinescopecdn.net/$publisherId/embed/$videoId$query"
                 players.add(rendexEmbed)
                 Log.d("HintFilmIzle", "KINESCOPE_RENDEX_EMBED=$" + "rendexEmbed")
             }
@@ -461,7 +461,7 @@ class HintFilmIzle : MainAPI() {
             val videoId = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
                 .find(player)?.groupValues?.getOrNull(1) ?: return@forEach
             val playerLang = lang.ifBlank { "tr" }
-            val rendexEmbed = "https://river-3-329.kinescopecdn.net/677113747/embed/$" + "videoId?design=3&lang=" + URLEncoder.encode(playerLang, "UTF-8")
+            val rendexEmbed = "https://river-3-329.kinescopecdn.net/677113747/embed/$videoId?design=3&lang=${URLEncoder.encode(playerLang, "UTF-8")}"
             players.add(rendexEmbed)
             Log.d("HintFilmIzle", "KINESCOPE_RENDEX_FROM_IFRAME=$" + "rendexEmbed")
         }
