@@ -44,7 +44,6 @@ class HintFilmIzle : MainAPI() {
 
     override val mainPage = mainPageOf(
         "$mainUrl/film?order=DESC&orderby=date" to "Yeni Filmler",
-        "$mainUrl/trendler" to "Trendler",
         "$mainUrl/tur/aile-filmleri" to "Aile",
         "$mainUrl/tur/aksiyon-filmleri" to "Aksiyon",
         "$mainUrl/tur/animasyon-filmleri" to "Animasyon",
@@ -116,11 +115,27 @@ class HintFilmIzle : MainAPI() {
             ?: path.substringAfterLast("/").replace(Regex("[-_]+"), " ").replace(Regex("\\b\\w"), { it.value.uppercase() }).trim()
         if (title.length > 180 || title.equals("film", true) || title.equals("dizi", true) || title.equals("filmler", true)) return null
         val poster = card.posterUrl() ?: posterUrl()
+        val rating = cardRating(card)
         return if (path.startsWith("/dizi/")) {
-            newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster }
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                posterUrl = poster
+                score = Score.from10(rating)
+            }
         } else {
-            newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster }
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                posterUrl = poster
+                score = Score.from10(rating)
+            }
         }
+    }
+
+    private fun cardRating(card: Element): String? {
+        val text = card.text()
+        return Regex("""(?<!\d)(?:10(?:[.,]0+)?|[1-9](?:[.,]\d{1,3})?)(?!\d)""")
+            .findAll(text)
+            .mapNotNull { it.value.replace(',', '.').toFloatOrNull() }
+            .firstOrNull { it > 0f && it <= 10f }
+            ?.toString()
     }
 
     private fun extractResults(document: org.jsoup.nodes.Document): List<SearchResponse> {
