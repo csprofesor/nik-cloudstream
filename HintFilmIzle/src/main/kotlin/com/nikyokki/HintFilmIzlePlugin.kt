@@ -554,24 +554,16 @@ class HintFilmIzle : MainAPI() {
 
         fun addUrl(value: String?, base: String = data) {
             if (value.isNullOrBlank()) return
-            val cleaned = value.replace("\\/", "/").replace("\\u0026", "&").replace("&amp;", "&").trim().trim('"', '\'')
-            playerUrl(cleaned, base)?.let { rawUrl ->
-                val url = if (rawUrl.contains("player.hintfilmizle.com/embed/", true)) {
-                    val id = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
-                        .find(rawUrl)?.groupValues?.getOrNull(1)
-                    if (id != null) {
-                        "https://river-3-329.kinescopecdn.net/677113747/embed/" +
-                            id + "?design=3&lang=" +
-                            URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")
-                    } else rawUrl
-                } else rawUrl
-                if (!isIgnoredPlayer(url) && !isTrailerPlayer(url) && !url.startsWith(mainUrl, true)) players.add(url)
-            }
-            Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(cleaned)
-                .map { it.value.trimEnd('\\', '"', '\'', ')', ']', ';') }
-                .mapNotNull { playerUrl(it, base) }
-                .filter { !isIgnoredPlayer(it) && !isTrailerPlayer(it) && !it.startsWith(mainUrl, true) }
-                .forEach(players::add)
+            val cleaned = value.replace("\\/\/", "/").replace("\\u0026", "&").replace("&amp;", "&").trim().trim('"', '\'')
+            val url = playerUrl(cleaned, base) ?: return
+            if (isIgnoredPlayer(url) || isTrailerPlayer(url) || url.startsWith(mainUrl, true)) return
+
+            val host = runCatching { URI(url).host?.lowercase().orEmpty() }.getOrDefault("")
+            val path = runCatching { URI(url).path?.lowercase().orEmpty() }.getOrDefault("")
+            val supportedHost = host.contains("kinescope") ||
+                host.contains("playmate") ||
+                path.contains("/embed/") || path.contains("/player/") || path.contains("/video/")
+            if (supportedHost) players.add(url)
         }
 
         document.select(
@@ -586,9 +578,6 @@ class HintFilmIzle : MainAPI() {
                 element.attr("data-iframe"), element.attr("onclick")
             ).forEach { addUrl(it) }
         }
-
-        Regex("""https?:\\?/\\?/[^"'\\s<>]+""", RegexOption.IGNORE_CASE).findAll(document.html())
-            .forEach { addUrl(it.value.replace("\\/", "/")) }
 
         // Rendex kinescope parametreleri
         document.select("[data-publisher-id][data-id]").forEach { element ->
@@ -616,16 +605,12 @@ class HintFilmIzle : MainAPI() {
                 if (loadKinescope(player, data, callback)) {
                     found = true
                 }
+            } else if (player.contains("playmate.to", true)) {
+                if (loadPlaymate(player, data, callback)) {
+                    found = true
+                }
             } else {
-                // Diğer oynatıcılar için loadExtractor
                 loadExtractor(player, data, subtitleCallback, callback)
-                // loadExtractor asenkron olduğu için başarıyı bilemeyiz, fakat en azından bir link bulunduysa found true yapmak riskli.
-                // Ancak çoğu durumda loadExtractor başarılı olur, bu yüzden iyimser davranabiliriz.
-                // Daha doğrusu, loadExtractor'un callback'inde found'ı güncelleyemeyiz çünkü lambda dışında yakalanmaz.
-                // Bu nedenle şimdilik sadece kinescope başarısını esas alalım, diğerlerini de denediğimiz için found'ı true yapalım.
-                // Ancak bu, hiç link bulunamasa bile true döndürebilir. Bu yüzden en iyisi ayrı bir değişken ile takip etmek.
-                // Fakat basitlik açısından, eğer players listesi boş değilse ve en az bir extractor çalıştırıldıysa found = true diyebiliriz.
-                // Gerçek uygulamada daha hassas kontrol gerekir, ama şimdilik bu yeterli.
                 found = true
             }
         }
