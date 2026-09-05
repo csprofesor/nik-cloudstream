@@ -324,8 +324,3 @@ class HintFilmIzle : MainAPI() {
     }
 }
 
-class HintFilmIzlePlugin : com.lagradost.cloudstream3.plugins.CloudstreamPlugin() {
-    override fun load(context: android.content.Context) {
-        registerMainAPI(HintFilmIzle())
-    }
-}
