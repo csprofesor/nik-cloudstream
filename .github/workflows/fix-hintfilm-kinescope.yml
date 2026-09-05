@@ -1,0 +1,42 @@
+name: Fix HintFilmIzle Kinescope
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 1
+
+      - name: Patch Kinescope player URL
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
+          s = p.read_text()
+          old = '&autoplay=1&muted=1&nc='
+          new = '&autoplay=1&muted=1&preload=1&playsinline=1&background=1&nc='
+          if old not in s:
+              raise SystemExit('Kinescope URL pattern not found')
+          s = s.replace(old, new)
+          p.write_text(s)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          git commit -m 'Start Kinescope playback immediately'
+          git push origin master
+
+      - name: Remove temporary workflow
+        if: success()
+        run: |
+          git rm .github/workflows/fix-hintfilm-kinescope.yml
+          git commit -m 'Remove temporary Kinescope fix workflow'
+          git push origin master
