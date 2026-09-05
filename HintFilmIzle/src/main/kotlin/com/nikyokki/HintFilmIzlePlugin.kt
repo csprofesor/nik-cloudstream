@@ -248,7 +248,7 @@ class HintFilmIzle : MainAPI() {
         Log.d("HintFilmIzle", "KINESCOPE_LIVE_PLAYER=" + livePlayerUrl)
 
         val manifestRegex = Regex(
-            """https?://[^"'<>'\\s]+\\.m3u8(?:\\?[^"'<>'\\s]*)?""",
+            """https?://[^"'<>\s]+\.m3u8(?:\?[^"'<>\s]*)?""",
             RegexOption.IGNORE_CASE
         )
 
