@@ -25,8 +25,8 @@ jobs:
         with:
           path: "src"
           fetch-depth: 0
-          persist-credentials: false
-
+          persist-credentials: true
+          token: ${{ github.token }}
       - name: "'build' Depo Kontrolü"
         uses: actions/checkout@v4.2.2
         with:
@@ -35,7 +35,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
           token: ${{ github.token }}
-
       - name: Kinescope Resolver Düzeltmesi
         run: |
           python3 - <<'PY'
@@ -44,79 +43,63 @@ jobs:
           p = Path(os.environ["GITHUB_WORKSPACE"]) / "src/HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt"
           s = p.read_text(encoding="utf-8")
           old = s
-          s = s.replace(
-              'additionalUrls = listOf(Regex("""https?://[^\\\"\'\\\\s]*kinescopecdn\\.net/.*""", RegexOption.IGNORE_CASE)),',
-              'additionalUrls = emptyList(),'
-          )
+          s = s.replace('additionalUrls = listOf(Regex("""https?://[^\\\"\'\\\\s]*kinescopecdn\\.net/.*""", RegexOption.IGNORE_CASE)),', 'additionalUrls = emptyList(),')
           s = s.replace('useOkhttp = false,', 'useOkhttp = true,')
-          if s == old:
-              raise SystemExit("Kinescope resolver hedefleri bulunamadı; derleme durduruldu")
-          p.write_text(s, encoding="utf-8")
-          print("Kinescope resolver: additionalUrls=emptyList, useOkhttp=true")
+          old_xhr = """this.addEventListener('load', function() { if (String(this.__csUrl || '').indexOf('/api/v1/embed/') >= 0) inspectText(this.responseText || ''); });"""
+          new_xhr = """this.addEventListener('load', function() { var u = String(this.__csUrl || ''); if (/\\.m3u8(?:\\?|$)/i.test(u)) trigger(u); if (u.indexOf('/api/v1/embed/') >= 0) { try { inspectText(this.responseText || ''); } catch (_) {} } });"""
+          if old_xhr in s:
+              s = s.replace(old_xhr, new_xhr)
+          old_fetch = """window.fetch = function() {\n                            return nativeFetch.apply(this, arguments).then(function(response) {"""
+          new_fetch = """window.fetch = function() {\n                            try { var fi = arguments[0]; var fu = typeof fi === 'string' ? fi : (fi && fi.url); if (/\\.m3u8(?:\\?|$)/i.test(String(fu || ''))) trigger(String(fu)); } catch (_) {}\n                            return nativeFetch.apply(this, arguments).then(function(response) {"""
+          if old_fetch in s:
+              s = s.replace(old_fetch, new_fetch)
+          if s != old:
+              p.write_text(s, encoding='utf-8')
+              print('Kinescope source patched')
+          else:
+              print('Kinescope source already patched')
           PY
-
+          cd "$GITHUB_WORKSPACE/src"
+          if ! git diff --quiet -- HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt; then
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git config user.name "github-actions[bot]"
+            git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+            git commit -m "Fix Kinescope HLS request discovery [skip ci]"
+            git push origin HEAD:master
+          fi
       - name: Cache Temizle
         run: |
           rm -rf ~/.gradle/caches
           rm -rf ~/.m2/repository
-
       - name: JDK 17 Ayarla
         uses: actions/setup-java@v4.6.0
         with:
           distribution: adopt
           java-version: 17
-
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
-
       - name: Tüm Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
           ./gradlew make --stacktrace
-
       - name: Tüm Derlemeleri Yükle
         run: |
           set -euo pipefail
           cd $GITHUB_WORKSPACE/builds
           find . -maxdepth 1 -name "*.cs3" -type f -delete
           find "$GITHUB_WORKSPACE/src" -mindepth 2 -path "*/build/*.cs3" -type f -exec cp {} "$GITHUB_WORKSPACE/builds/" \;
-
-          # Keep the plugin manifest synchronized with the actual binary.
-          # In particular, stale SHA-256 metadata causes CloudStream to reject
-          # a freshly rebuilt .cs3 as an invalid/corrupt repository asset.
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib
-          import json
-          import os
-
-          root = Path.cwd()
-          manifest = root / "plugins.json"
-          target = root / "HintFilmIzle.cs3"
+          import hashlib, json, os
+          root = Path.cwd(); manifest = root / 'plugins.json'; target = root / 'HintFilmIzle.cs3'
           if manifest.exists() and target.exists():
-              data = json.loads(manifest.read_text(encoding="utf-8"))
-              digest = hashlib.sha256(target.read_bytes()).hexdigest()
-              size = target.stat().st_size
-              cache = os.environ.get("GITHUB_SHA", "build")
-              updated = False
+              data=json.loads(manifest.read_text(encoding='utf-8')); digest=hashlib.sha256(target.read_bytes()).hexdigest(); size=target.stat().st_size
               for item in data:
-                  if item.get("internalName") == "HintFilmIzle":
-                      item["fileSize"] = size
-                      item["fileHash"] = f"sha256-{digest}"
-                      base = "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3"
-                      item["url"] = f"{base}?v={cache}"
-                      updated = True
-                      break
-              if not updated:
-                  print("HintFilmIzle metadata entry not found; refusing to create a duplicate entry")
-              else:
-                  manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-                  print(f"HintFilmIzle metadata updated: size={size} sha256={digest}")
-          else:
-              print("HintFilmIzle.cs3 or plugins.json missing; metadata not updated")
+                  if item.get('internalName') == 'HintFilmIzle':
+                      item['fileSize']=size; item['fileHash']=f'sha256-{digest}'; item['url']=f'https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v={os.environ.get("GITHUB_SHA","build")}'; break
+              manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
           PY
-
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
           git add *.cs3 plugins.json
