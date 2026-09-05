@@ -1,6 +1,10 @@
 name: Fix HintFilmIzle Kinescope
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/fix-hintfilm-kinescope.yml'
   workflow_dispatch:
 
 permissions:
@@ -25,8 +29,7 @@ jobs:
           new = '&autoplay=1&muted=1&preload=1&playsinline=1&background=1&nc='
           if old not in s:
               raise SystemExit('Kinescope URL pattern not found')
-          s = s.replace(old, new)
-          p.write_text(s)
+          p.write_text(s.replace(old, new))
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
