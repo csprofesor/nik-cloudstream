@@ -296,6 +296,7 @@ class HintFilmIzle : MainAPI() {
                     var nativeFetch = window.fetch;
                     if (nativeFetch) {
                         window.fetch = function() {
+                            try { var fi = arguments[0]; var fu = typeof fi === 'string' ? fi : (fi && fi.url); if (/\.m3u8(?:\?|$)/i.test(String(fu || ''))) trigger(String(fu)); } catch (_) {}
                             return nativeFetch.apply(this, arguments).then(function(response) {
                                 try { response.clone().text().then(inspectText).catch(function(){}); } catch (_) {}
                                 return response;
@@ -309,7 +310,7 @@ class HintFilmIzle : MainAPI() {
                         return nativeOpen.apply(this, arguments);
                     };
                     XMLHttpRequest.prototype.send = function() {
-                        try { this.addEventListener('load', function() { if (String(this.__csUrl || '').indexOf('/api/v1/embed/') >= 0) inspectText(this.responseText || ''); }); } catch (_) {}
+                        try { this.addEventListener('load', function() { var u = String(this.__csUrl || ''); if (/\.m3u8(?:\?|$)/i.test(u)) trigger(u); if (u.indexOf('/api/v1/embed/') >= 0) { try { inspectText(this.responseText || ''); } catch (_) {} } }); } catch (_) {}
                         return nativeSend.apply(this, arguments);
                     };
                     function play(root) {
@@ -340,9 +341,9 @@ class HintFilmIzle : MainAPI() {
 
         val resolver = WebViewResolver(
             interceptUrl = manifestRegex,
-            additionalUrls = listOf(Regex("""https?://[^\"'\\s]*kinescopecdn\.net/.*""", RegexOption.IGNORE_CASE)),
+            additionalUrls = emptyList(),
             userAgent = userAgent,
-            useOkhttp = false,
+            useOkhttp = true,
             timeout = 90_000L,
             script = script
         )
