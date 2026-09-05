@@ -221,309 +221,238 @@ class HintFilmIzle : MainAPI() {
         return url
     }
 
-    private suspend fun loadKinescope(iframeUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean {
-        return runCatching {
-            val userAgent = browserHeaders()["User-Agent"].orEmpty()
+    private suspend fun loadKinescope(
+        iframeUrl: String,
+        parentUrl: String,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean = runCatching {
+        val userAgent =
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
+                "AppleWebKit/537.36 (KHTML, like Gecko) " +
+                "Chrome/151.0.7922.34 Safari/537.36"
 
-            val resolver = WebViewResolver(
-                interceptUrl = Regex(
-                    """https?://[^"'\s]+\.m3u8[^"'\s]*""",
-                    RegexOption.IGNORE_CASE
-                ),
-                additionalUrls = emptyList(),
-                userAgent = userAgent,
-                useOkhttp = false,
-                timeout = 45_000L,
-                script = """
-                    (function() {
-                        try {
-                            window.__csKinescopeUrls = window.__csKinescopeUrls || [];
+        val videoId = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+            .find(iframeUrl)?.groupValues?.getOrNull(1)
+            ?: return false
 
-                            function remember(u) {
-                                try {
-                                    if (!u) return;
-                                    u = String(u);
-                                    if (/kinescope|kinescopecdn|\/hls\/|\.m3u8/i.test(u) &&
-                                        window.__csKinescopeUrls.indexOf(u) < 0) {
-                                        window.__csKinescopeUrls.push(u);
-                                    }
-                                } catch (_) {}
-                            }
+        // HintFilmIzle's current Rendex player uses this exact Kinescope
+        // publisher endpoint. The site then obtains a short-lived signed
+        // manifest from the Kinescope player API.
+        val livePlayerUrl =
+            "https://river-3-329.kinescopecdn.net/677113747/embed/" +
+                videoId +
+                "?design=3&lang=" +
+                URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") +
+                "&nc=" + (System.currentTimeMillis() / 1000L)
 
-                            if (!window.__csKinescopeHooksInstalled) {
-                                window.__csKinescopeHooksInstalled = true;
+        Log.d("HintFilmIzle", "KINESCOPE_LIVE_PLAYER=" + livePlayerUrl)
 
-                                try {
-                                    var oldOpen = XMLHttpRequest.prototype.open;
-                                    XMLHttpRequest.prototype.open = function(method, url) {
-                                        remember(url);
-                                        return oldOpen.apply(this, arguments);
-                                    };
-                                } catch (_) {}
+        val manifestRegex = Regex(
+            """https?://[^"'<>'\\s]+\\.m3u8(?:\\?[^"'<>'\\s]*)?""",
+            RegexOption.IGNORE_CASE
+        )
 
-                                try {
-                                    var oldFetch = window.fetch;
-                                    window.fetch = function(input) {
-                                        try {
-                                            remember(typeof input === 'string' ? input : (input && input.url));
-                                        } catch (_) {}
-                                        return oldFetch.apply(this, arguments);
-                                    };
-                                } catch (_) {}
-                            }
+        val resolver = WebViewResolver(
+            interceptUrl = manifestRegex,
+            additionalUrls = emptyList(),
+            userAgent = userAgent,
+            useOkhttp = false,
+            timeout = 90_000L,
+            script = """
+                (function() {
+                    try {
+                        window.__csHintUrls = window.__csHintUrls || [];
 
-                            function clickPlay() {
-                                var selectors = [
-                                    'video',
-                                    'button[aria-label*="Play" i]',
-                                    'button[title*="Play" i]',
-                                    '[data-testid*="play" i]',
-                                    '[class*="play-button" i]',
-                                    '[class*="playButton" i]'
-                                ];
-
-                                for (var i = 0; i < selectors.length; i++) {
-                                    var nodes = document.querySelectorAll(selectors[i]);
-                                    for (var j = 0; j < nodes.length; j++) {
-                                        var el = nodes[j];
-                                        if (!el) continue;
-
-                                        try {
-                                            if (el.tagName && el.tagName.toLowerCase() === 'video') {
-                                                el.muted = true;
-                                                el.setAttribute('muted', '');
-                                                el.autoplay = true;
-                                                remember(el.currentSrc);
-                                                remember(el.src);
-                                                var p = el.play();
-                                                if (p && p.catch) p.catch(function(){});
-                                            } else if (el.offsetWidth > 0 && el.offsetHeight > 0) {
-                                                el.click();
-                                            }
-                                        } catch (_) {}
-                                    }
+                        function remember(u) {
+                            try {
+                                if (!u) return;
+                                u = String(u);
+                                if (
+                                    /\.m3u8/i.test(u) &&
+                                    window.__csHintUrls.indexOf(u) < 0
+                                ) {
+                                    window.__csHintUrls.push(u);
                                 }
-                            }
-
-                            function collect() {
-                                try {
-                                    var resources = performance.getEntriesByType('resource') || [];
-                                    resources.forEach(function(e) { remember(e.name); });
-                                } catch (_) {}
-
-                                try {
-                                    document.querySelectorAll('video, video source').forEach(function(e) {
-                                        remember(e.currentSrc);
-                                        remember(e.src);
-                                    });
-                                } catch (_) {}
-
-                                try {
-                                    var urls = window.__csKinescopeUrls || [];
-                                    return JSON.stringify({
-                                        href: location.href,
-                                        resources: urls.filter(function(u) {
-                                            return /kinescope|kinescopecdn|\/hls\/|\.m3u8/i.test(u);
-                                        })
-                                    });
-                                } catch (e) {
-                                    return JSON.stringify({error: String(e), href: location.href});
-                                }
-                            }
-
-                            clickPlay();
-                            collect();
-
-                            var started = Date.now();
-                            var timer = setInterval(function() {
-                                clickPlay();
-                                collect();
-                                if (Date.now() - started > 40000) clearInterval(timer);
-                            }, 500);
-
-                            setTimeout(function() { clearInterval(timer); }, 42000);
-
-                            return collect();
-                        } catch (e) {
-                            return JSON.stringify({error: String(e), href: location.href});
+                            } catch (_) {}
                         }
-                    })()
-                """.trimIndent(),
-                scriptCallback = { result ->
-                    Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result")
-                }
-            )
 
-            val videoId = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
-                .find(iframeUrl)?.groupValues?.getOrNull(1)
+                        // Capture resources already requested.
+                        try {
+                            (performance.getEntriesByType('resource') || []).forEach(function(e) {
+                                remember(e.name);
+                            });
+                        } catch (_) {}
 
-            val livePlayerUrl = if (videoId != null) {
-                val nonce = System.currentTimeMillis() / 1000L
-                "https://river-3-329.kinescopecdn.net/677113747/embed/" +
-                    videoId + "?design=3&lang=" +
-                    URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") +
-                    "&nc=" + nonce
-            } else {
-                iframeUrl
+                        // Capture the actual media element source.
+                        try {
+                            document.querySelectorAll('video, video source').forEach(function(e) {
+                                remember(e.currentSrc);
+                                remember(e.src);
+                            });
+                        } catch (_) {}
+
+                        // Hook XHR before player initialization.
+                        if (!window.__csHintHooksInstalled) {
+                            window.__csHintHooksInstalled = true;
+
+                            try {
+                                var oldOpen = XMLHttpRequest.prototype.open;
+                                XMLHttpRequest.prototype.open = function(method, url) {
+                                    remember(url);
+                                    return oldOpen.apply(this, arguments);
+                                };
+                            } catch (_) {}
+
+                            try {
+                                var oldFetch = window.fetch;
+                                window.fetch = function(input) {
+                                    try {
+                                        remember(typeof input === 'string' ? input : (input && input.url));
+                                    } catch (_) {}
+                                    return oldFetch.apply(this, arguments);
+                                };
+                            } catch (_) {}
+                        }
+
+                        // Start playback. Kinescope does not create the signed
+                        // manifest until the player actually starts.
+                        function play() {
+                            try {
+                                var videos = document.querySelectorAll('video');
+                                for (var i = 0; i < videos.length; i++) {
+                                    var v = videos[i];
+                                    v.muted = true;
+                                    v.setAttribute('muted', '');
+                                    v.autoplay = true;
+                                    remember(v.currentSrc);
+                                    remember(v.src);
+                                    var p = v.play();
+                                    if (p && p.catch) p.catch(function(){});
+                                }
+                            } catch (_) {}
+
+                            try {
+                                var nodes = document.querySelectorAll(
+                                    'button, [role="button"], [class*="play"], [id*="play"]'
+                                );
+                                for (var j = 0; j < nodes.length; j++) {
+                                    var n = nodes[j];
+                                    var label = ((n.getAttribute('aria-label') || '') + ' ' +
+                                                 (n.getAttribute('title') || '') + ' ' +
+                                                 (n.className || '')).toLowerCase();
+                                    if (label.indexOf('play') >= 0 && n.offsetWidth > 0 && n.offsetHeight > 0) {
+                                        try { n.click(); } catch (_) {}
+                                    }
+                                }
+                            } catch (_) {}
+                        }
+
+                        function collect() {
+                            try {
+                                (performance.getEntriesByType('resource') || []).forEach(function(e) {
+                                    remember(e.name);
+                                });
+                            } catch (_) {}
+
+                            try {
+                                document.querySelectorAll('video, video source').forEach(function(e) {
+                                    remember(e.currentSrc);
+                                    remember(e.src);
+                                });
+                            } catch (_) {}
+
+                            return JSON.stringify({
+                                href: location.href,
+                                urls: window.__csHintUrls || []
+                            });
+                        }
+
+                        play();
+                        collect();
+
+                        var began = Date.now();
+                        var timer = setInterval(function() {
+                            play();
+                            collect();
+                            if (Date.now() - began > 60000) {
+                                clearInterval(timer);
+                            }
+                        }, 500);
+
+                        return collect();
+                    } catch (e) {
+                        return JSON.stringify({error: String(e)});
+                    }
+                })()
+            """.trimIndent(),
+            scriptCallback = { result ->
+                Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=" + result)
             }
+        )
 
-            Log.d("HintFilmIzle", "KINESCOPE_LIVE_PLAYER=$livePlayerUrl")
+        val headers = mapOf(
+            "Referer" to parentUrl,
+            "Origin" to "https://www.hintfilmizle.com",
+            "User-Agent" to userAgent,
+            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+        )
 
-            // Kinescope now exposes the signed HLS/DASH source in the embed page's playerOptions.
-            // Prefer this over WebView request interception: the browser screenshot shows that the
-            // CDN segment URLs are signed with expires/sign, so guessing a CDN path is unreliable.
-            runCatching {
-                val page = app.get(
-                    iframeUrl,
-                    headers = mapOf(
-                        "Referer" to parentUrl,
-                        "User-Agent" to userAgent,
-                        "Accept" to "text/html,application/xhtml+xml"
-                    )
-                ).text
+        val resolved = resolver.resolveUsingWebView(
+            url = livePlayerUrl,
+            referer = parentUrl,
+            headers = headers
+        )
 
-                val normalized = page
-                    .replace("\\u0026", "&")
-                    .replace("\\/", "/")
-                    .replace("&amp;", "&")
+        val captured = resolved.second.orEmpty()
+        val urls = buildList {
+            resolved.first?.url?.toString()?.let(::add)
+            addAll(captured.map { it.url.toString() })
+        }.distinct()
 
-                val candidates = buildList {
-                    Regex("""(?i)(?:dash|hls)\s*:\s*\{[^}]*?["']?src["']?\s*:\s*["']([^"']+.m3u8[^"']*)["']""")
-                        .findAll(normalized).forEach { add(it.groupValues[1]) }
-                    Regex("""(?i)["']src["']\s*:\s*["'](https?[^"']+.m3u8[^"']*)["']""")
-                        .findAll(normalized).forEach { add(it.groupValues[1]) }
-                    Regex("""https?://[^"'<\\s]+\.m3u8(?:\?[^"'<\\s]*)?""")
-                        .findAll(normalized).forEach { add(it.value) }
-                }.map { it.replace("\\u0026", "&").replace("\\/", "/") }.distinct()
-
-                val manifest = candidates.firstOrNull {
-                    it.contains(".m3u8", true) && it.contains("expires=", true)
-                } ?: candidates.firstOrNull()
-
-                if (!manifest.isNullOrBlank()) {
-                    val finalManifest = if (manifest.startsWith("http", true)) manifest
-                    else java.net.URI(iframeUrl).resolve(manifest).toString()
-                    Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST=$finalManifest")
-                    callback(newExtractorLink(
-                        source = name,
-                        name = "HintFilmİzle Kinescope",
-                        url = finalManifest,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        referer = parentUrl
-                        headers = mapOf(
-                            "Referer" to parentUrl,
-                            "User-Agent" to userAgent
-                        )
-                        quality = getQualityFromName(finalManifest)
-                    })
-                    return true
-                }
-                Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST_NOT_FOUND")
-            }.onFailure {
-                Log.e("HintFilmIzle", "KINESCOPE_HTML_PARSE_FAILED", it)
-            }
-
-            val resolveHeaders = mapOf(
-                "Referer" to parentUrl,
-                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                "User-Agent" to userAgent
-            )
-
-            val resolved = resolver.resolveUsingWebView(
-                url = livePlayerUrl,
-                referer = parentUrl,
-                headers = resolveHeaders
-            )
-
-            // Düzeltme: resolved.first bir String? olabilir, doğrudan toString alınmalı
-            val resolverLinkUrl = resolved.first?.toString().orEmpty()
-            val captured = resolved.second.orEmpty()
-
-            val urls = buildList {
-                if (resolverLinkUrl.isNotBlank()) add(resolverLinkUrl)
-                addAll(captured.map { it.url.toString() })
-            }.distinct()
-
-            Log.d("HintFilmIzle", "KINESCOPE_REQUEST_COUNT=${urls.size}")
-            urls.filter {
-                it.contains("kinescope", true) ||
-                    it.contains("kinescopecdn", true) ||
-                    it.contains("/hls/", true)
-            }.forEach {
-                Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$it")
-            }
-
-            val manifestCandidates = urls.filter {
-                it.contains(".m3u8", true)
-            }.distinct()
-
-            Log.d(
-                "HintFilmIzle",
-                "KINESCOPE_CAPTURED_MANIFESTS=${manifestCandidates.joinToString(" || ")}"
-            )
-
-            if (manifestCandidates.isEmpty()) {
-                val directId = videoId?.takeIf { it.isNotBlank() }
-                if (directId != null) {
-                    Log.e("HintFilmIzle", "KINESCOPE_NO_SIGNED_MANIFEST_FOR_ID=" + directId)
-                }
-                Log.e("HintFilmIzle", "KINESCOPE_NO_HLS_CANDIDATE")
-                return false
-            }
-
-            fun score(url: String): Int {
-                var value = 0
-                if (url.contains(".m3u8", true)) value += 500
-                if (url.contains("/hls/", true)) value += 100
-                if (url.contains("kinescopecdn.net", true)) value += 50
-                if (url.contains("preview", true) || url.contains("trailer", true)) value -= 500
-                if (url.contains("/ad", true) || url.contains("ads", true)) value -= 500
-                return value
-            }
-
-            val manifestUrl = manifestCandidates
-                .mapIndexed { index, url -> Triple(score(url), index, url) }
-                .maxWithOrNull(
-                    compareBy<Triple<Int, Int, String>> { it.first }.thenBy { it.second }
-                )?.third ?: return false
-
-            val request = captured.lastOrNull { it.url.toString() == manifestUrl }
-
-            fun header(name: String): String? =
-                request?.headers?.get(name)?.takeIf { it.isNotBlank() }
-
-            val headers = linkedMapOf(
-                "Referer" to (header("Referer") ?: livePlayerUrl),
-                "User-Agent" to (header("User-Agent") ?: userAgent),
-                "Accept" to (header("Accept") ?: "*/*")
-            )
-
-            header("Accept-Language")?.let { headers["Accept-Language"] = it }
-            header("Origin")?.let { headers["Origin"] = it }
-
-            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_MANIFEST=$manifestUrl")
-            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_REFERER=${headers["Referer"]}")
-            Log.d("HintFilmIzle", "KINESCOPE_SELECTED_ORIGIN=${headers["Origin"].orEmpty()}")
-
-            callback(
-                newExtractorLink(
-                    source = name,
-                    name = "HintFilmİzle Kinescope",
-                    url = manifestUrl,
-                    type = ExtractorLinkType.M3U8
-                ) {
-                    referer = headers["Referer"] ?: livePlayerUrl
-                    this.headers = headers
-                    quality = getQualityFromName(manifestUrl)
-                }
-            )
-
-            true
-        }.getOrElse {
-            Log.e("HintFilmIzle", "KINESCOPE_RESOLVER_FAILED", it)
-            false
+        Log.d("HintFilmIzle", "KINESCOPE_CAPTURED_COUNT=" + urls.size)
+        urls.filter { it.contains(".m3u8", true) }.forEach {
+            Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + it)
         }
+
+        val manifestUrl = urls.firstOrNull {
+            it.contains(".m3u8", true) &&
+                it.contains("kinescopecdn.net", true)
+        } ?: urls.firstOrNull {
+            it.contains(".m3u8", true)
+        } ?: return false
+
+        val request = captured.lastOrNull { it.url.toString() == manifestUrl }
+
+        val finalHeaders = linkedMapOf(
+            "Referer" to livePlayerUrl,
+            "User-Agent" to userAgent,
+            "Accept" to "*/*"
+        )
+
+        request?.headers?.get("Origin")?.takeIf { it.isNotBlank() }?.let {
+            finalHeaders["Origin"] = it
+        }
+        request?.headers?.get("Accept-Language")?.takeIf { it.isNotBlank() }?.let {
+            finalHeaders["Accept-Language"] = it
+        }
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = "HintFilmİzle Kinescope",
+                url = manifestUrl,
+                type = ExtractorLinkType.M3U8
+            ) {
+                referer = livePlayerUrl
+                this.headers = finalHeaders
+                quality = getQualityFromName(manifestUrl)
+            }
+        )
+
+        true
+    }.getOrElse {
+        Log.e("HintFilmIzle", "KINESCOPE_FAILED", it)
+        false
     }
 
     override suspend fun loadLinks(
