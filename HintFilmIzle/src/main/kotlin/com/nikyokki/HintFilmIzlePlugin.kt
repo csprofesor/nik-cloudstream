@@ -342,52 +342,38 @@ class HintFilmIzle : MainAPI() {
             } else {
                 capturedManifest = requestUrl
                 capturedHeaders = request.headers.toMap()
-
                 Log.d("HintFilmIzle", "KINESCOPE_FRESH_MANIFEST=" + requestUrl)
-
-                callback(
-                    newExtractorLink(
-                        source = name,
-                        name = "HintFilmİzle Kinescope",
-                        url = requestUrl,
-                        type = ExtractorLinkType.M3U8
-                    ) {
-                        val referer = capturedHeaders["Referer"]
-                            ?.takeIf { it.isNotBlank() }
-                            ?: livePlayerUrl
-
-                        this.referer = referer
-                        this.headers = linkedMapOf(
-                            "Referer" to referer,
-                            "User-Agent" to (
-                                capturedHeaders["User-Agent"]
-                                    ?.takeIf { it.isNotBlank() }
-                                    ?: userAgent
-                            ),
-                            "Accept" to (
-                                capturedHeaders["Accept"]
-                                    ?.takeIf { it.isNotBlank() }
-                                    ?: "*/*"
-                            )
-                        ).apply {
-                            capturedHeaders["Origin"]
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let { this["Origin"] = it }
-
-                            capturedHeaders["Accept-Language"]
-                                ?.takeIf { it.isNotBlank() }
-                                ?.let { this["Accept-Language"] = it }
-                        }
-
-                        quality = getQualityFromName(requestUrl)
-                    }
-                )
-
-                // true tells WebViewResolver that the desired request was found;
-                // the WebView is then destroyed by CloudStream immediately.
                 true
             }
         }
+
+        val manifestUrl = capturedManifest ?: return false
+
+        val finalHeaders = linkedMapOf(
+            "Referer" to (capturedHeaders["Referer"] ?: livePlayerUrl),
+            "User-Agent" to (capturedHeaders["User-Agent"] ?: userAgent),
+            "Accept" to (capturedHeaders["Accept"] ?: "*/*")
+        )
+
+        capturedHeaders["Origin"]?.takeIf { it.isNotBlank() }?.let {
+            finalHeaders["Origin"] = it
+        }
+        capturedHeaders["Accept-Language"]?.takeIf { it.isNotBlank() }?.let {
+            finalHeaders["Accept-Language"] = it
+        }
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = "HintFilmİzle Kinescope",
+                url = manifestUrl,
+                type = ExtractorLinkType.M3U8
+            ) {
+                referer = finalHeaders["Referer"] ?: livePlayerUrl
+                this.headers = finalHeaders
+                quality = getQualityFromName(manifestUrl)
+            }
+        )
 
         capturedManifest != null
     }.getOrElse {
