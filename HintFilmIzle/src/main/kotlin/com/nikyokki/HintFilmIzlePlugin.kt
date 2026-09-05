@@ -171,6 +171,26 @@ class HintFilmIzle : MainAPI() {
         return newMovieLoadResponse(title, url, TvType.Movie, url) { posterUrl = poster; this.year = year; plot = description; this.tags = tags; score = Score.from10(rating); addActors(actors); this.recommendations = recommendations }
     }
 
+    private fun isTrailerPlayer(url: String): Boolean =
+        listOf("youtube.com", "youtu.be", "youtube-nocookie.com")
+            .any { url.contains(it, true) }
+
+    private fun isIgnoredPlayer(url: String): Boolean {
+        val u = url.lowercase()
+        val blockedHosts = listOf(
+            "video.twimg.com", "twitter.com", "x.com", "t.co/",
+            "youtube.com", "youtu.be", "youtube-nocookie.com",
+            "facebook.com", "fb.watch", "instagram.com", "instagramcdn.com",
+            "tiktok.com", "vimeo.com"
+        )
+        if (blockedHosts.any { u.contains(it) }) return true
+        return u.contains("/ads/") ||
+            u.contains("ads.") ||
+            u.contains("/advert") ||
+            u.contains("doubleclick.net") ||
+            u.contains("googlesyndication.com")
+    }
+
     @Serializable
     private data class PlaymateStreamInfo(@SerialName("sx") val sx: String? = null)
 
