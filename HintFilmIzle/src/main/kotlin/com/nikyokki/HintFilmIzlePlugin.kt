@@ -185,7 +185,7 @@ class HintFilmIzle : MainAPI() {
 
     private suspend fun loadKinescope(iframeUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         val manifestRegex = Regex(
-            """https?://[^"'\s<>]+(?:kinescopecdn\.net|kinescope\.io)[^"'\s<>]*\.m3u8[^"'\s<>]*""",
+            """https?://[^"'\\s<>]+(?:kinescopecdn\.net|kinescope\.io)[^"'\\s<>]*\.m3u8[^"'\\s<>]*""",
             RegexOption.IGNORE_CASE
         )
 
@@ -194,69 +194,7 @@ class HintFilmIzle : MainAPI() {
             additionalUrls = listOf(manifestRegex),
             userAgent = null,
             useOkhttp = false,
-            timeout = 75_000L,
-            script = """
-                (function() {
-                    try {
-                        window.__csKinescopeUrls = window.__csKinescopeUrls || [];
-
-                        function remember(u) {
-                            try {
-                                if (!u) return;
-                                u = String(u);
-                                if (/kinescope|kinescopecdn|\/hls\/|\.m3u8/i.test(u) &&
-                                    window.__csKinescopeUrls.indexOf(u) < 0) {
-                                    window.__csKinescopeUrls.push(u);
-                                }
-                            } catch(_) {}
-                        }
-
-                        try {
-                            performance.getEntriesByType('resource').forEach(function(e) {
-                                remember(e.name);
-                            });
-                        } catch(_) {}
-
-                        try {
-                            document.querySelectorAll('video, video source').forEach(function(e) {
-                                remember(e.currentSrc);
-                                remember(e.src);
-                            });
-                        } catch(_) {}
-
-                        try {
-                            var oldOpen = XMLHttpRequest.prototype.open;
-                            XMLHttpRequest.prototype.open = function(method, url) {
-                                remember(url);
-                                return oldOpen.apply(this, arguments);
-                            };
-                        } catch(_) {}
-
-                        try {
-                            var oldFetch = window.fetch;
-                            window.fetch = function(input) {
-                                try {
-                                    remember(typeof input === 'string' ? input : (input && input.url));
-                                } catch(_) {}
-                                return oldFetch.apply(this, arguments);
-                            };
-                        } catch(_) {}
-
-                        return JSON.stringify({
-                            href: location.href,
-                            resources: window.__csKinescopeUrls
-                        });
-                    } catch(e) {
-                        return JSON.stringify({
-                            error: String(e),
-                            href: location.href
-                        });
-                    }
-                })()
-            """.trimIndent(),
-            scriptCallback = { result ->
-                Log.d("HintFilmIzle", "KINESCOPE_JS_GRAPH=$result")
-            }
+            timeout = 75_000L
         )
 
         val livePlayerUrl = runCatching {
@@ -275,14 +213,31 @@ class HintFilmIzle : MainAPI() {
             addAll(resolved.second.map { it.url.toString() })
         }.distinct()
 
-        Log.d("HintFilmIzle", "KINESCOPE_REQUEST_COUNT=" + urls.size)
-        urls.forEach {
-            if (it.contains("kinescope", true) || it.contains("/hls/", true)) {
-                Log.d("HintFilmIzle", "KINESCOPE_REQUEST=" + it)
-            }
-        }
+        val manifestUrl = urls.firstOrNull {
+            it.contains(".m3u8", true) &&
+                (it.contains("kinescopecdn.net", true) || it.contains("kinescope.io", true))
+        } ?: return false
 
-        val manifestUrl = urls.firstOrNull    override suspend fun loadLinks(
+        callback(
+            newExtractorLink(
+                source = name,
+                name = "HintFilmİzle Kinescope",
+                url = manifestUrl,
+                type = ExtractorLinkType.M3U8
+            ) {
+                referer = livePlayerUrl.substringBefore("?")
+                headers = mapOf("Referer" to livePlayerUrl.substringBefore("?"))
+                quality = getQualityFromName(manifestUrl)
+            }
+        )
+
+        true
+    }.getOrElse {
+        Log.e("HintFilmIzle", "KINESCOPE_FAILED", it)
+        false
+    }
+
+    override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
         subtitleCallback: (SubtitleFile) -> Unit,
@@ -300,32 +255,26 @@ class HintFilmIzle : MainAPI() {
 
         fun addPlayer(raw: String?) {
             playerUrl(raw, data)?.let { url ->
-                if (
-                    url.contains("kinescope", true) ||
-                    url.contains("playmate", true)
-                ) {
+                if (url.contains("kinescope", true) || url.contains("playmate", true)) {
                     players.add(url)
                 }
             }
         }
 
-        // HintFilmIzle stores the real player in data-frame while the
-        // visible iframe keeps src="" until JavaScript runs.
+        // HintFilmIzle stores the actual player in data-frame.
         document.select("[data-frame]").forEach {
             addPlayer(it.attr("data-frame"))
         }
 
         document.select(
-            "iframe[src], iframe[data-src], video[src], video source[src]"
+            "iframe[src], iframe[data-src], iframe[data-url], iframe[data-frame], " +
+                "video[src], video source[src]"
         ).forEach { element ->
-            val value = element.attr("src").ifBlank {
-                element.attr("data-src")
-            }
-            addPlayer(value)
+            addPlayer(element.attr("src").ifBlank { element.attr("data-src") })
         }
 
-        document.select("a[href]").forEach { element ->
-            addPlayer(element.attr("href"))
+        document.select("a[href]").forEach {
+            addPlayer(it.attr("href"))
         }
 
         document.select("[data-player], [data-embed], [data-video]").forEach { element ->
@@ -336,54 +285,47 @@ class HintFilmIzle : MainAPI() {
             )
         }
 
-        // Inspect inline JavaScript for player URLs and data-frame values.
+        // Some themes build data-frame inside inline JS.
         document.select("script").forEach { script ->
-            Regex("""https?://[^"'\s<>]+""", RegexOption.IGNORE_CASE)
+            Regex("""https?://[^"'\\s<>]+""", RegexOption.IGNORE_CASE)
                 .findAll(script.data())
-                .forEach { match -> addPlayer(match.value) }
+                .forEach { addPlayer(it.value) }
 
             Regex(
-                """data-frame\s*=\s*["']([^"']+)["']""",
+                """data-frame\\s*=\\s*["']([^"']+)["']""",
                 RegexOption.IGNORE_CASE
-            ).findAll(script.data()).forEach { match ->
-                addPlayer(match.groupValues.getOrNull(1))
+            ).findAll(script.data()).forEach {
+                addPlayer(it.groupValues.getOrNull(1))
             }
         }
 
-        // Last-resort raw HTML scan.
         Regex(
-            """data-frame\s*=\s*["']([^"']+)["']""",
+            """data-frame\\s*=\\s*["']([^"']+)["']""",
             RegexOption.IGNORE_CASE
-        ).findAll(document.html()).forEach { match ->
-            addPlayer(match.groupValues.getOrNull(1))
+        ).findAll(document.html()).forEach {
+            addPlayer(it.groupValues.getOrNull(1))
         }
-
-        Log.d("HintFilmIzle", "PLAYER_COUNT=" + players.size)
-        players.forEach { Log.d("HintFilmIzle", "PLAYER=" + it) }
 
         var found = false
 
         for (player in players) {
             when {
                 player.contains("kinescope", true) -> {
-                    if (loadKinescope(player, data, callback)) {
-                        found = true
-                    }
+                    if (loadKinescope(player, data, callback)) found = true
                 }
 
                 player.contains("playmate", true) -> {
-                    if (loadPlaymate(player, data, callback)) {
-                        found = true
-                    }
+                    if (loadPlaymate(player, data, callback)) found = true
                 }
             }
         }
 
         return found
     }
-
 }
 
 class HintFilmIzlePlugin : com.lagradost.cloudstream3.plugins.CloudstreamPlugin() {
-    override fun load(context: android.content.Context) { registerMainAPI(HintFilmIzle()) }
+    override fun load(context: android.content.Context) {
+        registerMainAPI(HintFilmIzle())
+    }
 }
