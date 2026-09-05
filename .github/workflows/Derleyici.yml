@@ -11,7 +11,6 @@ on:
       - master
     paths-ignore:
       - "**/*.md"
-      - "**/*.yml"
       - "**/*.jpg"
       - "**/*.png"
       - "**/*.py"
@@ -45,14 +44,12 @@ jobs:
           old = s
           s = s.replace('additionalUrls = listOf(Regex("""https?://[^\\\"\'\\\\s]*kinescopecdn\\.net/.*""", RegexOption.IGNORE_CASE)),', 'additionalUrls = emptyList(),')
           s = s.replace('useOkhttp = false,', 'useOkhttp = true,')
-          old_xhr = """this.addEventListener('load', function() { if (String(this.__csUrl || '').indexOf('/api/v1/embed/') >= 0) inspectText(this.responseText || ''); });"""
-          new_xhr = """this.addEventListener('load', function() { var u = String(this.__csUrl || ''); if (/\\.m3u8(?:\\?|$)/i.test(u)) trigger(u); if (u.indexOf('/api/v1/embed/') >= 0) { try { inspectText(this.responseText || ''); } catch (_) {} } });"""
-          if old_xhr in s:
-              s = s.replace(old_xhr, new_xhr)
-          old_fetch = """window.fetch = function() {\n                            return nativeFetch.apply(this, arguments).then(function(response) {"""
-          new_fetch = """window.fetch = function() {\n                            try { var fi = arguments[0]; var fu = typeof fi === 'string' ? fi : (fi && fi.url); if (/\\.m3u8(?:\\?|$)/i.test(String(fu || ''))) trigger(String(fu)); } catch (_) {}\n                            return nativeFetch.apply(this, arguments).then(function(response) {"""
-          if old_fetch in s:
-              s = s.replace(old_fetch, new_fetch)
+          old_xhr = "this.addEventListener('load', function() { if (String(this.__csUrl || '').indexOf('/api/v1/embed/') >= 0) inspectText(this.responseText || ''); });"
+          new_xhr = "this.addEventListener('load', function() { var u = String(this.__csUrl || ''); if (/\\.m3u8(?:\\?|$)/i.test(u)) trigger(u); if (u.indexOf('/api/v1/embed/') >= 0) { try { inspectText(this.responseText || ''); } catch (_) {} } });"
+          s = s.replace(old_xhr, new_xhr)
+          old_fetch = "window.fetch = function() {\n                            return nativeFetch.apply(this, arguments).then(function(response) {"
+          new_fetch = "window.fetch = function() {\n                            try { var fi = arguments[0]; var fu = typeof fi === 'string' ? fi : (fi && fi.url); if (/\\.m3u8(?:\\?|$)/i.test(String(fu || ''))) trigger(String(fu)); } catch (_) {}\n                            return nativeFetch.apply(this, arguments).then(function(response) {"
+          s = s.replace(old_fetch, new_fetch)
           if s != old:
               p.write_text(s, encoding='utf-8')
               print('Kinescope source patched')
