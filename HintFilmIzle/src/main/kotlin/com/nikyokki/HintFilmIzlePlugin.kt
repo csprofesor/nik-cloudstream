@@ -98,10 +98,26 @@ class HintFilmIzle : MainAPI() {
 
     private fun cardRating(card: Element): String? = Regex("""(?<!\d)(?:10(?:[.,]0+)?|[1-9](?:[.,]\d{1,3})?)(?!\d)""").findAll(card.text()).mapNotNull { it.value.replace(',', '.').toFloatOrNull() }.firstOrNull { it > 0f && it <= 10f }?.toString()
 
-    private fun extractResults(document: org.jsoup.nodes.Document): List<SearchResponse> = document.select("a[href*='/film/'], a[href*='/dizi/']").mapNotNull { anchor ->
-        val card = anchor.parents().firstOrNull { it.select("a[href*='/film/'], a[href*='/dizi/']").size <= 4 && it.selectFirst("img, picture source, [style*='background'], [data-poster], [data-image]") != null && it.text().length < 1200 } ?: anchor
-        anchor.toSearchResult(card)
-    }.distinctBy { it.url }
+    private fun extractResults(document: org.jsoup.nodes.Document): List<SearchResponse> {
+        val allAnchors = document.select("a[href*='/film/'], a[href*='/dizi/']")
+        val heading = document.selectFirst("main h1") ?: document.selectFirst("h1")
+        val startIndex = heading?.let { document.allElements.indexOf(it) } ?: -1
+
+        val anchors = if (startIndex >= 0) {
+            allAnchors.filter { document.allElements.indexOf(it) > startIndex }
+        } else {
+            allAnchors
+        }
+
+        return anchors.mapNotNull { anchor ->
+            val card = anchor.parents().firstOrNull {
+                val links = it.select("a[href*='/film/'], a[href*='/dizi/']")
+                val image = it.selectFirst("img, picture source, [style*='background'], [data-poster], [data-image]")
+                image != null && links.size <= 4 && it.text().length < 1200
+            } ?: anchor
+            anchor.toSearchResult(card)
+        }.distinctBy { it.url }
+    }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val pageUrl = if (page <= 1) request.data else request.data.trimEnd('/') + "/page/" + page + "/"
@@ -170,13 +186,14 @@ class HintFilmIzle : MainAPI() {
         val url = cleanUrl(value, base) ?: return null
 
         if (url.contains("player.hintfilmizle.com", true)) {
-            val id = runCatching {
-                URI(url).path.substringAfterLast("/").trim()
-            }.getOrNull()?.takeIf { it.isNotBlank() }
+            val id = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+                .find(url)?.groupValues?.getOrNull(1)
 
-            if (id != null) {
-                return "https://kinescope.io/embed/$id?design=3&lang=tr&autoplay=1&muted=1&nc=PLACEHOLDER"
-                    .replace("PLACEHOLDER", System.currentTimeMillis().toString())
+            if (!id.isNullOrBlank()) {
+                return "https://river-3-329.kinescopecdn.net/677113747/embed/" +
+                    id + "?design=3&lang=" +
+                    URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") +
+                    "&nc=" + (System.currentTimeMillis() / 1000L)
             }
         }
 
@@ -198,9 +215,61 @@ class HintFilmIzle : MainAPI() {
         )
 
         val livePlayerUrl = runCatching {
-            val separator = if (iframeUrl.contains("?")) "&" else "?"
-            iframeUrl + separator + "autoplay=1&muted=1&nc=" + System.currentTimeMillis()
+            val videoId = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE)
+                .find(iframeUrl)?.groupValues?.getOrNull(1)
+
+            if (!videoId.isNullOrBlank()) {
+                "https://river-3-329.kinescopecdn.net/677113747/embed/" +
+                    videoId + "?design=3&lang=" +
+                    URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") +
+                    "&nc=" + (System.currentTimeMillis() / 1000L)
+            } else {
+                iframeUrl
+            }
         }.getOrElse { iframeUrl }
+
+        runCatching {
+            val html = app.get(
+                livePlayerUrl,
+                referer = parentUrl,
+                headers = browserHeaders()
+            ).text
+                .replace("\\u0026", "&")
+                .replace("\\/", "/")
+                .replace("&amp;", "&")
+
+            val candidates = Regex(
+                """https?://[^"'<\\s]+\\.m3u8(?:\\?[^"'<\\s]*)?""",
+                RegexOption.IGNORE_CASE
+            ).findAll(html)
+                .map { it.value }
+                .distinct()
+                .toList()
+
+            val signed = candidates.firstOrNull { it.contains("expires=", true) && it.contains("sign=", true) }
+                ?: candidates.firstOrNull()
+
+            if (!signed.isNullOrBlank()) {
+                callback(
+                    newExtractorLink(
+                        source = name,
+                        name = "HintFilmİzle Kinescope",
+                        url = signed,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        referer = livePlayerUrl
+                        headers = mapOf(
+                            "Referer" to livePlayerUrl,
+                            "User-Agent" to browserHeaders()["User-Agent"].orEmpty()
+                        )
+                        quality = getQualityFromName(signed)
+                    }
+                )
+                return true
+            }
+        }.onFailure {
+            Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST_NOT_FOUND", it)
+        }
 
         val resolved = resolver.resolveUsingWebView(
             url = livePlayerUrl,
