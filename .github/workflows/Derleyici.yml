@@ -36,6 +36,24 @@ jobs:
           persist-credentials: true
           token: ${{ github.token }}
 
+      - name: Kinescope Resolver Düzeltmesi
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("$GITHUB_WORKSPACE/src/HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
+          s = p.read_text(encoding="utf-8")
+          old = s
+          s = s.replace(
+              'additionalUrls = listOf(Regex("""https?://[^\\\"\'\\\\s]*kinescopecdn\\.net/.*""", RegexOption.IGNORE_CASE)),',
+              'additionalUrls = emptyList(),'
+          )
+          s = s.replace('useOkhttp = false,', 'useOkhttp = true,')
+          if s == old:
+              raise SystemExit("Kinescope resolver hedefleri bulunamadı; derleme durduruldu")
+          p.write_text(s, encoding="utf-8")
+          print("Kinescope resolver: additionalUrls=emptyList, useOkhttp=true")
+          PY
+
       - name: Cache Temizle
         run: |
           rm -rf ~/.gradle/caches
