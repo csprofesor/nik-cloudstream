@@ -397,44 +397,45 @@ class HintFilmIzle : MainAPI() {
             "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
         )
 
+        var capturedManifest: String? = null
+        var capturedHeaders: Map<String, String> = emptyMap()
+
         val resolved = resolver.resolveUsingWebView(
             url = livePlayerUrl,
             referer = parentUrl,
             headers = headers
-        )
-
-        val captured = resolved.second.orEmpty()
-        val urls = buildList {
-            resolved.first?.url?.toString()?.let(::add)
-            addAll(captured.map { it.url.toString() })
-        }.distinct()
-
-        Log.d("HintFilmIzle", "KINESCOPE_CAPTURED_COUNT=" + urls.size)
-        urls.filter { it.contains(".m3u8", true) }.forEach {
-            Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + it)
+        ) { request ->
+            val requestUrl = request.url.toString()
+            if (!requestUrl.contains(".m3u8", true)) {
+                false
+            } else {
+                capturedManifest = requestUrl
+                capturedHeaders = request.headers.toMap()
+                Log.d("HintFilmIzle", "KINESCOPE_MANIFEST_INTERCEPTED=" + requestUrl)
+                true
+            }
         }
 
-        val manifestUrl = urls.firstOrNull {
-            it.contains(".m3u8", true) &&
-                it.contains("kinescopecdn.net", true)
-        } ?: urls.firstOrNull {
-            it.contains(".m3u8", true)
-        } ?: return false
-
-        val request = captured.lastOrNull { it.url.toString() == manifestUrl }
+        val manifestUrl = capturedManifest
+            ?: resolved.first?.url?.toString()?.takeIf { it.contains(".m3u8", true) }
+            ?: resolved.second.firstOrNull { it.url.toString().contains(".m3u8", true) }?.url?.toString()
+            ?: return false
 
         val finalHeaders = linkedMapOf(
-            "Referer" to livePlayerUrl,
-            "User-Agent" to userAgent,
-            "Accept" to "*/*"
+            "Referer" to (capturedHeaders["Referer"] ?: livePlayerUrl),
+            "User-Agent" to (capturedHeaders["User-Agent"] ?: userAgent),
+            "Accept" to (capturedHeaders["Accept"] ?: "*/*")
         )
 
-        request?.headers?.get("Origin")?.takeIf { it.isNotBlank() }?.let {
+        capturedHeaders["Origin"]?.takeIf { it.isNotBlank() }?.let {
             finalHeaders["Origin"] = it
         }
-        request?.headers?.get("Accept-Language")?.takeIf { it.isNotBlank() }?.let {
+        capturedHeaders["Accept-Language"]?.takeIf { it.isNotBlank() }?.let {
             finalHeaders["Accept-Language"] = it
         }
+
+        Log.d("HintFilmIzle", "KINESCOPE_SELECTED_MANIFEST=" + manifestUrl)
+        Log.d("HintFilmIzle", "KINESCOPE_SELECTED_REFERER=" + finalHeaders["Referer"])
 
         callback(
             newExtractorLink(
@@ -443,7 +444,7 @@ class HintFilmIzle : MainAPI() {
                 url = manifestUrl,
                 type = ExtractorLinkType.M3U8
             ) {
-                referer = livePlayerUrl
+                referer = finalHeaders["Referer"] ?: livePlayerUrl
                 this.headers = finalHeaders
                 quality = getQualityFromName(manifestUrl)
             }
