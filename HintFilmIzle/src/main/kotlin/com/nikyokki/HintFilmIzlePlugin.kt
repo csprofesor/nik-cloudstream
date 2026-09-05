@@ -239,7 +239,7 @@ class HintFilmIzle : MainAPI() {
                 videoId +
                 "?design=3&lang=" +
                 URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") +
-                "&autoplay=1&muted=1&nc=" +
+                "&autoplay=1&muted=1&preload=1&playsinline=1&background=1&nc=" +
                 (System.currentTimeMillis() / 1000L)
 
         Log.d("HintFilmIzle", "KINESCOPE_LIVE_PLAYER=" + livePlayerUrl)
