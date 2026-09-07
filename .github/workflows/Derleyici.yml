@@ -89,13 +89,22 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, json, os
-          root = Path.cwd(); manifest = root / 'plugins.json'; target = root / 'HintFilmIzle.cs3'
-          if manifest.exists() and target.exists():
-              data=json.loads(manifest.read_text(encoding='utf-8')); digest=hashlib.sha256(target.read_bytes()).hexdigest(); size=target.stat().st_size
+          root = Path.cwd(); manifest = root / 'plugins.json'
+          if manifest.exists():
+              data = json.loads(manifest.read_text(encoding='utf-8'))
+              built = {p.stem: p for p in root.glob('*.cs3')}
+              updated = 0
               for item in data:
-                  if item.get('internalName') == 'HintFilmIzle':
-                      item['fileSize']=size; item['fileHash']=f'sha256-{digest}'; item['url']=f'https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v={os.environ.get("GITHUB_SHA","build")}'; break
-              manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
+                  internal = item.get('internalName')
+                  target = built.get(internal or '')
+                  if not target:
+                      continue
+                  digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                  item['fileSize'] = target.stat().st_size
+                  item['fileHash'] = f'sha256-{digest}'
+                  item['url'] = f'https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{target.name}?v={os.environ.get("GITHUB_SHA", "build")}'; updated += 1
+              manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+              print(f'Updated manifest entries: {updated}')
           PY
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
