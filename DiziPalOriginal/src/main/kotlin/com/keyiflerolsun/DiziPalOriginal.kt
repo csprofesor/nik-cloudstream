@@ -63,29 +63,45 @@ class DiziPalOriginal : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get(
-            request.data,
-        ).document
-        val home     = if (request.data.contains("/bolumler")) {
-            document.select("div.episodes-list-grid > a.episode-list-item").mapNotNull { it.sonBolumler() }
+        val document = app.get(request.data).document
+
+        val home = if (request.data.contains("/bolumler")) {
+            document.select("div.episodes-list-grid > a.episode-list-item, a.episode-list-item")
+                .mapNotNull { it.sonBolumler() }
         } else {
-            document.select("ul.content-grid > li").mapNotNull { it.diziler() }
+            document.select(
+                "article.type2 ul li, ul.content-grid > li, " +
+                "div.card, li.card, div[class*=card], li[class*=card]"
+            ).mapNotNull { it.diziler() }
+                .distinctBy { it.url }
         }
 
-        return newHomePageResponse(request.name, home, hasNext=false)
+        return newHomePageResponse(request.name, home, hasNext = false)
     }
 
     private fun Element.sonBolumler(): SearchResponse? {
-        val name      = this.selectFirst(".ep-title")?.text() ?: return null
-        val episode   = this.selectFirst(".ep-info")?.text()?.trim()?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: return null
-        val title     = "$name $episode"
+        val name = this.selectFirst(".ep-title, img[alt]")?.text()?.ifBlank {
+            this.selectFirst("img[alt]")?.attr("alt").orEmpty()
+        }?.trim() ?: return null
 
-        val href      = fixUrlNull(this.attr("href")) ?: return null
+        val episode = this.selectFirst(".ep-info, .episode, [class*=episode]")?.text()?.trim()
+            ?.replace(Regex("""\\.\\s*[Ss]ezon\\s*"""), "x")
+            ?.replace(Regex("""\\.\\s*[Bb]ölüm\\s*"""), "")
+            ?: ""
+
+        val title = if (episode.isNotEmpty()) "$name $episode" else name
+        val href = fixUrlNull(
+            this.attr("href").ifBlank { this.selectFirst("a")?.attr("href").orEmpty() }
+        ) ?: return null
+
         val imgElement = this.selectFirst("img")
-        val posterUrl = fixUrlNull(imgElement?.attr("data-src")?.ifEmpty { imgElement.attr("src") })
+        val posterUrl = fixUrlNull(
+            imgElement?.attr("data-src")?.ifBlank { imgElement.attr("src") }
+                ?.ifBlank { imgElement.attr("data-lazy-src") }
+        )
 
         val seriesUrl = href
-            .replace(Regex("-\\d+-sezon-\\d+-bolum.*$"), "") // Sonundaki sezon-bölüm tagini at
+            .replace(Regex("-\\d+-sezon-\\d+-bolum.*$"), "")
             .replace("/bolum/", "/dizi/")
 
         return newTvSeriesSearchResponse(title, seriesUrl, TvType.TvSeries) {
@@ -94,11 +110,48 @@ class DiziPalOriginal : MainAPI() {
     }
 
     private fun Element.diziler(): SearchResponse? {
-        val title     = this.selectFirst("div.card-info h3")?.text() ?: return null
-        val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
+        val anchor = this.selectFirst("a[href]") ?: if (this.tagName() == "a") this else return null
+        val href = fixUrlNull(anchor.attr("href")) ?: return null
 
-        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
+        val img = this.selectFirst("img") ?: anchor.selectFirst("img")
+        val title = (
+            img?.attr("alt")
+                ?: this.selectFirst("div.card-info h3, h3, .title, span.title")?.text()
+                ?: anchor.attr("title")
+        )?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+
+        val posterUrl = fixUrlNull(
+            img?.attr("data-src")?.ifBlank { img.attr("src") }
+                ?.ifBlank { img.attr("data-lazy-src") }
+        )
+
+        val ratingText = listOf(
+            this.selectFirst("[class*=rating]")?.text(),
+            this.selectFirst("[class*=imdb]")?.text(),
+            this.text().let { Regex("""IMDB\\s*([0-9]+(?:[.,][0-9]+)?)""", RegexOption.IGNORE_CASE)
+                .find(it)?.groupValues?.getOrNull(1) }
+        ).firstOrNull { !it.isNullOrBlank() }
+
+        val rating = ratingText?.replace(",", ".")?.let {
+            Regex("""([0-9]+(?:\\.[0-9]+)?)""").find(it)?.groupValues?.getOrNull(1)?.toFloatOrNull()
+        }
+
+        val year = Regex("""\\b(19|20)\\d{2}\\b""").find(this.text())?.value?.toIntOrNull()
+
+        val isMovie = href.contains("/film/")
+        return if (isMovie) {
+            newMovieSearchResponse(title, href, TvType.Movie) {
+                this.posterUrl = posterUrl
+                this.year = year
+                rating?.let { this.rating = it }
+            }
+        } else {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                this.posterUrl = posterUrl
+                this.year = year
+                rating?.let { this.rating = it }
+            }
+        }
     }
 
     private fun DizipalSearchResult.toPostSearchResult(): SearchResponse? {
