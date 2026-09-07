@@ -3,7 +3,7 @@
   "description": "gsrepo Türkçe CloudStream eklenti havuzu",
   "manifestVersion": 1,
   "pluginLists": [
-    "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/plugins.json?v=fcc6ac09876eec29f07ebbe406b1e7e99d9ecaa6",
+    "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/plugins.json?v=20260907-1",
     "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/anizm.json?v=20260826-1"
   ]
 }
