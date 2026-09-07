@@ -198,17 +198,31 @@ class FilmIzleIlk : MainAPI() {
             return false
         }
 
-        for (iframe in iframes) {
+        val orderedIframes = iframes.sortedBy { iframe ->
+            when {
+                iframe.contains("vidmoly", ignoreCase = true) -> 0
+                iframe.contains("oneload", ignoreCase = true) -> 1
+                iframe.contains("ok.ru", ignoreCase = true) || iframe.contains("odnoklassniki", ignoreCase = true) -> 2
+                iframe.contains("videopress", ignoreCase = true) || iframe.contains("wordpress", ignoreCase = true) -> 4
+                else -> 3
+            }
+        }
+
+        Log.d("FII", "provider order » ${orderedIframes.joinToString(" | ")}")
+
+        for (iframe in orderedIframes) {
             Log.d("FII", "iframe » $iframe")
             if (iframe.contains("vidmoly", ignoreCase = true)) {
-                val headers = browserHeaders + ("Sec-Fetch-Dest" to "iframe")
-                val iSource = app.get(iframe, headers = headers, referer = data).text
-                val m3uLink = Regex("""file:\"([^\"]+)\"""").find(iSource)?.groupValues?.get(1)
-                    ?: throw ErrorLoadingException("VidMoly m3u link not found")
-                callback.invoke(newExtractorLink(source = "VidMoly", name = "VidMoly", url = m3uLink, type = INFER_TYPE) {
-                    this.referer = "https://vidmoly.to/"
-                    this.quality = Qualities.Unknown.value
-                })
+                runCatching {
+                    val headers = browserHeaders + ("Sec-Fetch-Dest" to "iframe")
+                    val iSource = app.get(iframe, headers = headers, referer = data).text
+                    val m3uLink = Regex("""file:\"([^\"]+)\"""").find(iSource)?.groupValues?.get(1)
+                        ?: throw ErrorLoadingException("VidMoly m3u link not found")
+                    callback.invoke(newExtractorLink(source = "VidMoly", name = "VidMoly", url = m3uLink, type = INFER_TYPE) {
+                        this.referer = "https://vidmoly.to/"
+                        this.quality = Qualities.Unknown.value
+                    })
+                }.onFailure { Log.e("FII", "VidMoly failed: $iframe", it) }
             } else {
                 runCatching {
                     loadExtractor(iframe, data, subtitleCallback, callback)
