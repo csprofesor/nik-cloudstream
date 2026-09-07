@@ -73,24 +73,38 @@ class HDFilmSitesi : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data.trimEnd('/')}/page/$page"
         val document = app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
+        val html = document.html()
+        val posterMap = posterMapFromHtml(html)
 
         val cards = document.select("a.media-card__link")
-            .mapNotNull { it.toCardResult() }
+            .mapNotNull { it.toCardResult(posterMap) }
             .distinctBy { it.url }
             .toMutableList()
 
         if (cards.isEmpty()) {
             document.select("a[href*='/film/']")
-                .mapNotNull { it.toFilmLinkResult() }
+                .mapNotNull { it.toFilmLinkResult(posterMap) }
                 .distinctBy { it.url }
                 .forEach { cards.add(it) }
         }
 
-        cards.forEach {
-            it.posterHeaders = browserHeaders + ("Referer" to "$mainUrl/")
-        }
-
         return newHomePageResponse(request.name, cards)
+    }
+
+    private fun posterMapFromHtml(html: String): Map<String, String> {
+        val result = mutableMapOf<String, String>()
+        val regex = Regex(
+            """\\?\"slug\\?\"\s*:\s*\\?\"([^\"\\]+)\\?\".{0,1000}?\\?\"posterUrl\\?\"\s*:\s*\\?\"(https?://[^\"\\]+)\\?\"""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        regex.findAll(html).forEach { match ->
+            val slug = match.groupValues[1]
+            val poster = match.groupValues[2]
+                .replace("\\/", "/")
+                .replace("\\u002F", "/")
+            if (slug.isNotBlank() && poster.isNotBlank()) result[slug] = poster
+        }
+        return result
     }
 
     private fun Element.findPosterUrl(): String? {
@@ -129,45 +143,54 @@ class HDFilmSitesi : MainAPI() {
             .firstOrNull { Regex("^([0-9]|10)(\\.[0-9])?$").matches(it) }
     }
 
-    private fun Element.toCardResult(): SearchResponse? {
+    private fun Element.cardSlug(): String? {
+        return attr("href")
+            .substringAfter("/film/", "")
+            .substringBefore("?")
+            .substringBefore("#")
+            .trim('/')
+            .takeIf { it.isNotBlank() }
+    }
+
+    private fun Element.toCardResult(posterMap: Map<String, String> = emptyMap()): SearchResponse? {
         val href = fixUrlNull(attr("href")) ?: return null
         if (!href.contains("/film/")) return null
         val card = parent() ?: return null
         val title = findCardTitle() ?: return null
-        val poster = card.findPosterUrl()
+        val poster = cardSlug()?.let { posterMap[it] } ?: card.findPosterUrl()
         val score = card.findCardScore()
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = poster
-            this.posterHeaders = browserHeaders + ("Referer" to "$mainUrl/")
             this.score = Score.from10(score)
         }
     }
 
-    private fun Element.toFilmLinkResult(): SearchResponse? {
+    private fun Element.toFilmLinkResult(posterMap: Map<String, String> = emptyMap()): SearchResponse? {
         val href = fixUrlNull(attr("href")) ?: return null
         if (!href.contains("/film/")) return null
         val title = attr("aria-label").trim().takeIf { it.isNotEmpty() }
             ?: selectFirst("h3")?.text()?.trim()
             ?: selectFirst("img[alt]")?.attr("alt")?.substringBeforeLast(" izle")?.trim()
             ?: return null
-        val poster = selectFirst("img")?.let { img ->
-            fixUrlNull(img.attr("src").ifBlank { img.attr("data-src") })
-        }
+        val poster = cardSlug()?.let { posterMap[it] }
+            ?: selectFirst("img")?.let { img ->
+                fixUrlNull(img.attr("src").ifBlank { img.attr("data-src") })
+            }
         val score = select("span").map { it.text().trim().replace(',', '.') }
             .firstOrNull { Regex("^([0-9]|10)(\\.[0-9])?$").matches(it) }
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = poster
-            this.posterHeaders = browserHeaders + ("Referer" to "$mainUrl/")
             this.score = Score.from10(score)
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/arama/${query}", headers = browserHeaders, referer = "$mainUrl/").document
+        val posterMap = posterMapFromHtml(document.html())
         return document.select("a.media-card__link")
-            .mapNotNull { it.toCardResult() }
+            .mapNotNull { it.toCardResult(posterMap) }
             .ifEmpty {
-                document.select("a[href*='/film/']").mapNotNull { it.toFilmLinkResult() }
+                document.select("a[href*='/film/']").mapNotNull { it.toFilmLinkResult(posterMap) }
             }
             .distinctBy { it.url }
     }
@@ -186,7 +209,7 @@ class HDFilmSitesi : MainAPI() {
     }
 
     private fun jsonLdActors(html: String): List<Actor> {
-        val actorBlock = Regex("""\"actor\"\\s*:\\s*\[(.*?)]""", RegexOption.DOT_MATCHES_ALL)
+        val actorBlock = Regex("""\"actor\"\\s*:\s*\[(.*?)]""", RegexOption.DOT_MATCHES_ALL)
             .find(html)?.groupValues?.getOrNull(1).orEmpty()
         return Regex("""\"name\"\\s*:\\s*\"([^\"]+)\"""")
             .findAll(actorBlock).map { Actor(it.groupValues[1]) }.toList().distinctBy { it.name }
@@ -366,9 +389,6 @@ class HDFilmSitesi : MainAPI() {
         }.getOrNull() ?: return false
         val html = document.html()
 
-        // DiziFilmizle yeni tasarımında VidMixi iframe'i DOM iframe olarak değil,
-        // Next.js verisi içinde parts[].url olarak geliyor. Bu yüzden doğrudan HTML
-        // içinden embed adresini de çıkarıyoruz.
         val embeddedVidMixi = Regex(
             "https?://vidmixi\\.com/embed/[A-Za-z0-9_-]+",
             RegexOption.IGNORE_CASE
