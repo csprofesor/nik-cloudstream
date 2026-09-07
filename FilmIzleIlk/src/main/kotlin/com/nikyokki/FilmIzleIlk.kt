@@ -59,20 +59,20 @@ class FilmIzleIlk : MainAPI() {
         "${mainUrl}/film/gizemli-filmler/page/" to "Gizemli",
         "${mainUrl}/film/hint-filmleri/page/" to "Hint",
         "${mainUrl}/film/komedi-filmler/page/" to "Komedi",
-        "${mainUrl}/film/kore-filmleri/page/" to "Kore",
-        "${mainUrl}/film/korku-filmleri/page/" to "Korku",
-        "${mainUrl}/film/macera-filmleri/page/" to "Macera",
+        "${mainUrl}/film/kore-filmler/page/" to "Kore",
+        "${mainUrl}/film/korku-filmler/page/" to "Korku",
+        "${mainUrl}/film/macera-filmler/page/" to "Macera",
         "${mainUrl}/film/muzikal-filmler/page/" to "Müzikal",
-        "${mainUrl}/film/netflix-filmleri/page/" to "Netflix",
+        "${mainUrl}/film/netflix-filmler/page/" to "Netflix",
         "${mainUrl}/film/nette-ilk-filmler/page/" to "Nette İlk",
         "${mainUrl}/film/polisiye-filmler/page/" to "Polisiye",
         "${mainUrl}/film/romantik-filmler/page/" to "Romantik",
         "${mainUrl}/film/savas-filmler/page/" to "Savaş",
-        "${mainUrl}/film/spor-filmleri/page/" to "Spor",
+        "${mainUrl}/film/spor-filmler/page/" to "Spor",
         "${mainUrl}/film/suc-filmler/page/" to "Suç",
         "${mainUrl}/film/tarihi-filmler/page/" to "Tarihi",
         "${mainUrl}/film/tavsiye-filmler/page/" to "Tavsiye",
-        "${mainUrl}/film/turk-filmleri/page/" to "Türk",
+        "${mainUrl}/film/turk-filmler/page/" to "Türk",
         "${mainUrl}/film/western-filmler/page/" to "Western"
     )
 
@@ -194,28 +194,53 @@ class FilmIzleIlk : MainAPI() {
             return false
         }
 
-        // Test Oneload first. Okru is intentionally excluded from this test because
-        // it currently leads to Connection Timeout in the CloudStream player.
-        val selected = iframes.firstOrNull { it.contains("oneload", ignoreCase = true) }
-            ?: iframes.firstOrNull { it.contains("vidmoly", ignoreCase = true) }
-            ?: iframes.firstOrNull {
-                !it.contains("ok.ru", ignoreCase = true) &&
-                !it.contains("odnoklassniki", ignoreCase = true) &&
-                !it.contains("videopress", ignoreCase = true) &&
-                !it.contains("wordpress", ignoreCase = true)
-            }
+        // Keep all providers available. A provider is considered successful only
+        // when its extractor actually emits an ExtractorLink.
+        val candidates = buildList {
+            iframes.firstOrNull { it.contains("oneload", ignoreCase = true) }?.let(::add)
+            iframes.firstOrNull {
+                it.contains("ok.ru", ignoreCase = true) || it.contains("odnoklassniki", ignoreCase = true)
+            }?.let(::add)
+            iframes.firstOrNull { it.contains("vidmoly", ignoreCase = true) }?.let(::add)
+            iframes.filterNot {
+                it.contains("oneload", ignoreCase = true) ||
+                it.contains("ok.ru", ignoreCase = true) ||
+                it.contains("odnoklassniki", ignoreCase = true) ||
+                it.contains("vidmoly", ignoreCase = true) ||
+                it.contains("videopress", ignoreCase = true) ||
+                it.contains("wordpress", ignoreCase = true)
+            }.forEach(::add)
+        }.distinct()
 
-        if (selected == null) {
-            Log.e("FII", "No Oneload/Vidmoly/other supported source found for $data")
+        if (candidates.isEmpty()) {
+            Log.e("FII", "No supported playback provider found for $data")
             return false
         }
 
-        Log.d("FII", "selected provider » $selected")
+        for (provider in candidates) {
+            Log.d("FII", "trying provider » $provider")
+            var emittedLink = false
 
-        return runCatching {
-            loadExtractor(selected, data, subtitleCallback, callback)
-        }.onFailure {
-            Log.e("FII", "Selected extractor failed: $selected", it)
-        }.getOrDefault(false)
+            val providerCallback: (ExtractorLink) -> Unit = { link ->
+                emittedLink = true
+                callback(link)
+            }
+
+            val result = runCatching {
+                loadExtractor(provider, data, subtitleCallback, providerCallback)
+            }.onFailure {
+                Log.e("FII", "Extractor failed: $provider", it)
+            }.getOrDefault(false)
+
+            if (emittedLink) {
+                Log.d("FII", "playable link emitted by » $provider")
+                return true
+            }
+
+            Log.d("FII", "no playable link from » $provider (result=$result), trying next")
+        }
+
+        Log.e("FII", "All playback providers failed for $data")
+        return false
     }
 }
