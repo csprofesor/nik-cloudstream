@@ -40,28 +40,34 @@ class HDFilmSitesi : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.Movie)
 
+    private val browserHeaders = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36",
+        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+    )
+
     override val mainPage = mainPageOf(
-        "${mainUrl}/filmizle/aile-filmleri-izle" to "Aile",
-        "${mainUrl}/filmizle/aksiyon-filmleri-izle" to "Aksiyon",
-        "${mainUrl}/filmizle/animasyon-filmleri-hd-izle" to "Animasyon",
-        "${mainUrl}/filmizle/bilim-kurgu-filmleri-izle" to "Bilim Kurgu",
-        "${mainUrl}/filmizle/belgesel-filmleri-izle" to "Belgesel",
-        "${mainUrl}/filmizle/dram-filmleri-izle" to "Dram",
-        "${mainUrl}/filmizle/fantastik-filmler-izle" to "Fantastik",
-        "${mainUrl}/filmizle/gerilim-filmleri-hd-izle" to "Gerilim",
-        "${mainUrl}/filmizle/gizem-filmleri-izle" to "Gizem",
-        "${mainUrl}/filmizle/komedi-filmleri-hd-izle" to "Komedi",
-        "${mainUrl}/filmizle/korku-filmleri-izle" to "Korku",
-        "${mainUrl}/filmizle/macera-filmleri-izle" to "Macera",
-        "${mainUrl}/filmizle/romantik-filmler-hd-izle" to "Romantik",
-        "${mainUrl}/filmizle/savas-filmleri-izle" to "Savaş",
-        "${mainUrl}/filmizle/suc-filmleri-izle" to "Suç",
-        "${mainUrl}/filmizle/western-filmler-hd-izle-2" to "Western",
+        "${mainUrl}/tur/aile" to "Aile",
+        "${mainUrl}/tur/aksiyon" to "Aksiyon",
+        "${mainUrl}/tur/animasyon" to "Animasyon",
+        "${mainUrl}/tur/bilim-kurgu" to "Bilim Kurgu",
+        "${mainUrl}/tur/belgesel" to "Belgesel",
+        "${mainUrl}/tur/dram" to "Dram",
+        "${mainUrl}/tur/fantastik" to "Fantastik",
+        "${mainUrl}/tur/gerilim" to "Gerilim",
+        "${mainUrl}/tur/gizem" to "Gizem",
+        "${mainUrl}/tur/komedi" to "Komedi",
+        "${mainUrl}/tur/korku" to "Korku",
+        "${mainUrl}/tur/macera" to "Macera",
+        "${mainUrl}/tur/romantik" to "Romantik",
+        "${mainUrl}/tur/savas" to "Savaş",
+        "${mainUrl}/tur/suc" to "Suç",
+        "${mainUrl}/tur/western" to "Western",
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page <= 1) request.data else "${request.data.trimEnd('/')}/page/$page"
-        val document = app.get(url).document
+        val document = app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
 
         val cards = document.select("div.movie_box").mapNotNull { it.toMainPageResult() }
             .ifEmpty {
@@ -71,14 +77,19 @@ class HDFilmSitesi : MainAPI() {
             .distinctBy { it.url }
             .toMutableList()
 
-        // Site poster adreslerini artık kart HTML'inde güvenilir şekilde vermiyor.
-        // Poster bulunamayan kartlarda yalnızca o filmin sayfasından og:image alıyoruz.
+        // The site no longer exposes the poster URL reliably in the category card.
+        // For missing posters, read og:image from the film page itself.
         for (card in cards) {
             if (card.posterUrl.isNullOrBlank()) {
                 runCatching {
-                    val detail = app.get(card.url, referer = "$mainUrl/").document
+                    val detail = app.get(
+                        card.url,
+                        headers = browserHeaders,
+                        referer = "$mainUrl/"
+                    ).document
                     card.posterUrl = fixUrlNull(
                         detail.selectFirst("meta[property='og:image']")?.attr("content")
+                            ?: detail.selectFirst("meta[name='twitter:image']")?.attr("content")
                             ?: detail.selectFirst("[property='og:image']")?.attr("content")
                     )
                 }
@@ -99,8 +110,8 @@ class HDFilmSitesi : MainAPI() {
                     image.attr("data-lazy-src"),
                     image.attr("data-original"),
                     image.attr("data-image"),
-                    image.attr("data-srcset").substringBefore(","),
-                    image.attr("srcset").substringBefore(","),
+                    image.attr("data-srcset").substringBefore(",").trim(),
+                    image.attr("srcset").substringBefore(",").trim(),
                     image.attr("src")
                 ).firstOrNull { it.isNotBlank() && !it.startsWith("data:image") }
                 if (url != null) return fixUrlNull(url)
@@ -121,7 +132,7 @@ class HDFilmSitesi : MainAPI() {
             selectFirst("h3")?.text(),
             selectFirst("h4")?.text(),
             selectFirst("[class*=title]")?.text(),
-            selectFirst("img[alt]")?.attr("alt"),
+            selectFirst("img[alt]")?.attr("alt")?.substringBeforeLast(" izle"),
             selectFirst("a[title]")?.attr("title"),
             text()
         ).mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
@@ -155,7 +166,11 @@ class HDFilmSitesi : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/arama/${query}").document
+        val document = app.get(
+            "${mainUrl}/arama/${query}",
+            headers = browserHeaders,
+            referer = "$mainUrl/"
+        ).document
         return document.select("div.movie_box").mapNotNull { it.toMainPageResult() }
             .ifEmpty {
                 document.select("a[href*='/film/']")
@@ -167,15 +182,32 @@ class HDFilmSitesi : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(
+            url,
+            headers = browserHeaders,
+            referer = "$mainUrl/"
+        ).document
 
-        val title =
-            document.selectFirst("h1 span")?.text()?.substringBefore(" izle")?.trim() ?: return null
-        val poster = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
+        // The site's heading markup changed from h1 > span to a plain h1.
+        // Keep several fallbacks so a markup-only change cannot break loading.
+        val title = sequenceOf(
+            document.selectFirst("h1")?.text(),
+            document.selectFirst("meta[property='og:title']")?.attr("content"),
+            document.selectFirst("meta[name='twitter:title']")?.attr("content")
+        ).mapNotNull { it?.trim()?.takeIf(String::isNotEmpty) }
+            .map { it.substringBefore(" izle").trim() }
+            .firstOrNull()
+            ?: return null
+
+        val poster = fixUrlNull(
+            document.selectFirst("meta[property='og:image']")?.attr("content")
+                ?: document.selectFirst("meta[name='twitter:image']")?.attr("content")
+        )
         val description =
             document.selectFirst("div[itemprop='description']")?.text()?.substringAfter("⭐")
                 ?.substringAfter("izleyin.")?.substringAfter("konusu:")?.trim()
         val year = document.selectFirst("span[itemprop='name']")?.text()?.trim()?.toIntOrNull()
+            ?: Regex("\\b(19|20)\\d{2}\\b").find(document.selectFirst("h1")?.parent()?.text().orEmpty())?.value?.toIntOrNull()
         val tags = document.select("a[rel='category']").map { it.text().substringBefore(" Filmleri") }
         val rating = document.selectFirst("div.puanlar span")?.text()?.trim()?.substringAfter("IMDb")
         val duration = document.selectFirst("span[itemprop='duration']")?.text()?.split(" ")?.first()?.trim()?.toIntOrNull()
@@ -192,7 +224,7 @@ class HDFilmSitesi : MainAPI() {
                 val key = pdata.component1()
                 val value = pdata.component2()
                 val iframeData = iframeSkici.iframeCoz(value!!)
-                val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url.toString()
+                val iframeLink = app.get(iframeData, headers = browserHeaders, referer = "${mainUrl}/").url.toString()
                 val sz_num = key.substringAfter("prt_").substringBefore("sezon").toIntOrNull() ?: 1
                 var ep_num = key.substringAfter("sezon").toIntOrNull()
                 if (ep_num != null) ep_num += 1 else ep_num = 1
@@ -236,14 +268,14 @@ class HDFilmSitesi : MainAPI() {
     ): Boolean {
         Log.d("HDS", "data -> $data")
         if (data.contains("vidmody")) {
-            val aa = app.get(data, referer = "${mainUrl}/").document
+            val aa = app.get(data, headers = browserHeaders, referer = "${mainUrl}/").document
             val bb = aa.body().selectFirst("script").toString().substringAfter("var id =").substringBefore(";").replace("'", "").trim()
             val m3uLink = "https://vidmody.com/vs/$bb"
             M3u8Helper.generateM3u8(name, m3uLink, "$mainUrl/").forEach(callback)
         } else if (data.contains("vidlop")) {
             val vidUrl = app.post(
                 "https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo",
-                headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+                headers = browserHeaders + ("X-Requested-With" to "XMLHttpRequest"),
                 referer = "${mainUrl}/"
             ).parsedSafe<VidLop>()?.securedLink ?: return false
             callback.invoke(newExtractorLink(source = this.name, name = this.name, url = vidUrl, ExtractorLinkType.M3U8) {
@@ -253,21 +285,21 @@ class HDFilmSitesi : MainAPI() {
             loadExtractor(data, subtitleCallback, callback)
         }
 
-        val document = app.get(data).document
+        val document = app.get(data, headers = browserHeaders, referer = "${mainUrl}/").document
         val iframeSkici = IframeKodlayici()
         val pdataMatches = Regex("""pdata\[\'(.*?)'\] = \'(.*?)\';""").findAll(document.html())
         for (pdata in pdataMatches.map { it.destructured }) {
             val value = pdata.component2()
             val iframeData = iframeSkici.iframeCoz(value!!)
-            val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url.toString()
+            val iframeLink = app.get(iframeData, headers = browserHeaders, referer = "${mainUrl}/").url.toString()
             if (iframeLink.contains("vidmody")) {
-                val aa = app.get(iframeLink, referer = "${mainUrl}/").document
+                val aa = app.get(iframeLink, headers = browserHeaders, referer = "${mainUrl}/").document
                 val bb = aa.body().selectFirst("script").toString().substringAfter("var id =").substringBefore(";").replace("'", "").trim()
                 M3u8Helper.generateM3u8("VidMody", "https://vidmody.com/vs/$bb", "$mainUrl/").forEach(callback)
             } else if (iframeLink.contains("vidlop")) {
                 val vidUrl = app.post(
                     "https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo",
-                    headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
+                    headers = browserHeaders + ("X-Requested-With" to "XMLHttpRequest"),
                     referer = "${mainUrl}/"
                 ).parsedSafe<VidLop>()?.securedLink ?: return false
                 callback.invoke(newExtractorLink(source = this.name, name = this.name, url = vidUrl, ExtractorLinkType.M3U8) {
