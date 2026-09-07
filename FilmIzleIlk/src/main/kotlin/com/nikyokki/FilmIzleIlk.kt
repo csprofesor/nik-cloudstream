@@ -58,7 +58,7 @@ class FilmIzleIlk : MainAPI() {
         "${mainUrl}/film/gerilim-filmleri/page/" to "Gerilim",
         "${mainUrl}/film/gizemli-filmler/page/" to "Gizemli",
         "${mainUrl}/film/hint-filmleri/page/" to "Hint",
-        "${mainUrl}/film/komedi-filmleri/page/" to "Komedi",
+        "${mainUrl}/film/komedi-filmler/page/" to "Komedi",
         "${mainUrl}/film/kore-filmleri/page/" to "Kore",
         "${mainUrl}/film/korku-filmleri/page/" to "Korku",
         "${mainUrl}/film/macera-filmleri/page/" to "Macera",
@@ -68,11 +68,11 @@ class FilmIzleIlk : MainAPI() {
         "${mainUrl}/film/polisiye-filmler/page/" to "Polisiye",
         "${mainUrl}/film/romantik-filmler/page/" to "Romantik",
         "${mainUrl}/film/savas-filmler/page/" to "Savaş",
-        "${mainUrl}/film/spor-filmler/page/" to "Spor",
+        "${mainUrl}/film/spor-filmleri/page/" to "Spor",
         "${mainUrl}/film/suc-filmler/page/" to "Suç",
         "${mainUrl}/film/tarihi-filmler/page/" to "Tarihi",
         "${mainUrl}/film/tavsiye-filmler/page/" to "Tavsiye",
-        "${mainUrl}/film/turk-filmler/page/" to "Türk",
+        "${mainUrl}/film/turk-filmleri/page/" to "Türk",
         "${mainUrl}/film/western-filmler/page/" to "Western"
     )
 
@@ -194,20 +194,19 @@ class FilmIzleIlk : MainAPI() {
             return false
         }
 
-        // loadExtractor() returns true when a matching extractor exists, even if that
-        // extractor itself produces no playable link. Therefore we must NOT feed all
-        // providers to CloudStream at once; that can leave the player with a broken
-        // stream and result in a generic Connection Timeout.
-        val selected = iframes.firstOrNull { iframe ->
-            iframe.contains("ok.ru", ignoreCase = true) || iframe.contains("odnoklassniki", ignoreCase = true)
-        } ?: iframes.firstOrNull { it.contains("oneload", ignoreCase = true) }
-        ?: iframes.firstOrNull { it.contains("vidmoly", ignoreCase = true) }
-        ?: iframes.firstOrNull {
-            !it.contains("videopress", ignoreCase = true) && !it.contains("wordpress", ignoreCase = true)
-        }
+        // Test Oneload first. Okru is intentionally excluded from this test because
+        // it currently leads to Connection Timeout in the CloudStream player.
+        val selected = iframes.firstOrNull { it.contains("oneload", ignoreCase = true) }
+            ?: iframes.firstOrNull { it.contains("vidmoly", ignoreCase = true) }
+            ?: iframes.firstOrNull {
+                !it.contains("ok.ru", ignoreCase = true) &&
+                !it.contains("odnoklassniki", ignoreCase = true) &&
+                !it.contains("videopress", ignoreCase = true) &&
+                !it.contains("wordpress", ignoreCase = true)
+            }
 
         if (selected == null) {
-            Log.e("FII", "Only unsupported/VideoPress sources found for $data")
+            Log.e("FII", "No Oneload/Vidmoly/other supported source found for $data")
             return false
         }
 
