@@ -112,3 +112,5 @@ jobs:
           git add *.cs3 plugins.json
           git commit -m "Yeni tüm eklenti derlemeleri: $GITHUB_SHA" || exit 0
           git push origin HEAD:builds --force
+
+# Force a fresh manifest rebuild after plugin removals.
