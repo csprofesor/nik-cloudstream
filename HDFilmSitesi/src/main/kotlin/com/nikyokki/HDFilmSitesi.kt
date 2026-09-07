@@ -95,25 +95,50 @@ class HDFilmSitesi : MainAPI() {
     }
 
     private fun Element.findPosterUrl(): String? {
+        fun normalize(raw: String): String? {
+            val value = raw
+                .trim()
+                .removePrefix("\"")
+                .removeSuffix("\"")
+                .removePrefix("'")
+                .removeSuffix("'")
+                .trim()
+                .substringBefore(Regex("\\s+"))
+                .trim()
+            if (value.isBlank() || value.startsWith("data:image")) return null
+            return fixUrlNull(value)
+        }
+
         var current: Element? = this
-        repeat(6) {
-            if (current == null) return@repeat
+        repeat(8) {
             val image = current?.selectFirst("img")
             if (image != null) {
-                val url = sequenceOf(
+                val candidates = sequenceOf(
                     image.attr("data-src"),
                     image.attr("data-lazy-src"),
                     image.attr("data-original"),
                     image.attr("data-image"),
-                    image.attr("data-srcset").substringBefore(",").trim(),
-                    image.attr("srcset").substringBefore(",").trim(),
+                    image.attr("data-srcset"),
+                    image.attr("srcset"),
                     image.attr("src")
-                ).firstOrNull { it.isNotBlank() && !it.startsWith("data:image") }
-                if (url != null) return fixUrlNull(url)
+                )
+
+                for (candidate in candidates) {
+                    if (candidate.isBlank()) continue
+                    val urls = if (candidate.contains(',')) candidate.split(',') else listOf(candidate)
+                    for (url in urls) {
+                        normalize(url)?.let { return it }
+                    }
+                }
             }
+
             val style = current?.attr("style").orEmpty()
-            val background = Regex("url\\(['\\\"]?([^'\\\")]+)").find(style)?.groupValues?.getOrNull(1)
-            if (!background.isNullOrBlank()) return fixUrlNull(background)
+            val background = Regex("url\\(['\\\"]?([^'\\\")]+)")
+                .find(style)
+                ?.groupValues
+                ?.getOrNull(1)
+            normalize(background.orEmpty())?.let { return it }
+
             current = current?.parent()
         }
         return null
