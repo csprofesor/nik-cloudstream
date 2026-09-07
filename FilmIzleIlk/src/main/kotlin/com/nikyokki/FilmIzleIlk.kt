@@ -68,11 +68,11 @@ class FilmIzleIlk : MainAPI() {
         "${mainUrl}/film/polisiye-filmler/page/" to "Polisiye",
         "${mainUrl}/film/romantik-filmler/page/" to "Romantik",
         "${mainUrl}/film/savas-filmler/page/" to "Savaş",
-        "${mainUrl}/film/spor-filmleri/page/" to "Spor",
+        "${mainUrl}/film/spor-filmler/page/" to "Spor",
         "${mainUrl}/film/suc-filmler/page/" to "Suç",
         "${mainUrl}/film/tarihi-filmler/page/" to "Tarihi",
         "${mainUrl}/film/tavsiye-filmler/page/" to "Tavsiye",
-        "${mainUrl}/film/turk-filmleri/page/" to "Türk",
+        "${mainUrl}/film/turk-filmler/page/" to "Türk",
         "${mainUrl}/film/western-filmler/page/" to "Western"
     )
 
@@ -194,27 +194,29 @@ class FilmIzleIlk : MainAPI() {
             return false
         }
 
-        val orderedIframes = iframes.sortedBy { iframe ->
-            when {
-                iframe.contains("ok.ru", ignoreCase = true) || iframe.contains("odnoklassniki", ignoreCase = true) -> 0
-                iframe.contains("oneload", ignoreCase = true) -> 1
-                iframe.contains("vidmoly", ignoreCase = true) -> 2
-                iframe.contains("videopress", ignoreCase = true) || iframe.contains("wordpress", ignoreCase = true) -> 4
-                else -> 3
-            }
+        // loadExtractor() returns true when a matching extractor exists, even if that
+        // extractor itself produces no playable link. Therefore we must NOT feed all
+        // providers to CloudStream at once; that can leave the player with a broken
+        // stream and result in a generic Connection Timeout.
+        val selected = iframes.firstOrNull { iframe ->
+            iframe.contains("ok.ru", ignoreCase = true) || iframe.contains("odnoklassniki", ignoreCase = true)
+        } ?: iframes.firstOrNull { it.contains("oneload", ignoreCase = true) }
+        ?: iframes.firstOrNull { it.contains("vidmoly", ignoreCase = true) }
+        ?: iframes.firstOrNull {
+            !it.contains("videopress", ignoreCase = true) && !it.contains("wordpress", ignoreCase = true)
         }
 
-        Log.d("FII", "provider order » ${orderedIframes.joinToString(" | ")}")
-
-        var extractorLoaded = false
-        for (iframe in orderedIframes) {
-            Log.d("FII", "iframe » $iframe")
-            val loaded = runCatching {
-                loadExtractor(iframe, data, subtitleCallback, callback)
-            }.onFailure { Log.e("FII", "Extractor failed: $iframe", it) }.getOrDefault(false)
-            if (loaded) extractorLoaded = true
+        if (selected == null) {
+            Log.e("FII", "Only unsupported/VideoPress sources found for $data")
+            return false
         }
 
-        return extractorLoaded
+        Log.d("FII", "selected provider » $selected")
+
+        return runCatching {
+            loadExtractor(selected, data, subtitleCallback, callback)
+        }.onFailure {
+            Log.e("FII", "Selected extractor failed: $selected", it)
+        }.getOrDefault(false)
     }
 }
