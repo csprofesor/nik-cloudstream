@@ -1,5 +1,6 @@
 package com.nikyokki
 
+import android.util.Base64
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.Actor
@@ -29,6 +30,10 @@ import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
+import java.security.MessageDigest
+import javax.crypto.Cipher
+import javax.crypto.spec.IvParameterSpec
+import javax.crypto.spec.SecretKeySpec
 
 class HDFilmSitesi : MainAPI() {
     override var mainUrl = "https://dizifilmizle.to"
@@ -258,21 +263,46 @@ class HDFilmSitesi : MainAPI() {
         }
     }
 
+    private fun hexBytes(value: String): ByteArray {
+        return ByteArray(value.length / 2) { i -> value.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+    }
+
+    private fun evpBytesToKey(password: ByteArray, salt: ByteArray, keySize: Int, ivSize: Int): Pair<ByteArray, ByteArray> {
+        val output = ArrayList<Byte>()
+        var previous = ByteArray(0)
+        while (output.size < keySize + ivSize) {
+            val md5 = MessageDigest.getInstance("MD5")
+            md5.update(previous)
+            md5.update(password)
+            md5.update(salt)
+            previous = md5.digest()
+            previous.forEach { output.add(it) }
+        }
+        val all = output.toByteArray()
+        return all.copyOfRange(0, keySize) to all.copyOfRange(keySize, keySize + ivSize)
+    }
+
+    private fun decryptVidMixi(cipherText: String, ivHex: String, saltHex: String, password: String): String? {
+        return runCatching {
+            val cipherBytes = Base64.decode(cipherText, Base64.DEFAULT)
+            val (key, derivedIv) = evpBytesToKey(password.toByteArray(Charsets.UTF_8), hexBytes(saltHex), 32, 16)
+            val iv = if (ivHex.length == 32) hexBytes(ivHex) else derivedIv
+            val cipher = Cipher.getInstance("AES/CBC/PKCS5Padding")
+            cipher.init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv))
+            cipher.doFinal(cipherBytes).toString(Charsets.UTF_8)
+        }.getOrNull()
+    }
+
     private suspend fun resolveVidMixi(
         embedUrl: String,
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val headers = browserHeaders + mapOf(
-            "Origin" to "https://vidmixi.com",
-            "Referer" to embedUrl
-        )
-
         val embed = runCatching {
             app.get(
                 embedUrl,
-                headers = headers,
-                referer = "https://vidmixi.com/"
+                headers = browserHeaders,
+                referer = "${mainUrl}/"
             )
         }.getOrNull() ?: return false
 
@@ -281,41 +311,59 @@ class HDFilmSitesi : MainAPI() {
             .replace("\\u002F", "/")
             .replace("\\x2F", "/")
 
-        val listUrl = Regex(
+        val bePlayer = Regex(
+            """bePlayer\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"](\{.*?\})['\"]\s*\)""",
+            RegexOption.DOT_MATCHES_ALL
+        ).find(html)
+
+        val listUrl = bePlayer?.let { match ->
+            val password = match.groupValues[1]
+            val settings = match.groupValues[2]
+            val ct = Regex("""\"ct\"\s*:\s*\"([^\"]+)\"""").find(settings)?.groupValues?.getOrNull(1)
+            val iv = Regex("""\"iv\"\s*:\s*\"([^\"]+)\"""").find(settings)?.groupValues?.getOrNull(1)
+            val salt = Regex("""\"s\"\s*:\s*\"([^\"]+)\"""").find(settings)?.groupValues?.getOrNull(1)
+            if (ct != null && iv != null && salt != null) {
+                decryptVidMixi(ct, iv, salt, password)?.let { decrypted ->
+                    Regex("""\"video_location\"\s*:\s*\"([^\"]+)\"""").find(decrypted)?.groupValues?.getOrNull(1)
+                        ?.replace("\\/", "/")
+                }
+            } else null
+        }
+
+        val directList = Regex(
             "https?://vidmixi\\.com/list/[A-Za-z0-9+/=_-]+",
             RegexOption.IGNORE_CASE
         ).find(html)?.value
-            ?: Regex(
-                "['\\\"](/list/[A-Za-z0-9+/=_-]+)['\\\"]",
-                RegexOption.IGNORE_CASE
-            ).find(html)?.groupValues?.getOrNull(1)?.let { "https://vidmixi.com$it" }
-            ?: Regex(
-                "(?:url|src|playlist|manifest)\\s*[:=]\\s*['\\\"]([^'\\\"]*?/list/[A-Za-z0-9+/=_-]+)['\\\"]",
-                RegexOption.IGNORE_CASE
-            ).find(html)?.groupValues?.getOrNull(1)?.let {
-                if (it.startsWith("http")) it else "https://vidmixi.com$it"
-            }
-            ?: return false
+
+        val finalListUrl = listUrl ?: directList ?: return false
 
         val manifestResponse = runCatching {
             app.get(
-                listUrl,
-                headers = headers,
+                finalListUrl,
+                headers = browserHeaders + ("Referer" to embedUrl),
                 referer = embedUrl
             )
         }.getOrNull() ?: return false
 
         if (!manifestResponse.text.trimStart().startsWith("#EXTM3U")) return false
 
+        Regex("""https?://vidmixi\\.com/[^\"'\\s]+\.vtt""", RegexOption.IGNORE_CASE)
+            .findAll(html)
+            .map { it.value }
+            .distinct()
+            .forEach { subtitleUrl ->
+                subtitleCallback.invoke(SubtitleFile("Türkçe", subtitleUrl))
+            }
+
         callback.invoke(
             newExtractorLink(
                 source = this.name,
                 name = "VidMixi",
-                url = manifestResponse.url.toString().ifBlank { listUrl },
+                url = finalListUrl,
                 type = ExtractorLinkType.M3U8
             ) {
                 this.referer = embedUrl
-                this.headers = headers
+                this.headers = browserHeaders + ("Referer" to embedUrl)
                 this.quality = Qualities.Unknown.value
             }
         )
