@@ -233,33 +233,119 @@ class HDFilmSitesi : MainAPI() {
         }
     }
 
-    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+    private suspend fun loadVidMixi(
+        embedUrl: String,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
+        val vidMixiHeaders = browserHeaders + mapOf(
+            "Origin" to "https://vidmixi.com",
+            "Referer" to embedUrl
+        )
+
+        val embedResponse = app.get(
+            embedUrl,
+            headers = vidMixiHeaders,
+            referer = "https://vidmixi.com/"
+        )
+
+        val html = embedResponse.text
+            .replace("\\/","/")
+            .replace("\\u002F", "/")
+
+        val listUrl = Regex(
+            "https?://vidmixi\\.com/list/[A-Za-z0-9+/_=-]+",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.value
+            ?: Regex(
+                "['\\\"](/list/[A-Za-z0-9+/_=-]+)['\\\"]",
+                RegexOption.IGNORE_CASE
+            ).find(html)?.groupValues?.getOrNull(1)?.let { "https://vidmixi.com$it" }
+            ?: return false
+
+        val manifestResponse = app.get(
+            listUrl,
+            headers = vidMixiHeaders,
+            referer = embedUrl
+        )
+
+        val manifestUrl = manifestResponse.url.toString().ifBlank { listUrl }
+        val manifest = manifestResponse.text
+
+        if (!manifest.trimStart().startsWith("#EXTM3U")) return false
+
+        callback.invoke(
+            newExtractorLink(
+                source = this.name,
+                name = "VidMixi",
+                url = manifestUrl,
+                ExtractorLinkType.M3U8
+            ) {
+                this.referer = embedUrl
+                this.headers = vidMixiHeaders
+                this.quality = Qualities.Unknown.value
+            }
+        )
+
+        return true
+    }
+
+    override suspend fun loadLinks(
+        data: String,
+        isCasting: Boolean,
+        subtitleCallback: (SubtitleFile) -> Unit,
+        callback: (ExtractorLink) -> Unit
+    ): Boolean {
         Log.d("HDS", "data -> $data")
+
+        if (data.contains("vidmixi.com", ignoreCase = true)) {
+            if (loadVidMixi(data, subtitleCallback, callback)) return true
+        }
+
         if (data.contains("vidmody")) {
             val aa = app.get(data, headers = browserHeaders, referer = "${mainUrl}/").document
-            val bb = aa.body().selectFirst("script").toString().substringAfter("var id =").substringBefore(";").replace("'", "").trim()
-            M3u8Helper.generateM3u8(name, "https://vidmody.com/vs/$bb", "$mainUrl/").forEach(callback)
+            val bb = aa.body().selectFirst("script").toString()
+                .substringAfter("var id =").substringBefore(";").replace("'", "").trim()
+            M3u8Helper.generateM3u8(name, "https://vidmody.com/vs/$bb", "${mainUrl}/").forEach(callback)
         } else if (data.contains("vidlop")) {
-            val vidUrl = app.post("https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo", headers = browserHeaders + ("X-Requested-With" to "XMLHttpRequest"), referer = "${mainUrl}/").parsedSafe<VidLop>()?.securedLink ?: return false
+            val vidUrl = app.post(
+                "https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo",
+                headers = browserHeaders + ("X-Requested-With" to "XMLHttpRequest"),
+                referer = "${mainUrl}/"
+            ).parsedSafe<VidLop>()?.securedLink ?: return false
             callback.invoke(newExtractorLink(source = this.name, name = this.name, url = vidUrl, ExtractorLinkType.M3U8) {
                 this.referer = data
                 this.quality = Qualities.Unknown.value
             })
             loadExtractor(data, subtitleCallback, callback)
         }
+
         val document = app.get(data, headers = browserHeaders, referer = "${mainUrl}/").document
         val iframeSkici = IframeKodlayici()
-        val pdataMatches = Regex("""pdata\[\'(.*?)'\] = \'(.*?)\';""").findAll(document.html())
+        val pdataMatches = Regex("""pdata\\['(.*?)'\\] = '(.*?)';""").findAll(document.html())
+
         for (pdata in pdataMatches.map { it.destructured }) {
             val value = pdata.component2()
-            val iframeData = iframeSkici.iframeCoz(value!!)
-            val iframeLink = app.get(iframeData, headers = browserHeaders, referer = "${mainUrl}/").url.toString()
-            if (iframeLink.contains("vidmody")) {
+            val iframeData = iframeSkici.iframeCoz(value)
+            val iframeLink = app.get(
+                iframeData,
+                headers = browserHeaders,
+                referer = "${mainUrl}/"
+            ).url.toString()
+
+            if (iframeLink.contains("vidmixi.com", ignoreCase = true)) {
+                if (loadVidMixi(iframeLink, subtitleCallback, callback)) return true
+            } else if (iframeLink.contains("vidmody")) {
                 val aa = app.get(iframeLink, headers = browserHeaders, referer = "${mainUrl}/").document
-                val bb = aa.body().selectFirst("script").toString().substringAfter("var id =").substringBefore(";").replace("'", "").trim()
-                M3u8Helper.generateM3u8("VidMody", "https://vidmody.com/vs/$bb", "$mainUrl/").forEach(callback)
+                val bb = aa.body().selectFirst("script").toString()
+                    .substringAfter("var id =").substringBefore(";").replace("'", "").trim()
+                M3u8Helper.generateM3u8("VidMody", "https://vidmody.com/vs/$bb", "${mainUrl}/").forEach(callback)
             } else if (iframeLink.contains("vidlop")) {
-                val vidUrl = app.post("https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo", headers = browserHeaders + ("X-Requested-With" to "XMLHttpRequest"), referer = "${mainUrl}/").parsedSafe<VidLop>()?.securedLink ?: return false
+                val vidUrl = app.post(
+                    "https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo",
+                    headers = browserHeaders + ("X-Requested-With" to "XMLHttpRequest"),
+                    referer = "${mainUrl}/"
+                ).parsedSafe<VidLop>()?.securedLink ?: return false
                 callback.invoke(newExtractorLink(source = this.name, name = this.name, url = vidUrl, ExtractorLinkType.M3U8) {
                     this.referer = data
                     this.quality = Qualities.Unknown.value
@@ -267,8 +353,8 @@ class HDFilmSitesi : MainAPI() {
                 loadExtractor(data, subtitleCallback, callback)
             }
         }
+
         return true
     }
-
     data class VidLop(@JsonProperty("hls") val hls: Boolean? = null, @JsonProperty("securedLink") val securedLink: String? = null)
 }
