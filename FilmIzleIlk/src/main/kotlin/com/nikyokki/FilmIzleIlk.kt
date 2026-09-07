@@ -41,43 +41,49 @@ class FilmIzleIlk : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        "${mainUrl}/page/" to "Son Filmler",
-        "${mainUrl}/film/aile-filmleri/page/" to "Aile",
-        "${mainUrl}/film/aksiyon-filmleri/page/" to "Aksiyon",
-        "${mainUrl}/film/amazon-prime-filmleri/page/" to "Amazon Prime",
-        "${mainUrl}/film/animasyon-filmleri/page/" to "Animasyon",
-        "${mainUrl}/film/ask-filmleri/page/" to "Aşk",
-        "${mainUrl}/film/belgesel-filmleri/page/" to "Belgesel",
-        "${mainUrl}/film/bilimkurgu-filmleri/page/" to "Bilim Kurgu",
-        "${mainUrl}/film/biyografi-filmleri/page/" to "Biyografi",
-        "${mainUrl}/film/cizgi-filmler/page/" to "Çizgi",
-        "${mainUrl}/film/cocuk-filmleri/page/" to "Çocuk",
-        "${mainUrl}/film/dram-filmleri/page/" to "Dram",
-        "${mainUrl}/film/fantastik-filmler/page/" to "Fantastik",
-        "${mainUrl}/film/gelecek-filmler/page/" to "Gelecek",
-        "${mainUrl}/film/gerilim-filmleri/page/" to "Gerilim",
-        "${mainUrl}/film/gizemli-filmler/page/" to "Gizemli",
-        "${mainUrl}/film/hint-filmleri/page/" to "Hint",
-        "${mainUrl}/film/komedi-filmler/page/" to "Komedi",
-        "${mainUrl}/film/kore-filmler/page/" to "Kore",
-        "${mainUrl}/film/korku-filmler/page/" to "Korku",
-        "${mainUrl}/film/macera-filmler/page/" to "Macera",
-        "${mainUrl}/film/muzikal-filmler/page/" to "Müzikal",
-        "${mainUrl}/film/netflix-filmler/page/" to "Netflix",
-        "${mainUrl}/film/nette-ilk-filmler/page/" to "Nette İlk",
-        "${mainUrl}/film/polisiye-filmler/page/" to "Polisiye",
-        "${mainUrl}/film/romantik-filmler/page/" to "Romantik",
-        "${mainUrl}/film/savas-filmler/page/" to "Savaş",
-        "${mainUrl}/film/spor-filmler/page/" to "Spor",
-        "${mainUrl}/film/suc-filmler/page/" to "Suç",
-        "${mainUrl}/film/tarihi-filmler/page/" to "Tarihi",
-        "${mainUrl}/film/tavsiye-filmler/page/" to "Tavsiye",
-        "${mainUrl}/film/turk-filmler/page/" to "Türk",
-        "${mainUrl}/film/western-filmler/page/" to "Western"
+        "${mainUrl}/" to "Son Filmler",
+        "${mainUrl}/film/aile-filmleri/" to "Aile",
+        "${mainUrl}/film/aksiyon-filmleri/" to "Aksiyon",
+        "${mainUrl}/film/amazon-prime-filmleri/" to "Amazon Prime",
+        "${mainUrl}/film/animasyon-filmleri/" to "Animasyon",
+        "${mainUrl}/film/ask-filmleri/" to "Aşk",
+        "${mainUrl}/film/belgesel-filmleri/" to "Belgesel",
+        "${mainUrl}/film/bilimkurgu-filmleri/" to "Bilim Kurgu",
+        "${mainUrl}/film/biyografi-filmleri/" to "Biyografi",
+        "${mainUrl}/film/cizgi-filmler/" to "Çizgi",
+        "${mainUrl}/film/cocuk-filmleri/" to "Çocuk",
+        "${mainUrl}/film/dram-filmleri/" to "Dram",
+        "${mainUrl}/film/fantastik-filmler/" to "Fantastik",
+        "${mainUrl}/film/gelecek-filmler/" to "Gelecek",
+        "${mainUrl}/film/gerilim-filmleri/" to "Gerilim",
+        "${mainUrl}/film/gizemli-filmler/" to "Gizemli",
+        "${mainUrl}/film/hint-filmleri/" to "Hint",
+        "${mainUrl}/film/komedi-filmleri/" to "Komedi",
+        "${mainUrl}/film/kore-filmleri/" to "Kore",
+        "${mainUrl}/film/korku-filmleri/" to "Korku",
+        "${mainUrl}/film/macera-filmleri/" to "Macera",
+        "${mainUrl}/film/muzikal-filmleri/" to "Müzikal",
+        "${mainUrl}/film/netflix-filmleri/" to "Netflix",
+        "${mainUrl}/film/nette-ilk-filmleri/" to "Nette İlk",
+        "${mainUrl}/film/polisiye-filmleri/" to "Polisiye",
+        "${mainUrl}/film/romantik-filmleri/" to "Romantik",
+        "${mainUrl}/film/savas-filmleri/" to "Savaş",
+        "${mainUrl}/film/spor-filmleri/" to "Spor",
+        "${mainUrl}/film/suc-filmleri/" to "Suç",
+        "${mainUrl}/film/tarihi-filmleri/" to "Tarihi",
+        "${mainUrl}/film/tavsiye-filmleri/" to "Tavsiye",
+        "${mainUrl}/film/turk-filmleri/" to "Türk",
+        "${mainUrl}/film/western-filmleri/" to "Western"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}${page}", headers = browserHeaders).document
+        val baseUrl = request.data.trimEnd('/')
+        val pageUrl = if (page <= 1) {
+            "$baseUrl/"
+        } else {
+            "$baseUrl/page/$page/"
+        }
+        val document = app.get(pageUrl, headers = browserHeaders).document
 
         val oldLayout = document.select("div.movie-box").mapNotNull { it.toSearchResult() }
         val home = if (oldLayout.isNotEmpty()) {
@@ -86,7 +92,7 @@ class FilmIzleIlk : MainAPI() {
             document.select("a[href]").mapNotNull { it.toSearchResultFromLink() }.distinctBy { it.url }
         }
 
-        Log.d("FII", "main page '${request.name}' page=$page results=${home.size}")
+        Log.d("FII", "main page '${request.name}' page=$page url=$pageUrl results=${home.size}")
         return newHomePageResponse(request.name, home)
     }
 
@@ -96,7 +102,6 @@ class FilmIzleIlk : MainAPI() {
         val posterUrl = fixUrlNull(this.selectFirst("div.img img")?.attr("src"))
             ?: fixUrlNull(this.selectFirst("img")?.attr("src"))
         val score = this.selectFirst("div.rating span, div.imdb, .imdb, [class*=rating]")?.text()?.trim()
-
         return makeSearchResult(title, href, posterUrl, score)
     }
 
@@ -128,12 +133,7 @@ class FilmIzleIlk : MainAPI() {
         return makeSearchResult(title, href, posterUrl, score)
     }
 
-    private fun makeSearchResult(
-        title: String,
-        href: String,
-        posterUrl: String?,
-        score: String?
-    ): SearchResponse {
+    private fun makeSearchResult(title: String, href: String, posterUrl: String?, score: String?): SearchResponse {
         return if (href.contains("/dizi/")) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = posterUrl
@@ -150,11 +150,8 @@ class FilmIzleIlk : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}?s=${query}", headers = browserHeaders).document
         val oldLayout = document.select("div.movie-box").mapNotNull { it.toSearchResult() }
-        return if (oldLayout.isNotEmpty()) {
-            oldLayout
-        } else {
-            document.select("a[href]").mapNotNull { it.toSearchResultFromLink() }.distinctBy { it.url }
-        }
+        return if (oldLayout.isNotEmpty()) oldLayout
+        else document.select("a[href]").mapNotNull { it.toSearchResultFromLink() }.distinctBy { it.url }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -215,7 +212,7 @@ class FilmIzleIlk : MainAPI() {
     }
 
     private fun getIframe(sourceCode: String): String {
-        val atob = Regex("""PHA\+[0-9a-zA-Z+/=]*""").find(sourceCode)?.value ?: return ""
+        val atob = Regex("""PHA\\+[0-9a-zA-Z+/=]*""").find(sourceCode)?.value ?: return ""
         val padding = 4 - atob.length % 4
         val atobPadded = if (padding < 4) atob.padEnd(atob.length + padding, '=') else atob
         val iframe = Jsoup.parse(String(Base64.decode(atobPadded, Base64.DEFAULT), Charsets.UTF_8))
@@ -251,9 +248,7 @@ class FilmIzleIlk : MainAPI() {
 
         val candidates = buildList {
             iframes.firstOrNull { it.contains("oneload", ignoreCase = true) }?.let(::add)
-            iframes.firstOrNull {
-                it.contains("ok.ru", ignoreCase = true) || it.contains("odnoklassniki", ignoreCase = true)
-            }?.let(::add)
+            iframes.firstOrNull { it.contains("ok.ru", ignoreCase = true) || it.contains("odnoklassniki", ignoreCase = true) }?.let(::add)
             iframes.firstOrNull { it.contains("vidmoly", ignoreCase = true) }?.let(::add)
             iframes.filterNot {
                 it.contains("oneload", ignoreCase = true) ||
@@ -277,18 +272,13 @@ class FilmIzleIlk : MainAPI() {
                 emittedLink = true
                 callback(link)
             }
-
             val result = runCatching {
                 loadExtractor(provider, data, subtitleCallback, providerCallback)
-            }.onFailure {
-                Log.e("FII", "Extractor failed: $provider", it)
-            }.getOrDefault(false)
-
+            }.onFailure { Log.e("FII", "Extractor failed: $provider", it) }.getOrDefault(false)
             if (emittedLink) {
                 Log.d("FII", "playable link emitted by » $provider")
                 return true
             }
-
             Log.d("FII", "no playable link from » $provider (result=$result), trying next")
         }
 
