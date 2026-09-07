@@ -212,15 +212,14 @@ class HDFilmSitesi : MainAPI() {
     }
 
     private fun nextJsVidMixiUrl(html: String): String? {
-        val patterns = listOf(
-            Regex("""[\"']url[\"']\s*:\s*[\"'](https?:\\/\\/vidmixi\.com\\/embed\\/[A-Za-z0-9_-]+)[\"']""", RegexOption.IGNORE_CASE),
-            Regex("""https?:\\/\\/vidmixi\.com\\/embed\\/[A-Za-z0-9_-]+""", RegexOption.IGNORE_CASE),
-            Regex("""https?://vidmixi\.com/embed/[A-Za-z0-9_-]+""", RegexOption.IGNORE_CASE)
-        )
-        return patterns.asSequence()
-            .mapNotNull { regex -> regex.find(html)?.let { it.groupValues.getOrNull(1) ?: it.value } }
-            .map { it.replace("\\/", "/").replace("\\u002F", "/") }
-            .firstOrNull()
+        val normalized = html
+            .replace("\\/", "/")
+            .replace("\\u002F", "/")
+            .replace("\\x2F", "/")
+        return Regex(
+            "https?://vidmixi\\.com/embed/[A-Za-z0-9_-]+",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)?.value
     }
 
     private fun jsonLdString(html: String, key: String): String? {
@@ -389,13 +388,22 @@ class HDFilmSitesi : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         val normalizedEmbed = embedUrl.replace("\\/", "/").replace("\\u002F", "/")
-        val headers = browserHeaders + mapOf(
+        val embedHeaders = browserHeaders + mapOf(
+            "Origin" to "https://vidmixi.com",
+            "Referer" to "$mainUrl/"
+        )
+        val manifestHeaders = browserHeaders + mapOf(
             "Origin" to "https://vidmixi.com",
             "Referer" to normalizedEmbed
         )
+        Log.d("HDS", "VidMixi resolve -> $normalizedEmbed")
+
         val embed = runCatching {
-            app.get(normalizedEmbed, headers = headers, referer = "https://vidmixi.com/")
-        }.getOrNull() ?: return false
+            app.get(normalizedEmbed, headers = embedHeaders, referer = "$mainUrl/")
+        }.getOrNull() ?: run {
+            Log.d("HDS", "VidMixi embed request failed")
+            return false
+        }
 
         val html = embed.text
             .replace("\\/", "/")
@@ -421,11 +429,20 @@ class HDFilmSitesi : MainAPI() {
         }
 
         val directList = Regex("https?://vidmixi\\.com/list/[A-Za-z0-9+/=_-]+", RegexOption.IGNORE_CASE).find(html)?.value
-        val finalListUrl = listUrl ?: directList ?: return false
+        val finalListUrl = listUrl ?: directList ?: run {
+            Log.d("HDS", "VidMixi video_location/list bulunamadı")
+            return false
+        }
         val manifestResponse = runCatching {
-            app.get(finalListUrl, headers = headers, referer = normalizedEmbed)
-        }.getOrNull() ?: return false
-        if (!manifestResponse.text.trimStart().startsWith("#EXTM3U")) return false
+            app.get(finalListUrl, headers = manifestHeaders, referer = normalizedEmbed)
+        }.getOrNull() ?: run {
+            Log.d("HDS", "VidMixi manifest request failed")
+            return false
+        }
+        if (!manifestResponse.text.trimStart().startsWith("#EXTM3U")) {
+            Log.d("HDS", "VidMixi manifest M3U8 değil")
+            return false
+        }
 
         Regex("""https?://vidmixi\.com/[^\"'\s]+\.vtt""", RegexOption.IGNORE_CASE)
             .findAll(html).map { it.value }.distinct()
@@ -433,9 +450,10 @@ class HDFilmSitesi : MainAPI() {
 
         callback(newExtractorLink(this.name, "VidMixi", finalListUrl, ExtractorLinkType.M3U8) {
             referer = normalizedEmbed
-            this.headers = headers
+            this.headers = manifestHeaders
             quality = Qualities.Unknown.value
         })
+        Log.d("HDS", "VidMixi başarıyla çözüldü -> $finalListUrl")
         return true
     }
 
@@ -451,10 +469,14 @@ class HDFilmSitesi : MainAPI() {
 
         val document = runCatching {
             app.get(data, headers = browserHeaders, referer = "$mainUrl/").document
-        }.getOrNull() ?: return false
+        }.getOrNull() ?: run {
+            Log.d("HDS", "Film sayfası açılamadı -> $data")
+            return false
+        }
         val html = document.html()
 
         val embeddedVidMixi = nextJsVidMixiUrl(html)
+        Log.d("HDS", "Film sayfasındaki VidMixi -> $embeddedVidMixi")
         if (!embeddedVidMixi.isNullOrBlank() && resolveVidMixi(embeddedVidMixi, subtitleCallback, callback)) return true
 
         val pdataRegex = Regex("""pdata\['(.*?)'\]\s*=\s*'(.*?)';""")
