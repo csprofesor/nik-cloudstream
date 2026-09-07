@@ -25,10 +25,8 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.HlsPlaylistParser
 import com.lagradost.cloudstream3.utils.M3u8Helper
 import com.lagradost.cloudstream3.utils.Qualities
-import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
@@ -65,15 +63,54 @@ class HDFilmSitesi : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}/${page}/").document
         val home = document.select("div.movie_box").mapNotNull { it.toMainPageResult() }
+            .ifEmpty {
+                document.select("a[href*='/film/']")
+                    .mapNotNull { it.toFilmLinkResult() }
+            }
+            .distinctBy { it.url }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val title = this.selectFirst("h2")?.text() ?: return null
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src"))
-        val score = this.selectFirst("span.box.imdb")?.text()?.trim()
+        val href = fixUrlNull(selectFirst("a[href]")?.attr("href")) ?: return null
+        val title = selectFirst("h2, h3, h4")?.text()?.trim()
+            ?: selectFirst("a[title]")?.attr("title")?.trim()
+            ?: selectFirst("img[alt]")?.attr("alt")?.trim()
+            ?: return null
+        val posterUrl = fixUrlNull(
+            selectFirst("img")?.attr("data-src")
+                ?: selectFirst("img")?.attr("data-lazy-src")
+                ?: selectFirst("img")?.attr("data-original")
+                ?: selectFirst("img")?.attr("src")
+        )
+        val score = selectFirst("span.box.imdb, [class*=imdb], [class*=rating]")?.text()?.trim()
+
+        return newMovieSearchResponse(title, href, TvType.Movie) {
+            this.posterUrl = posterUrl
+            this.score = Score.from10(score)
+        }
+    }
+
+    private fun Element.toFilmLinkResult(): SearchResponse? {
+        val href = fixUrlNull(attr("href")) ?: return null
+        if (!href.contains("/film/")) return null
+
+        val card = parent() ?: this
+        val title = attr("title")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: selectFirst("img[alt]")?.attr("alt")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: card.selectFirst("h2, h3, h4, [class*=title]")?.text()?.trim()?.takeIf { it.isNotEmpty() }
+            ?: text().trim().takeIf { it.isNotEmpty() }
+            ?: return null
+
+        val image = selectFirst("img") ?: card.selectFirst("img")
+        val posterUrl = fixUrlNull(
+            image?.attr("data-src")
+                ?: image?.attr("data-lazy-src")
+                ?: image?.attr("data-original")
+                ?: image?.attr("src")
+        )
+        val score = card.selectFirst("span.box.imdb, [class*=imdb], [class*=rating]")?.text()?.trim()
 
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
@@ -83,8 +120,12 @@ class HDFilmSitesi : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}/arama/${query}").document
-
         return document.select("div.movie_box").mapNotNull { it.toMainPageResult() }
+            .ifEmpty {
+                document.select("a[href*='/film/']")
+                    .mapNotNull { it.toFilmLinkResult() }
+            }
+            .distinctBy { it.url }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -111,29 +152,19 @@ class HDFilmSitesi : MainAPI() {
 
         if (document.selectFirst("div.part_buton_sec")?.text()?.contains("Sezon") == true) {
             val episodes = mutableListOf<Episode>()
-
             val iframeSkici = IframeKodlayici()
-
             val pdataMatches = Regex("""pdata\[\'(.*?)'\] = \'(.*?)\';""").findAll(document.html())
             val pdataList = pdataMatches.map { it.destructured }.toList()
 
             for (pdata in pdataList) {
-                val key = pdata.component1();
-                val value = pdata.component2();
-
-                val iframeData = iframeSkici.iframeCoz(value!!)
+                val key = pdata.component1()
+                val value = pdata.component2()
+                val iframeData = iframeSkici.iframeCoz(value)
                 val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url.toString()
-
-                //val sz_num = partNumber.takeIf { it.contains("sezon") }?.substringBefore("sezon")?.toIntOrNull() ?: 1
-                //val ep_num = partName.substringBefore(".")?.trim()?.toIntOrNull() ?: 1
 
                 val sz_num = key.substringAfter("prt_").substringBefore("sezon").toIntOrNull() ?: 1
                 var ep_num = key.substringAfter("sezon").toIntOrNull()
-                if (ep_num != null) {
-                    ep_num += 1
-                } else {
-                    ep_num = 1
-                }
+                if (ep_num != null) ep_num += 1 else ep_num = 1
 
                 episodes.add(
                     newEpisode(iframeLink) {
@@ -181,16 +212,10 @@ class HDFilmSitesi : MainAPI() {
                 .substringAfter("var id =").substringBefore(";")
                 .replace("'", "").trim()
             val m3uLink = "https://vidmody.com/vs/$bb"
-            Log.d("HDS", "m3uLink -> $m3uLink")
-            M3u8Helper.generateM3u8(
-                name,
-                m3uLink,
-                "$mainUrl/"
-            ).forEach(callback)
+            M3u8Helper.generateM3u8(name, m3uLink, "$mainUrl/").forEach(callback)
         } else if (data.contains("vidlop")) {
             val vidUrl = app.post(
-                "https://vidlop.com/player/index.php?data=" + data.split("/")
-                    .last() + "&do=getVideo",
+                "https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo",
                 headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
                 referer = "${mainUrl}/"
             ).parsedSafe<VidLop>()?.securedLink ?: return false
@@ -207,34 +232,26 @@ class HDFilmSitesi : MainAPI() {
             )
             loadExtractor(data, subtitleCallback, callback)
         }
+
         val document = app.get(data).document
         val iframeSkici = IframeKodlayici()
         val pdataMatches = Regex("""pdata\[\'(.*?)'\] = \'(.*?)\';""").findAll(document.html())
         val pdataList = pdataMatches.map { it.destructured }.toList()
 
         for (pdata in pdataList) {
-            val key = pdata.component1()
             val value = pdata.component2()
-            val iframeData = iframeSkici.iframeCoz(value!!)
+            val iframeData = iframeSkici.iframeCoz(value)
             val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url.toString()
             if (iframeLink.contains("vidmody")) {
-                Log.d("HDS", "iframeLink -> $iframeLink")
                 val aa = app.get(iframeLink, referer = "${mainUrl}/").document
                 val bb = aa.body().selectFirst("script").toString()
                     .substringAfter("var id =").substringBefore(";")
                     .replace("'", "").trim()
                 val m3uLink = "https://vidmody.com/vs/$bb"
-                Log.d("HDS", "m3uLink -> $m3uLink")
-                M3u8Helper.generateM3u8(
-                    "VidMody",
-                    m3uLink,
-                    "$mainUrl/"
-                ).forEach(callback)
-
+                M3u8Helper.generateM3u8("VidMody", m3uLink, "$mainUrl/").forEach(callback)
             } else if (iframeLink.contains("vidlop")) {
                 val vidUrl = app.post(
-                    "https://vidlop.com/player/index.php?data=" + data.split("/")
-                        .last() + "&do=getVideo",
+                    "https://vidlop.com/player/index.php?data=" + data.split("/").last() + "&do=getVideo",
                     headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
                     referer = "${mainUrl}/"
                 ).parsedSafe<VidLop>()?.securedLink ?: return false
