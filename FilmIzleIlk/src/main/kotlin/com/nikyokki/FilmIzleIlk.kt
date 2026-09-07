@@ -3,7 +3,6 @@ package com.nikyokki
 import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.Actor
-import com.lagradost.cloudstream3.ErrorLoadingException
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
@@ -23,10 +22,7 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
-import com.lagradost.cloudstream3.utils.INFER_TYPE
-import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
-import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
@@ -73,7 +69,7 @@ class FilmIzleIlk : MainAPI() {
         "${mainUrl}/film/romantik-filmler/page/" to "Romantik",
         "${mainUrl}/film/savas-filmler/page/" to "Savaş",
         "${mainUrl}/film/spor-filmleri/page/" to "Spor",
-        "${mainUrl}/film/suc-filmleri/page/" to "Suç",
+        "${mainUrl}/film/suc-filmler/page/" to "Suç",
         "${mainUrl}/film/tarihi-filmler/page/" to "Tarihi",
         "${mainUrl}/film/tavsiye-filmler/page/" to "Tavsiye",
         "${mainUrl}/film/turk-filmleri/page/" to "Türk",
@@ -200,9 +196,9 @@ class FilmIzleIlk : MainAPI() {
 
         val orderedIframes = iframes.sortedBy { iframe ->
             when {
-                iframe.contains("vidmoly", ignoreCase = true) -> 0
+                iframe.contains("ok.ru", ignoreCase = true) || iframe.contains("odnoklassniki", ignoreCase = true) -> 0
                 iframe.contains("oneload", ignoreCase = true) -> 1
-                iframe.contains("ok.ru", ignoreCase = true) || iframe.contains("odnoklassniki", ignoreCase = true) -> 2
+                iframe.contains("vidmoly", ignoreCase = true) -> 2
                 iframe.contains("videopress", ignoreCase = true) || iframe.contains("wordpress", ignoreCase = true) -> 4
                 else -> 3
             }
@@ -210,26 +206,15 @@ class FilmIzleIlk : MainAPI() {
 
         Log.d("FII", "provider order » ${orderedIframes.joinToString(" | ")}")
 
+        var extractorLoaded = false
         for (iframe in orderedIframes) {
             Log.d("FII", "iframe » $iframe")
-            if (iframe.contains("vidmoly", ignoreCase = true)) {
-                runCatching {
-                    val headers = browserHeaders + ("Sec-Fetch-Dest" to "iframe")
-                    val iSource = app.get(iframe, headers = headers, referer = data).text
-                    val m3uLink = Regex("""file:\"([^\"]+)\"""").find(iSource)?.groupValues?.get(1)
-                        ?: throw ErrorLoadingException("VidMoly m3u link not found")
-                    callback.invoke(newExtractorLink(source = "VidMoly", name = "VidMoly", url = m3uLink, type = INFER_TYPE) {
-                        this.referer = "https://vidmoly.to/"
-                        this.quality = Qualities.Unknown.value
-                    })
-                }.onFailure { Log.e("FII", "VidMoly failed: $iframe", it) }
-            } else {
-                runCatching {
-                    loadExtractor(iframe, data, subtitleCallback, callback)
-                }.onFailure { Log.e("FII", "Extractor failed: $iframe", it) }
-            }
+            val loaded = runCatching {
+                loadExtractor(iframe, data, subtitleCallback, callback)
+            }.onFailure { Log.e("FII", "Extractor failed: $iframe", it) }.getOrDefault(false)
+            if (loaded) extractorLoaded = true
         }
 
-        return true
+        return extractorLoaded
     }
 }
