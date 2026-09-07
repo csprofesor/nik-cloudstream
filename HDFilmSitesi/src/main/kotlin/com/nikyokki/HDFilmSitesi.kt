@@ -61,9 +61,14 @@ class HDFilmSitesi : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}/${page}/").document
+        // Site artık kategori URL'sinin sonuna /1/ eklenmesini desteklemiyor.
+        // İlk sayfada doğrudan kategori URL'sini kullanıyoruz.
+        val url = request.data
+        val document = app.get(url).document
+
         val home = document.select("div.movie_box").mapNotNull { it.toMainPageResult() }
             .ifEmpty {
+                // Güncel sitede kartlar /film/ bağlantısı olan <a> elemanları olarak geliyor.
                 document.select("a[href*='/film/']")
                     .mapNotNull { it.toFilmLinkResult() }
             }
@@ -159,9 +164,8 @@ class HDFilmSitesi : MainAPI() {
             for (pdata in pdataList) {
                 val key = pdata.component1()
                 val value = pdata.component2()
-                val iframeData = iframeSkici.iframeCoz(value)
+                val iframeData = iframeSkici.iframeCoz(value!!)
                 val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url.toString()
-
                 val sz_num = key.substringAfter("prt_").substringBefore("sezon").toIntOrNull() ?: 1
                 var ep_num = key.substringAfter("sezon").toIntOrNull()
                 if (ep_num != null) ep_num += 1 else ep_num = 1
@@ -212,6 +216,7 @@ class HDFilmSitesi : MainAPI() {
                 .substringAfter("var id =").substringBefore(";")
                 .replace("'", "").trim()
             val m3uLink = "https://vidmody.com/vs/$bb"
+            Log.d("HDS", "m3uLink -> $m3uLink")
             M3u8Helper.generateM3u8(name, m3uLink, "$mainUrl/").forEach(callback)
         } else if (data.contains("vidlop")) {
             val vidUrl = app.post(
@@ -239,15 +244,18 @@ class HDFilmSitesi : MainAPI() {
         val pdataList = pdataMatches.map { it.destructured }.toList()
 
         for (pdata in pdataList) {
+            val key = pdata.component1()
             val value = pdata.component2()
-            val iframeData = iframeSkici.iframeCoz(value)
+            val iframeData = iframeSkici.iframeCoz(value!!)
             val iframeLink = app.get(iframeData, referer = "${mainUrl}/").url.toString()
             if (iframeLink.contains("vidmody")) {
+                Log.d("HDS", "iframeLink -> $iframeLink")
                 val aa = app.get(iframeLink, referer = "${mainUrl}/").document
                 val bb = aa.body().selectFirst("script").toString()
                     .substringAfter("var id =").substringBefore(";")
                     .replace("'", "").trim()
                 val m3uLink = "https://vidmody.com/vs/$bb"
+                Log.d("HDS", "m3uLink -> $m3uLink")
                 M3u8Helper.generateM3u8("VidMody", m3uLink, "$mainUrl/").forEach(callback)
             } else if (iframeLink.contains("vidlop")) {
                 val vidUrl = app.post(
