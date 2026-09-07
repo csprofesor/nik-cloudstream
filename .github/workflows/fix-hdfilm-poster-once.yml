@@ -93,3 +93,5 @@ jobs:
           git rm .github/workflows/fix-hdfilm-poster-once.yml
           git commit -m "HDFilmSitesi poster düzeltmesi"
           git push origin master
+
+# trigger
