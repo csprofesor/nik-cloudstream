@@ -88,7 +88,7 @@ class HDFilmSitesi : MainAPI() {
                     )
                 }
             }
-            card.posterHeaders = browserHeaders
+            card.posterHeaders = browserHeaders + ("Referer" to card.url)
         }
 
         return newHomePageResponse(request.name, cards)
@@ -138,7 +138,7 @@ class HDFilmSitesi : MainAPI() {
         val score = selectFirst("span.box.imdb, [class*=imdb], [class*=rating]")?.text()?.trim()
         return newMovieSearchResponse(title, href, TvType.Movie) {
             this.posterUrl = posterUrl
-            this.posterHeaders = browserHeaders
+            this.posterHeaders = browserHeaders + ("Referer" to href)
             this.score = Score.from10(score)
         }
     }
@@ -209,7 +209,7 @@ class HDFilmSitesi : MainAPI() {
             }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
                 this.posterUrl = poster
-                this.posterHeaders = browserHeaders
+                this.posterHeaders = browserHeaders + ("Referer" to url)
                 this.plot = description
                 this.year = year
                 this.tags = tags
