@@ -330,7 +330,6 @@ class HDFilmSitesi : MainAPI() {
     ): Boolean {
         Log.d("HDS", "loadLinks -> $data")
 
-        // Direct provider URL.
         if (data.contains("vidmixi.com", ignoreCase = true) &&
             resolveVidMixi(data, subtitleCallback, callback)
         ) return true
@@ -339,8 +338,6 @@ class HDFilmSitesi : MainAPI() {
             app.get(data, headers = browserHeaders, referer = "${mainUrl}/").document
         }.getOrNull() ?: return false
 
-        // The old parser used an incorrectly escaped raw regex. This is the exact
-        // assignment format used by the current site.
         val pdataRegex = Regex("""pdata\['(.*?)'\]\s*=\s*'(.*?)';""")
         val encoded = pdataRegex.findAll(document.html()).map { it.groupValues[2] }.toList()
 
