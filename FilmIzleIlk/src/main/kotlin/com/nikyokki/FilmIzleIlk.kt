@@ -78,17 +78,62 @@ class FilmIzleIlk : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}${page}", headers = browserHeaders).document
-        val select = if (request.name == "Son Filmler") "div.home-con div.movie-box" else "div.movie-box"
-        val home = document.select(select).mapNotNull { it.toSearchResult() }
+
+        val oldLayout = document.select("div.movie-box").mapNotNull { it.toSearchResult() }
+        val home = if (oldLayout.isNotEmpty()) {
+            oldLayout
+        } else {
+            document.select("a[href]").mapNotNull { it.toSearchResultFromLink() }.distinctBy { it.url }
+        }
+
+        Log.d("FII", "main page '${request.name}' page=$page results=${home.size}")
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title = this.selectFirst("div.name a")?.text() ?: return null
+        val title = this.selectFirst("div.name a")?.text()?.trim() ?: return null
         val href = fixUrlNull(this.selectFirst("div.name a")?.attr("href")) ?: return null
         val posterUrl = fixUrlNull(this.selectFirst("div.img img")?.attr("src"))
+            ?: fixUrlNull(this.selectFirst("img")?.attr("src"))
         val score = this.selectFirst("div.rating span, div.imdb, .imdb, [class*=rating]")?.text()?.trim()
 
+        return makeSearchResult(title, href, posterUrl, score)
+    }
+
+    private fun Element.toSearchResultFromLink(): SearchResponse? {
+        val href = fixUrlNull(attr("href")) ?: return null
+        if (!href.startsWith(mainUrl)) return null
+
+        val path = href.removePrefix(mainUrl).substringBefore("?").trim('/')
+        if (path.isBlank() || path == "page" || path.startsWith("film/") ||
+            path.startsWith("kategori/") || path.startsWith("search") ||
+            path.startsWith("giris") || path.startsWith("kayit") || path.startsWith("iletisim")) {
+            return null
+        }
+
+        val title = text().trim().replace(Regex("\\s+"), " ")
+            .takeIf { it.length >= 2 }
+            ?: selectFirst("img")?.attr("alt")?.trim()
+            ?: return null
+
+        if (title.equals("Anasayfa", ignoreCase = true) ||
+            title.equals("Daha fazla yükle", ignoreCase = true)) return null
+
+        val posterUrl = fixUrlNull(selectFirst("img")?.attr("src"))
+            ?: parents().take(5).asSequence()
+                .mapNotNull { fixUrlNull(it.selectFirst("img")?.attr("src")) }
+                .firstOrNull()
+
+        val score = text().trim().let { Regex("(?:^|\\s)(\\d+(?:\\.\\d+)?)\\s*$").find(it)?.groupValues?.getOrNull(1) }
+        return makeSearchResult(title, href, posterUrl, score)
+    }
+
+    private fun makeSearchResult(
+        title: String,
+        href: String,
+        posterUrl: String?,
+        score: String?
+    ): SearchResponse {
         return if (href.contains("/dizi/")) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = posterUrl
@@ -104,7 +149,12 @@ class FilmIzleIlk : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get("${mainUrl}?s=${query}", headers = browserHeaders).document
-        return document.select("div.movie-box").mapNotNull { it.toSearchResult() }
+        val oldLayout = document.select("div.movie-box").mapNotNull { it.toSearchResult() }
+        return if (oldLayout.isNotEmpty()) {
+            oldLayout
+        } else {
+            document.select("a[href]").mapNotNull { it.toSearchResultFromLink() }.distinctBy { it.url }
+        }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -112,13 +162,18 @@ class FilmIzleIlk : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, headers = browserHeaders, referer = "${mainUrl}/").document
         val title = document.selectFirst("div.film h1")?.text()?.trim()
-            ?: document.selectFirst("h1.film")?.text()?.trim() ?: return null
+            ?: document.selectFirst("h1.film")?.text()?.trim()
+            ?: document.selectFirst("h1")?.text()?.trim()
+            ?: return null
         val poster = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
+            ?: fixUrlNull(document.selectFirst("meta[name='twitter:image']")?.attr("content"))
+            ?: fixUrlNull(document.selectFirst("img")?.attr("src"))
         val description = document.selectFirst("div.description")?.text()?.trim()
+            ?: document.selectFirst("[class*=description]")?.text()?.trim()
         var tags = document.select("ul.post-categories a").map { it.text() }
         val rating = document.selectFirst("div.imdb-count")?.text()?.trim()?.split(" ")?.first()
-        val year = Regex("""(\d+)""").find(document.selectFirst("li.release")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
-        val duration = Regex("""(\d+)""").find(document.selectFirst("li.time")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
+        val year = Regex("""(\\d+)""").find(document.selectFirst("li.release")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
+        val duration = Regex("""(\\d+)""").find(document.selectFirst("li.time")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
         val recommendations = document.select("div.movie-box").mapNotNull { it.toSearchResult() }
         val actors = document.select("[href*='oyuncular']").map { Actor(it.text()) }
 
@@ -194,8 +249,6 @@ class FilmIzleIlk : MainAPI() {
             return false
         }
 
-        // Keep all providers available. A provider is considered successful only
-        // when its extractor actually emits an ExtractorLink.
         val candidates = buildList {
             iframes.firstOrNull { it.contains("oneload", ignoreCase = true) }?.let(::add)
             iframes.firstOrNull {
@@ -220,7 +273,6 @@ class FilmIzleIlk : MainAPI() {
         for (provider in candidates) {
             Log.d("FII", "trying provider » $provider")
             var emittedLink = false
-
             val providerCallback: (ExtractorLink) -> Unit = { link ->
                 emittedLink = true
                 callback(link)
