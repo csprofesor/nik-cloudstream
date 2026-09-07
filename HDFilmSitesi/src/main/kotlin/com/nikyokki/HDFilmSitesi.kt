@@ -83,50 +83,45 @@ class HDFilmSitesi : MainAPI() {
         regex.findAll(normalized).forEach { match ->
             val slug = match.groupValues[1].trim()
             val poster = fixUrlNull(match.groupValues[2].trim())
-            if (slug.isNotBlank() && !poster.isNullOrBlank()) {
-                result[slug] = poster
-            }
+            if (slug.isNotBlank() && !poster.isNullOrBlank()) result[slug] = poster
         }
         return result
     }
 
     private fun Element.findPosterUrl(): String? {
-        val image = selectFirst("img") ?: return null
-
         fun normalize(raw: String): String? {
-            val value = raw.trim()
-                .split(',')
-                .firstOrNull()
-                ?.trim()
-                ?.substringBefore(" ")
-                ?.trim()
-                ?: return null
-
+            val value = raw.trim().split(',').firstOrNull()?.trim()?.substringBefore(" ")?.trim() ?: return null
             if (value.isBlank() || value.startsWith("data:image", ignoreCase = true)) return null
-
             val lower = value.lowercase()
-            if (lower.contains("placeholder") ||
-                lower.contains("no-poster") ||
-                lower.contains("no_poster") ||
-                lower.contains("noimage") ||
-                lower.contains("no-image") ||
-                lower.contains("default-poster")
-            ) return null
-
+            if (lower.contains("placeholder") || lower.contains("no-poster") || lower.contains("no_poster") || lower.contains("noimage") || lower.contains("no-image") || lower.contains("default-poster")) return null
             return fixUrlNull(value)
         }
 
-        sequenceOf(
-            image.attr("data-src"),
-            image.attr("data-lazy-src"),
-            image.attr("data-original"),
-            image.attr("data-srcset"),
-            image.attr("src"),
-            image.attr("srcset")
-        ).forEach { raw ->
-            normalize(raw)?.let { return it }
+        fun scan(element: Element): String? {
+            element.select("img, source").forEach { image ->
+                sequenceOf(
+                    image.attr("data-src"),
+                    image.attr("data-lazy-src"),
+                    image.attr("data-original"),
+                    image.attr("data-image"),
+                    image.attr("data-poster"),
+                    image.attr("data-srcset"),
+                    image.attr("src"),
+                    image.attr("srcset")
+                ).forEach { raw -> normalize(raw)?.let { return it } }
+            }
+            element.select("[style*='background-image']").forEach { styled ->
+                val style = styled.attr("style")
+                Regex("url\\(['\"]?([^'\")]+)").find(style)?.groupValues?.getOrNull(1)?.let { normalize(it)?.let { url -> return url } }
+            }
+            return null
         }
 
+        var current: Element? = this
+        repeat(4) {
+            current?.let { scan(it)?.let { url -> return url } }
+            current = current?.parent()
+        }
         return null
     }
 
@@ -146,13 +141,12 @@ class HDFilmSitesi : MainAPI() {
     private fun Element.toCardResult(posterMap: Map<String, String>): SearchResponse? {
         val href = fixUrlNull(attr("href")) ?: return null
         if (!href.contains("/film/")) return null
-        val card = parent() ?: return null
         val title = findCardTitle() ?: return null
-        val poster = cardSlug()?.let { posterMap[it] } ?: card.findPosterUrl()
+        val poster = findPosterUrl() ?: cardSlug()?.let { posterMap[it] }
         return newMovieSearchResponse(title, href, TvType.Movie) {
             posterUrl = poster
             posterHeaders = browserHeaders
-            score = Score.from10(card.findCardScore())
+            score = Score.from10(parent()?.findCardScore() ?: findCardScore())
         }
     }
 
@@ -160,11 +154,11 @@ class HDFilmSitesi : MainAPI() {
         val href = fixUrlNull(attr("href")) ?: return null
         if (!href.contains("/film/")) return null
         val title = findCardTitle() ?: return null
-        val poster = cardSlug()?.let { posterMap[it] } ?: parent()?.findPosterUrl()
+        val poster = findPosterUrl() ?: cardSlug()?.let { posterMap[it] } ?: parent()?.findPosterUrl()
         return newMovieSearchResponse(title, href, TvType.Movie) {
             posterUrl = poster
             posterHeaders = browserHeaders
-            score = Score.from10(findCardScore())
+            score = Score.from10(findCardScore() ?: parent()?.findCardScore())
         }
     }
 
@@ -184,28 +178,18 @@ class HDFilmSitesi : MainAPI() {
     }
 
     private suspend fun searchPage(url: String): List<SearchResponse> {
-        val document = runCatching {
-            app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
-        }.getOrNull() ?: return emptyList()
+        val document = runCatching { app.get(url, headers = browserHeaders, referer = "$mainUrl/").document }.getOrNull() ?: return emptyList()
         val posters = posterMapFromHtml(document.html())
         return document.select("a.media-card__link")
             .mapNotNull { it.toCardResult(posters) }
-            .ifEmpty {
-                document.select("a[href*='/film/']")
-                    .mapNotNull { it.toFilmLinkResult(posters) }
-            }
+            .ifEmpty { document.select("a[href*='/film/']").mapNotNull { it.toFilmLinkResult(posters) } }
             .distinctBy { it.url }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val q = URLEncoder.encode(query.trim(), "UTF-8")
         if (q.isBlank()) return emptyList()
-        val candidates = listOf(
-            "${mainUrl}/arama/$q",
-            "${mainUrl}/arama?query=$q",
-            "${mainUrl}/arama?q=$q",
-            "${mainUrl}/arama?search=$q"
-        )
+        val candidates = listOf("${mainUrl}/arama/$q", "${mainUrl}/arama?query=$q", "${mainUrl}/arama?q=$q", "${mainUrl}/arama?search=$q")
         for (url in candidates) {
             val results = searchPage(url)
             if (results.isNotEmpty()) return results
@@ -217,43 +201,23 @@ class HDFilmSitesi : MainAPI() {
 
     private fun nextJsMovieValue(html: String, key: String): String? {
         val normalized = normalizedHtml(html)
-        val match = Regex(
-            """"$key"\s*:\s*(?:"((?:\\.|[^"])*)"|([0-9]+(?:\.[0-9]+)?)|null)""",
-            RegexOption.IGNORE_CASE
-        ).find(normalized) ?: return null
-        return match.groupValues[1].takeIf { it.isNotBlank() }
-            ?.replace("\\/", "/")
-            ?.replace("\\u002F", "/")
-            ?: match.groupValues[2].takeIf { it.isNotBlank() }
+        val match = Regex(""""$key"\s*:\s*(?:"((?:\\.|[^"])*)"|([0-9]+(?:\.[0-9]+)?)|null)""", RegexOption.IGNORE_CASE).find(normalized) ?: return null
+        return match.groupValues[1].takeIf { it.isNotBlank() }?.replace("\\/", "/")?.replace("\\u002F", "/") ?: match.groupValues[2].takeIf { it.isNotBlank() }
     }
 
-    private fun nextJsVidMixiUrl(html: String): String? =
-        Regex("""https?://vidmixi\.com/embed/[A-Za-z0-9_-]+""", RegexOption.IGNORE_CASE)
-            .find(normalizedHtml(html))?.value
+    private fun nextJsVidMixiUrl(html: String): String? = Regex("""https?://vidmixi\.com/embed/[A-Za-z0-9_-]+""", RegexOption.IGNORE_CASE).find(normalizedHtml(html))?.value
 
-    private fun jsonLdString(html: String, key: String): String? =
-        Regex(""""$key"\s*:\s*"((?:\\.|[^"\\])*)"""")
-            .find(normalizedHtml(html))?.groupValues?.getOrNull(1)
-            ?.replace("\\/", "/")?.replace("\\u002F", "/")
+    private fun jsonLdString(html: String, key: String): String? = Regex(""""$key"\s*:\s*"((?:\\.|[^"\\])*)"""").find(normalizedHtml(html))?.groupValues?.getOrNull(1)?.replace("\\/", "/")?.replace("\\u002F", "/")
 
-    private fun jsonLdNumber(html: String, key: String): String? =
-        Regex(""""$key"\s*:\s*([0-9]+(?:\.[0-9]+)?)""")
-            .find(normalizedHtml(html))?.groupValues?.getOrNull(1)
+    private fun jsonLdNumber(html: String, key: String): String? = Regex(""""$key"\s*:\s*([0-9]+(?:\.[0-9]+)?)""").find(normalizedHtml(html))?.groupValues?.getOrNull(1)
 
     private fun nextJsActors(html: String): List<Actor> {
         val normalized = normalizedHtml(html)
-        val actorBlock = Regex(
-            """"actors"\s*:\s*\[(.*?)]""",
-            setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)
-        ).find(normalized)?.groupValues?.getOrNull(1) ?: return emptyList()
-
+        val actorBlock = Regex(""""actors"\s*:\s*\[(.*?)]""", setOf(RegexOption.DOT_MATCHES_ALL, RegexOption.IGNORE_CASE)).find(normalized)?.groupValues?.getOrNull(1) ?: return emptyList()
         return Regex("""\{([^{}]*)\}""").findAll(actorBlock).mapNotNull { match ->
             val obj = match.groupValues[1]
-            val name = Regex(""""name"\s*:\s*"([^"]+)"""")
-                .find(obj)?.groupValues?.getOrNull(1)?.trim() ?: return@mapNotNull null
-            val photo = Regex(""""photo_url"\s*:\s*"(https?://[^"]+)"""")
-                .find(obj)?.groupValues?.getOrNull(1)
-                ?.replace(".avif", ".jpg")
+            val name = Regex(""""name"\s*:\s*"([^"]+)"""").find(obj)?.groupValues?.getOrNull(1)?.trim() ?: return@mapNotNull null
+            val photo = Regex(""""photo_url"\s*:\s*"(https?://[^"]+)"""").find(obj)?.groupValues?.getOrNull(1)?.replace(".avif", ".jpg")
             if (photo.isNullOrBlank()) Actor(name) else Actor(name, photo)
         }.distinctBy { it.name }.toList()
     }
@@ -261,16 +225,8 @@ class HDFilmSitesi : MainAPI() {
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
         val html = document.html()
-        val title = nextJsMovieValue(html, "title")
-            ?: jsonLdString(html, "name")
-            ?: document.selectFirst("h1")?.text()?.trim()
-            ?: return null
-        val poster = fixUrlNull(
-            nextJsMovieValue(html, "poster_url")
-                ?: nextJsMovieValue(html, "posterUrl")
-                ?: document.selectFirst("meta[property='og:image']")?.attr("content")
-                ?: document.selectFirst("picture img[src]")?.attr("src")
-        )
+        val title = nextJsMovieValue(html, "title") ?: jsonLdString(html, "name") ?: document.selectFirst("h1")?.text()?.trim() ?: return null
+        val poster = fixUrlNull(nextJsMovieValue(html, "poster_url") ?: nextJsMovieValue(html, "posterUrl") ?: document.selectFirst("meta[property='og:image']")?.attr("content") ?: document.selectFirst("picture img[src]")?.attr("src"))
         val description = nextJsMovieValue(html, "description") ?: jsonLdString(html, "description")
         val year = nextJsMovieValue(html, "year")?.toIntOrNull()
         val tags = document.select("a[href^='/tur/']").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
@@ -280,7 +236,6 @@ class HDFilmSitesi : MainAPI() {
         val trailer = fixUrlNull(nextJsMovieValue(html, "trailer_url") ?: jsonLdString(html, "trailer"))
         val vidMixiUrl = nextJsVidMixiUrl(html)
         Log.d("HDS", "load -> $url | VidMixi=$vidMixiUrl | actors=${actors.size}")
-
         return newMovieLoadResponse(title.substringBefore(" izle"), url, TvType.Movie, vidMixiUrl ?: url) {
             posterUrl = poster
             posterHeaders = browserHeaders + ("Referer" to "$mainUrl/")
@@ -294,8 +249,7 @@ class HDFilmSitesi : MainAPI() {
         }
     }
 
-    private fun hexBytes(value: String): ByteArray =
-        ByteArray(value.length / 2) { i -> value.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+    private fun hexBytes(value: String): ByteArray = ByteArray(value.length / 2) { i -> value.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
 
     private fun evpBytesToKey(password: ByteArray, salt: ByteArray, keySize: Int, ivSize: Int): Pair<ByteArray, ByteArray> {
         val output = ArrayList<Byte>()
@@ -320,126 +274,44 @@ class HDFilmSitesi : MainAPI() {
         cipher.doFinal(cipherBytes).toString(Charsets.UTF_8)
     }.getOrNull()
 
-    private suspend fun resolveVidMixi(
-        embedUrl: String,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    private suspend fun resolveVidMixi(embedUrl: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         val embed = embedUrl.replace("\\/", "/").replace("\\u002F", "/")
-        val embedHeaders = browserHeaders + mapOf(
-            "Origin" to "https://vidmixi.com",
-            "Referer" to "$mainUrl/"
-        )
-        val manifestHeaders = browserHeaders + mapOf(
-            "Origin" to "https://vidmixi.com",
-            "Referer" to embed
-        )
+        val embedHeaders = browserHeaders + mapOf("Origin" to "https://vidmixi.com", "Referer" to "$mainUrl/")
+        val manifestHeaders = browserHeaders + mapOf("Origin" to "https://vidmixi.com", "Referer" to embed)
         Log.d("HDS", "VidMixi resolve -> $embed")
-
-        val response = runCatching {
-            app.get(embed, headers = embedHeaders, referer = "$mainUrl/")
-        }.getOrNull() ?: run {
-            Log.d("HDS", "VidMixi embed request failed")
-            return false
-        }
-
+        val response = runCatching { app.get(embed, headers = embedHeaders, referer = "$mainUrl/") }.getOrNull() ?: run { Log.d("HDS", "VidMixi embed request failed"); return false }
         val html = normalizedHtml(response.text)
-        val bePlayer = Regex(
-            """bePlayer\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"](\{.*?\})['\"]\s*\)""",
-            RegexOption.DOT_MATCHES_ALL
-        ).find(html) ?: run {
-            Log.d("HDS", "bePlayer bulunamadı")
-            return false
-        }
-
+        val bePlayer = Regex("""bePlayer\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"](\{.*?\})['\"]\s*\)""", RegexOption.DOT_MATCHES_ALL).find(html) ?: run { Log.d("HDS", "bePlayer bulunamadı"); return false }
         val password = bePlayer.groupValues[1]
         val settings = bePlayer.groupValues[2]
         val ct = Regex(""""ct"\s*:\s*"([^"]+)"""").find(settings)?.groupValues?.getOrNull(1)
         val salt = Regex(""""s"\s*:\s*"([^"]+)"""").find(settings)?.groupValues?.getOrNull(1)
-        val listUrl = if (ct != null && salt != null) {
-            decryptVidMixi(ct, salt, password)?.let { decrypted ->
-                Regex(""""video_location"\s*:\s*"([^"]+)"""")
-                    .find(decrypted)?.groupValues?.getOrNull(1)
-                    ?.replace("\\/", "/")
-            }
-        } else null
-
-        val directList = Regex(
-            """https?://vidmixi\.com/list/[A-Za-z0-9+/=_-]+""",
-            RegexOption.IGNORE_CASE
-        ).find(html)?.value
-        val finalListUrl = listUrl ?: directList ?: run {
-            Log.d("HDS", "VidMixi video_location/list bulunamadı")
-            return false
-        }
-
-        val manifestResponse = runCatching {
-            app.get(finalListUrl, headers = manifestHeaders, referer = embed)
-        }.getOrNull() ?: run {
-            Log.d("HDS", "VidMixi manifest request failed")
-            return false
-        }
-        if (!manifestResponse.text.trimStart().startsWith("#EXTM3U")) {
-            Log.d("HDS", "VidMixi manifest M3U8 değil")
-            return false
-        }
-
-        Regex("""https?://vidmixi\.com/[^"'\s]+\.vtt""", RegexOption.IGNORE_CASE)
-            .findAll(html)
-            .map { it.value }
-            .distinct()
-            .forEach { subtitleCallback(SubtitleFile("Türkçe", it)) }
-
-        callback(newExtractorLink(this.name, "VidMixi", finalListUrl, ExtractorLinkType.M3U8) {
-            referer = embed
-            headers = manifestHeaders
-            quality = Qualities.Unknown.value
-        })
+        val listUrl = if (ct != null && salt != null) decryptVidMixi(ct, salt, password)?.let { decrypted -> Regex(""""video_location"\s*:\s*"([^"]+)"""").find(decrypted)?.groupValues?.getOrNull(1)?.replace("\\/", "/") } else null
+        val directList = Regex("""https?://vidmixi\.com/list/[A-Za-z0-9+/=_-]+""", RegexOption.IGNORE_CASE).find(html)?.value
+        val finalListUrl = listUrl ?: directList ?: run { Log.d("HDS", "VidMixi video_location/list bulunamadı"); return false }
+        val manifestResponse = runCatching { app.get(finalListUrl, headers = manifestHeaders, referer = embed) }.getOrNull() ?: run { Log.d("HDS", "VidMixi manifest request failed"); return false }
+        if (!manifestResponse.text.trimStart().startsWith("#EXTM3U")) { Log.d("HDS", "VidMixi manifest M3U8 değil"); return false }
+        Regex("""https?://vidmixi\.com/[^"'\s]+\.vtt""", RegexOption.IGNORE_CASE).findAll(html).map { it.value }.distinct().forEach { subtitleCallback(SubtitleFile("Türkçe", it)) }
+        callback(newExtractorLink(this.name, "VidMixi", finalListUrl, ExtractorLinkType.M3U8) { referer = embed; headers = manifestHeaders; quality = Qualities.Unknown.value })
         Log.d("HDS", "VidMixi başarıyla çözüldü -> $finalListUrl")
         return true
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
+    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("HDS", "loadLinks -> $data")
-
-        if (data.contains("vidmixi.com", ignoreCase = true)) {
-            return resolveVidMixi(data, subtitleCallback, callback)
-        }
-
-        val document = runCatching {
-            app.get(data, headers = browserHeaders, referer = "$mainUrl/").document
-        }.getOrNull() ?: run {
-            Log.d("HDS", "Film sayfası açılamadı -> $data")
-            return false
-        }
+        if (data.contains("vidmixi.com", ignoreCase = true)) return resolveVidMixi(data, subtitleCallback, callback)
+        val document = runCatching { app.get(data, headers = browserHeaders, referer = "$mainUrl/").document }.getOrNull() ?: run { Log.d("HDS", "Film sayfası açılamadı -> $data"); return false }
         val embeddedVidMixi = nextJsVidMixiUrl(document.html())
         Log.d("HDS", "Film sayfasındaki VidMixi -> $embeddedVidMixi")
         if (!embeddedVidMixi.isNullOrBlank() && resolveVidMixi(embeddedVidMixi, subtitleCallback, callback)) return true
-
-        val directIframes = document.select("iframe[src], iframe[data-src]")
-            .mapNotNull { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }
-            .distinct()
-
+        val directIframes = document.select("iframe[src], iframe[data-src]").mapNotNull { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }.distinct()
         for (candidate in directIframes) {
-            val providerUrl = runCatching {
-                app.get(candidate, headers = browserHeaders, referer = "$mainUrl/").url.toString()
-            }.getOrDefault(candidate)
-
-            if (providerUrl.contains("vidmixi.com", ignoreCase = true)) {
-                if (resolveVidMixi(providerUrl, subtitleCallback, callback)) return true
-            }
+            val providerUrl = runCatching { app.get(candidate, headers = browserHeaders, referer = "$mainUrl/").url.toString() }.getOrDefault(candidate)
+            if (providerUrl.contains("vidmixi.com", ignoreCase = true) && resolveVidMixi(providerUrl, subtitleCallback, callback)) return true
             if (runCatching { loadExtractor(providerUrl, subtitleCallback, callback) }.getOrDefault(false)) return true
         }
         return false
     }
 
-    data class VidLop(
-        @JsonProperty("hls") val hls: Boolean? = null,
-        @JsonProperty("securedLink") val securedLink: String? = null
-    )
+    data class VidLop(@JsonProperty("hls") val hls: Boolean? = null, @JsonProperty("securedLink") val securedLink: String? = null)
 }
