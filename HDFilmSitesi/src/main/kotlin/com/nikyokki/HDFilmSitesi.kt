@@ -5,6 +5,7 @@ import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
+import com.lagradost.cloudstream3.LoadResponse
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.MainAPI
@@ -223,7 +224,7 @@ class HDFilmSitesi : MainAPI() {
                 .find(obj)?.groupValues?.getOrNull(1)
                 ?.replace(".avif", ".jpg")
             if (photo.isNullOrBlank()) Actor(name) else Actor(name, photo)
-        }.distinctBy { it.name }
+        }.distinctBy { it.name }.toList()
     }
 
     override suspend fun load(url: String): LoadResponse? {
