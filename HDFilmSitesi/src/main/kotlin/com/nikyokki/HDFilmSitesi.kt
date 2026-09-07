@@ -124,17 +124,9 @@ class HDFilmSitesi : MainAPI() {
     }
 
     private fun Element.findCardScore(): String? {
-        val score = select("span")
+        return select("span")
             .map { it.text().trim().replace(',', '.') }
             .firstOrNull { Regex("^([0-9]|10)(\\.[0-9])?$").matches(it) }
-        return score
-    }
-
-    private fun Element.findCardYear(): Int? {
-        return Regex("\\b(19|20)\\d{2}\\b")
-            .find(selectFirst("h3")?.parent()?.text().orEmpty())
-            ?.value
-            ?.toIntOrNull()
     }
 
     private fun Element.toCardResult(): SearchResponse? {
@@ -184,78 +176,51 @@ class HDFilmSitesi : MainAPI() {
 
     private fun jsonLdString(html: String, key: String): String? {
         return Regex("""\"$key\"\\s*:\\s*\"((?:\\\\.|[^\"\\\\])*)\"""")
-            .find(html)
-            ?.groupValues
-            ?.getOrNull(1)
-            ?.replace("\\/", "/")
-            ?.replace("\\u002F", "/")
+            .find(html)?.groupValues?.getOrNull(1)
+            ?.replace("\\/", "/")?.replace("\\u002F", "/")
     }
 
     private fun jsonLdNumber(html: String, key: String): String? {
         return Regex("""\"$key\"\\s*:\\s*([0-9]+(?:\\.[0-9]+)?)""")
-            .find(html)
-            ?.groupValues
-            ?.getOrNull(1)
+            .find(html)?.groupValues?.getOrNull(1)
     }
 
     private fun jsonLdActors(html: String): List<Actor> {
         val actorBlock = Regex("""\"actor\"\\s*:\\s*\[(.*?)]""", RegexOption.DOT_MATCHES_ALL)
             .find(html)?.groupValues?.getOrNull(1).orEmpty()
         return Regex("""\"name\"\\s*:\\s*\"([^\"]+)\"""")
-            .findAll(actorBlock)
-            .map { Actor(it.groupValues[1]) }
-            .toList()
-            .distinctBy { it.name }
+            .findAll(actorBlock).map { Actor(it.groupValues[1]) }.toList().distinctBy { it.name }
     }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
         val html = document.html()
-
         val title = jsonLdString(html, "name")
             ?: document.selectFirst("h1")?.text()?.trim()
             ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.trim()
             ?: return null
-
         val poster = fixUrlNull(
             document.selectFirst("picture source[srcset]")?.attr("srcset")
                 ?: jsonLdString(html, "thumbnailUrl")
                 ?: jsonLdString(html, "image")
                 ?: document.selectFirst("meta[property='og:image']")?.attr("content")
         )
-
         val description = jsonLdString(html, "description")
             ?: document.selectFirst("[itemprop='description']")?.text()?.trim()
-
         val year = document.selectFirst("a[href^='/yil/']")?.text()?.trim()?.toIntOrNull()
-            ?: Regex("\\b(19|20)\\d{2}\\b")
-                .find(document.selectFirst("h2")?.text().orEmpty())?.value?.toIntOrNull()
-
-        val tags = document.select("a[href^='/tur/']")
-            .map { it.text().trim() }
-            .filter { it.isNotBlank() }
-            .distinct()
-
+            ?: Regex("\\b(19|20)\\d{2}\\b").find(document.selectFirst("h2")?.text().orEmpty())?.value?.toIntOrNull()
+        val tags = document.select("a[href^='/tur/']").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
         val rating = jsonLdNumber(html, "ratingValue")
             ?: document.select("span").firstOrNull { it.text().trim().matches(Regex("[0-9](\\.[0-9])?")) }?.text()?.trim()
-
         val duration = jsonLdString(html, "duration")?.let {
             Regex("PT(?:(\\d+)H)?(?:(\\d+)M)?").matchEntire(it)?.let { match ->
-                val hours = match.groupValues.getOrNull(1)?.toIntOrNull() ?: 0
-                val minutes = match.groupValues.getOrNull(2)?.toIntOrNull() ?: 0
-                hours * 60 + minutes
+                (match.groupValues.getOrNull(1)?.toIntOrNull() ?: 0) * 60 + (match.groupValues.getOrNull(2)?.toIntOrNull() ?: 0)
             }
         }
-
         val actors = jsonLdActors(html).ifEmpty {
             document.select("a[href*='/oyuncu/']").map { Actor(it.text().trim(), it.attr("href")) }.distinctBy { it.name }
         }
-
-        val trailer = fixUrlNull(
-            document.selectFirst("[property='og:video']")?.attr("content")
-                ?: jsonLdString(html, "trailer")
-        )
-
+        val trailer = fixUrlNull(document.selectFirst("[property='og:video']")?.attr("content") ?: jsonLdString(html, "trailer"))
         val isSeries = document.selectFirst("div.part_buton_sec")?.text()?.contains("Sezon", ignoreCase = true) == true
 
         if (isSeries) {
@@ -266,9 +231,7 @@ class HDFilmSitesi : MainAPI() {
                 val key = match.groupValues[1]
                 val value = match.groupValues[2]
                 val iframeData = runCatching { iframeSkici.iframeCoz(value) }.getOrNull() ?: continue
-                val iframeLink = runCatching {
-                    app.get(iframeData, headers = browserHeaders, referer = "$mainUrl/").url.toString()
-                }.getOrDefault(iframeData)
+                val iframeLink = runCatching { app.get(iframeData, headers = browserHeaders, referer = "$mainUrl/").url.toString() }.getOrDefault(iframeData)
                 val season = key.substringAfter("prt_").substringBefore("sezon").toIntOrNull() ?: 1
                 val episode = (key.substringAfter("sezon").toIntOrNull() ?: 0) + 1
                 episodes.add(newEpisode(iframeLink) {
@@ -338,8 +301,12 @@ class HDFilmSitesi : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
+        val headers = browserHeaders + mapOf(
+            "Origin" to "https://vidmixi.com",
+            "Referer" to embedUrl
+        )
         val embed = runCatching {
-            app.get(embedUrl, headers = browserHeaders, referer = "$mainUrl/")
+            app.get(embedUrl, headers = headers, referer = "https://vidmixi.com/")
         }.getOrNull() ?: return false
 
         val html = embed.text
@@ -365,34 +332,22 @@ class HDFilmSitesi : MainAPI() {
             } else null
         }
 
-        val directList = Regex("https?://vidmixi\\.com/list/[A-Za-z0-9+/=_-]+", RegexOption.IGNORE_CASE)
-            .find(html)?.value
+        val directList = Regex("https?://vidmixi\\.com/list/[A-Za-z0-9+/=_-]+", RegexOption.IGNORE_CASE).find(html)?.value
         val finalListUrl = listUrl ?: directList ?: return false
-
         val manifestResponse = runCatching {
-            app.get(finalListUrl, headers = browserHeaders + ("Referer" to embedUrl), referer = embedUrl)
+            app.get(finalListUrl, headers = headers, referer = embedUrl)
         }.getOrNull() ?: return false
-
         if (!manifestResponse.text.trimStart().startsWith("#EXTM3U")) return false
 
         Regex("""https?://vidmixi\.com/[^\"'\s]+\.vtt""", RegexOption.IGNORE_CASE)
-            .findAll(html)
-            .map { it.value }
-            .distinct()
+            .findAll(html).map { it.value }.distinct()
             .forEach { subtitleCallback(SubtitleFile("Türkçe", it)) }
 
-        callback(
-            newExtractorLink(
-                source = this.name,
-                name = "VidMixi",
-                url = finalListUrl,
-                type = ExtractorLinkType.M3U8
-            ) {
-                referer = embedUrl
-                headers = browserHeaders + ("Referer" to embedUrl)
-                quality = Qualities.Unknown.value
-            }
-        )
+        callback(newExtractorLink(this.name, "VidMixi", finalListUrl, ExtractorLinkType.M3U8) {
+            referer = embedUrl
+            this.headers = headers
+            quality = Qualities.Unknown.value
+        })
         return true
     }
 
@@ -404,25 +359,34 @@ class HDFilmSitesi : MainAPI() {
     ): Boolean {
         Log.d("HDS", "loadLinks -> $data")
 
-        if (data.contains("vidmixi.com", ignoreCase = true) &&
-            resolveVidMixi(data, subtitleCallback, callback)
-        ) return true
+        if (data.contains("vidmixi.com", ignoreCase = true) && resolveVidMixi(data, subtitleCallback, callback)) return true
 
         val document = runCatching {
             app.get(data, headers = browserHeaders, referer = "$mainUrl/").document
         }.getOrNull() ?: return false
+        val html = document.html()
+
+        // DiziFilmizle yeni tasarımında VidMixi iframe'i DOM iframe olarak değil,
+        // Next.js verisi içinde parts[].url olarak geliyor. Bu yüzden doğrudan HTML
+        // içinden embed adresini de çıkarıyoruz.
+        val embeddedVidMixi = Regex(
+            "https?://vidmixi\\.com/embed/[A-Za-z0-9_-]+",
+            RegexOption.IGNORE_CASE
+        ).find(html)?.value
+
+        if (!embeddedVidMixi.isNullOrBlank() && resolveVidMixi(embeddedVidMixi, subtitleCallback, callback)) return true
 
         val pdataRegex = Regex("""pdata\['(.*?)'\]\s*=\s*'(.*?)';""")
-        val encoded = pdataRegex.findAll(document.html()).map { it.groupValues[2] }.toList()
+        val encoded = pdataRegex.findAll(html).map { it.groupValues[2] }.toList()
         val directIframes = document.select("iframe[src], iframe[data-src]")
             .mapNotNull { fixUrlNull(it.attr("src").ifBlank { it.attr("data-src") }) }
-        val candidates = (encoded.mapNotNull { runCatching { IframeKodlayici().iframeCoz(it) }.getOrNull() } + directIframes).distinct()
+        val candidates = (encoded.mapNotNull { runCatching { IframeKodlayici().iframeCoz(it) }.getOrNull() } + directIframes)
+            .distinct()
 
         for (candidate in candidates) {
             val providerUrl = runCatching {
                 app.get(candidate, headers = browserHeaders, referer = "$mainUrl/").url.toString()
             }.getOrDefault(candidate)
-
             when {
                 providerUrl.contains("vidmixi.com", ignoreCase = true) -> {
                     if (resolveVidMixi(providerUrl, subtitleCallback, callback)) return true
