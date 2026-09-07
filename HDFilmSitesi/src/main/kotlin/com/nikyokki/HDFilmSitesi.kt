@@ -103,7 +103,7 @@ class HDFilmSitesi : MainAPI() {
                 .removePrefix("'")
                 .removeSuffix("'")
                 .trim()
-                .substringBefore(Regex("\\s+"))
+                .substringBefore(" ")
                 .trim()
             if (value.isBlank() || value.startsWith("data:image")) return null
             return fixUrlNull(value)
