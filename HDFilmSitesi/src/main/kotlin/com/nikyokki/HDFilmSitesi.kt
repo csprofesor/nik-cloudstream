@@ -77,26 +77,57 @@ class HDFilmSitesi : MainAPI() {
         val result = mutableMapOf<String, String>()
         val normalized = normalizedHtml(html)
         val regex = Regex(
-            """"slug"\s*:\s*"([^"]+)".{0,2500}?"(?:poster_url|posterUrl)"\s*:\s*"(https?://[^"]+)"""",
+            """"slug"\s*:\s*"([^"]+)".{0,2500}?"(?:poster_url|posterUrl)"\s*:\s*"([^"]+)"""",
             RegexOption.DOT_MATCHES_ALL
         )
         regex.findAll(normalized).forEach { match ->
-            result[match.groupValues[1]] = match.groupValues[2]
+            val slug = match.groupValues[1].trim()
+            val poster = fixUrlNull(match.groupValues[2].trim())
+            if (slug.isNotBlank() && !poster.isNullOrBlank()) {
+                result[slug] = poster
+            }
         }
         return result
     }
 
     private fun Element.findPosterUrl(): String? {
         val image = selectFirst("img") ?: return null
-        val raw = sequenceOf(
-            image.attr("src"),
+
+        fun normalize(raw: String): String? {
+            val value = raw.trim()
+                .split(',')
+                .firstOrNull()
+                ?.trim()
+                ?.substringBefore(" ")
+                ?.trim()
+                ?: return null
+
+            if (value.isBlank() || value.startsWith("data:image", ignoreCase = true)) return null
+
+            val lower = value.lowercase()
+            if (lower.contains("placeholder") ||
+                lower.contains("no-poster") ||
+                lower.contains("no_poster") ||
+                lower.contains("noimage") ||
+                lower.contains("no-image") ||
+                lower.contains("default-poster")
+            ) return null
+
+            return fixUrlNull(value)
+        }
+
+        sequenceOf(
             image.attr("data-src"),
             image.attr("data-lazy-src"),
             image.attr("data-original"),
-            image.attr("srcset"),
-            image.attr("data-srcset")
-        ).firstOrNull { it.isNotBlank() } ?: return null
-        return fixUrlNull(raw.split(',').firstOrNull()?.trim()?.substringBefore(" ") ?: return null)
+            image.attr("data-srcset"),
+            image.attr("src"),
+            image.attr("srcset")
+        ).forEach { raw ->
+            normalize(raw)?.let { return it }
+        }
+
+        return null
     }
 
     private fun Element.findCardTitle(): String? =
