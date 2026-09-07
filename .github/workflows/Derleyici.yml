@@ -93,6 +93,7 @@ jobs:
           if manifest.exists():
               data = json.loads(manifest.read_text(encoding='utf-8'))
               built = {p.stem: p for p in root.glob('*.cs3')}
+              data = [item for item in data if item.get('internalName') in built]
               updated = 0
               for item in data:
                   internal = item.get('internalName')
