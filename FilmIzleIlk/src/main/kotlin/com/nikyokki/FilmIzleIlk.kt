@@ -90,7 +90,7 @@ class FilmIzleIlk : MainAPI() {
         val href = fixUrlNull(this.selectFirst("div.name a")?.attr("href")) ?: return null
         val posterUrl = fixUrlNull(this.selectFirst("div.img img")?.attr("src"))
 
-        val score = this.selectFirst("div.rating span")?.text()?.trim()
+        val score = this.selectFirst("div.rating span, div.imdb, .imdb, [class*=rating]")?.text()?.trim()
 
         return if (href.contains("/dizi/")) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
@@ -204,16 +204,18 @@ class FilmIzleIlk : MainAPI() {
         val document = app.get(data).document
         val iframes = mutableSetOf<String>()
 
-        val mainFrame = document.selectFirst("iframe")?.attr("src")
+        val mainFrame = document.selectFirst("iframe[src]")?.attr("src")
         Log.d("FII", "mainFrame » $mainFrame")
-        iframes.add(mainFrame!!)
+        mainFrame?.takeIf { it.isNotBlank() }?.let { iframes.add(fixUrlNull(it) ?: it) }
 
         document.select("div.parts-middle").forEach {
             val alternatif = it.selectFirst("a")?.attr("href")
             if (alternatif != null) {
                 val alternatifDocument = app.get(alternatif).document
                 val alternatifFrame = getIframe(alternatifDocument.html())
-                iframes.add(alternatifFrame)
+                if (alternatifFrame.isNotBlank()) {
+                    iframes.add(alternatifFrame)
+                }
             }
         }
 
