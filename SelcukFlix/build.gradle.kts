@@ -1,9 +1,9 @@
-version = 6
+version = 1
 
 cloudstream {
     authors = listOf("csprofesor")
     language    = "tr"
-    description = "Selcukflix'te her türden en yeni ve en popüler dizi ve filmleri izlemenin keyfini çıkarın. Aksiyondan romantiğe, bilim kurgudan dramaya, geniş kütüphanemizde herkes için bir şey var."
+    description = "SelcukFlix eklentisi."
 
     /**
      * Status int as the following:
@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("Movie", "TvSeries")
-    iconUrl = "https://www.google.com/s2/favicons?domain=selcukflix.com&sz=%size%"
+    iconUrl = "https://selcukflix.co/assets/favicon/favicon-32x32.png"
 }
