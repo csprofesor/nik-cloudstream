@@ -245,7 +245,7 @@ class HintFilmIzle : MainAPI() {
                 } catch (_) { return false; }
             })()
         """.trimIndent()
-        val resolver = WebViewResolver(interceptUrl = manifestRegex, additionalUrls = emptyList(), userAgent = userAgent, useOkhttp = false, timeout = 90_000L, script = script)
+        val resolver = WebViewResolver(interceptUrl = manifestRegex, additionalUrls = emptyList(), userAgent = userAgent, useOkhttp = true, timeout = 90_000L, script = script)
         val requestHeaders = mapOf("Referer" to parentUrl, "Origin" to "https://www.hintfilmizle.com", "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7", "User-Agent" to userAgent)
         resolver.resolveUsingWebView(url = livePlayerUrl, referer = parentUrl, headers = requestHeaders) { request ->
             val requestUrl = request.url.toString(); Log.d("HintFilmIzle", "KINESCOPE_REQUEST=" + requestUrl)
