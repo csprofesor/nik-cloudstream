@@ -287,8 +287,35 @@ class HintFilmIzle : MainAPI() {
                     function inspectText(text) {
                         try {
                             var direct = findManifest(text, []);
-                            if (direct) trigger(direct);
+                            if (direct) {
+                                trigger(direct);
+                                return;
+                            }
+
                             var parsed = JSON.parse(text);
+
+                            if (parsed && typeof parsed.p === 'string') {
+                                try {
+                                    var key = 'RySdvcyu5iTUxn97v4HwoniwgxaCynA';
+                                    var encoded = parsed.p.split('').reverse().join('');
+                                    var binary = atob(encoded);
+                                    var out = new Uint8Array(binary.length);
+
+                                    for (var i = 0; i < binary.length; i++) {
+                                        out[i] = binary.charCodeAt(i) ^ key.charCodeAt(i % key.length);
+                                    }
+
+                                    var decoded = new TextDecoder('utf-8').decode(out);
+                                    var decrypted = JSON.parse(decoded);
+                                    var nested = findManifest(decrypted, []);
+
+                                    if (nested) {
+                                        trigger(nested);
+                                        return;
+                                    }
+                                } catch (_) {}
+                            }
+
                             var nested = findManifest(parsed, []);
                             if (nested) trigger(nested);
                         } catch (_) {}
