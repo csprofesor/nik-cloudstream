@@ -202,60 +202,57 @@ class HintFilmIzle : MainAPI() {
             append("https://river-3-329.kinescopecdn.net/677113747/embed/"); append(videoId); append("?design=3&lang="); append(URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")); append("&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc="); append(System.currentTimeMillis() / 1000L)
         }
         val manifestRegex = Regex("""https?://[^\"'\\s]+\.kinescopecdn\.net/hls/[^\"'\\s]+/index\.m3u8(?:\?[^\"'\\s]*)?""", RegexOption.IGNORE_CASE)
+        val apiRegex = Regex("""https?://[^\"'\\s]+/api/v1/embed/[^\"'\\s]+""", RegexOption.IGNORE_CASE)
         var capturedManifest: String? = null
-        var capturedHeaders: Map<String, String> = emptyMap()
+        var capturedManifestHeaders: Map<String, String> = emptyMap()
+        var capturedApiUrl: String? = null
+        var capturedApiHeaders: Map<String, String> = emptyMap()
         val script = """
             (function() {
                 try {
-                    if (window.__csKinescopeFixV3) return true;
-                    window.__csKinescopeFixV3 = true;
-                    function findManifest(value, seen) {
-                        try {
-                            if (value == null) return null;
-                            if (typeof value === 'string') { var m = value.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i); return m ? m[0] : null; }
-                            if (typeof value !== 'object') return null;
-                            seen = seen || []; if (seen.indexOf(value) >= 0) return null; seen.push(value);
-                            if (Array.isArray(value)) { for (var i = 0; i < value.length; i++) { var a = findManifest(value[i], seen); if (a) return a; } }
-                            else { for (var k in value) { try { var b = findManifest(value[k], seen); if (b) return b; } catch (_) {} } }
-                        } catch (_) {} return null;
-                    }
-                    function trigger(url) { try { if (!url || window.__csKinescopeManifest === url) return; window.__csKinescopeManifest = url; var video = document.createElement('video'); video.muted = true; video.preload = 'auto'; video.setAttribute('playsinline', ''); video.src = url; document.documentElement.appendChild(video); video.load(); } catch (_) {} }
-                    function inspectText(text) {
-                        try {
-                            var direct = findManifest(text, []); if (direct) { trigger(direct); return; }
-                            var parsed = JSON.parse(text);
-                            if (parsed && typeof parsed.p === 'string') {
-                                try {
-                                    var key = 'RySdvcyu5iTUxn97v4HwoniwgxaCynA'; var encoded = parsed.p.split('').reverse().join(''); var binary = atob(encoded); var out = new Uint8Array(binary.length);
-                                    for (var i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i) ^ key.charCodeAt(i % key.length);
-                                    var decoded = new TextDecoder('utf-8').decode(out); var decrypted = JSON.parse(decoded); var nested = findManifest(decrypted, []);
-                                    if (nested) { trigger(nested); return; }
-                                } catch (_) {}
-                            }
-                            var nested = findManifest(parsed, []); if (nested) trigger(nested);
-                        } catch (_) {}
-                    }
-                    var nativeFetch = window.fetch;
-                    if (nativeFetch) window.fetch = function() { try { var fi = arguments[0]; var fu = typeof fi === 'string' ? fi : (fi && fi.url); if (/\.m3u8(?:\?|$)/i.test(String(fu || ''))) trigger(String(fu)); } catch (_) {} return nativeFetch.apply(this, arguments).then(function(response) { try { response.clone().text().then(inspectText).catch(function(){}); } catch (_) {} return response; }); };
-                    var nativeOpen = XMLHttpRequest.prototype.open; var nativeSend = XMLHttpRequest.prototype.send;
-                    XMLHttpRequest.prototype.open = function(method, url) { this.__csUrl = url; return nativeOpen.apply(this, arguments); };
-                    XMLHttpRequest.prototype.send = function() { try { this.addEventListener('load', function() { var u = String(this.__csUrl || ''); if (/\.m3u8(?:\?|$)/i.test(u)) trigger(u); if (u.indexOf('/api/v1/embed/') >= 0) { try { inspectText(this.responseText || ''); } catch (_) {} } }); } catch (_) {} return nativeSend.apply(this, arguments); };
-                    function play(root) { try { if (!root || !root.querySelectorAll) return; root.querySelectorAll('video,button,[role="button"],[aria-label],[title]').forEach(function(el) { try { if (el.tagName && el.tagName.toLowerCase() === 'video') { el.muted = true; el.setAttribute('muted',''); el.setAttribute('playsinline',''); var p = el.play(); if (p && p.catch) p.catch(function(){}); } var t = ((el.getAttribute('aria-label') || '') + ' ' + (el.getAttribute('title') || '') + ' ' + (typeof el.className === 'string' ? el.className : '') + ' ' + (el.id || '')).toLowerCase(); if (t.indexOf('play') >= 0 || t.indexOf('oynat') >= 0) el.click(); } catch (_) {} }); root.querySelectorAll('*').forEach(function(el) { if (el.shadowRoot) play(el.shadowRoot); }); } catch (_) {} }
-                    play(document); var observer = new MutationObserver(function(){ play(document); }); observer.observe(document.documentElement || document, {childList:true,subtree:true}); var timer = setInterval(function(){ play(document); }, 700); setTimeout(function(){ clearInterval(timer); try { observer.disconnect(); } catch (_) {} }, 70000); return true;
+                    var nativePlay = HTMLMediaElement.prototype.play;
+                    HTMLMediaElement.prototype.play = function() {
+                        try { this.muted = true; this.setAttribute('muted', ''); this.setAttribute('playsinline', ''); } catch (_) {}
+                        return nativePlay.apply(this, arguments);
+                    };
+                    document.querySelectorAll('video').forEach(function(v) {
+                        try { v.muted = true; v.setAttribute('muted',''); v.setAttribute('playsinline',''); var p=v.play(); if(p&&p.catch)p.catch(function(){}); } catch (_) {}
+                    });
+                    return true;
                 } catch (_) { return false; }
             })()
         """.trimIndent()
-        val resolver = WebViewResolver(interceptUrl = manifestRegex, additionalUrls = emptyList(), userAgent = userAgent, useOkhttp = true, timeout = 90_000L, script = script)
+        val resolver = WebViewResolver(interceptUrl = manifestRegex, additionalUrls = listOf(apiRegex), userAgent = userAgent, useOkhttp = false, timeout = 45_000L, script = script)
         val requestHeaders = mapOf("Referer" to parentUrl, "Origin" to "https://www.hintfilmizle.com", "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7", "User-Agent" to userAgent)
         resolver.resolveUsingWebView(url = livePlayerUrl, referer = parentUrl, headers = requestHeaders) { request ->
             val requestUrl = request.url.toString(); Log.d("HintFilmIzle", "KINESCOPE_REQUEST=" + requestUrl)
-            if (manifestRegex.containsMatchIn(requestUrl)) { capturedManifest = requestUrl; capturedHeaders = request.headers.toMap(); true } else false
+            when {
+                manifestRegex.containsMatchIn(requestUrl) -> { capturedManifest = requestUrl; capturedManifestHeaders = request.headers.toMap(); true }
+                apiRegex.containsMatchIn(requestUrl) -> { capturedApiUrl = requestUrl; capturedApiHeaders = request.headers.toMap(); Log.d("HintFilmIzle", "KINESCOPE_API_CAPTURED=true"); true }
+                else -> false
+            }
         }
-        val manifestUrl = capturedManifest ?: return false
-        val finalHeaders = linkedMapOf("Referer" to (capturedHeaders["Referer"] ?: livePlayerUrl), "User-Agent" to (capturedHeaders["User-Agent"] ?: userAgent), "Accept" to (capturedHeaders["Accept"] ?: "*/*"))
-        capturedHeaders["Origin"]?.takeIf { it.isNotBlank() }?.let { finalHeaders["Origin"] = it }
-        capturedHeaders["Accept-Language"]?.takeIf { it.isNotBlank() }?.let { finalHeaders["Accept-Language"] = it }
-        callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = manifestUrl, type = ExtractorLinkType.M3U8) { referer = finalHeaders["Referer"] ?: livePlayerUrl; headers = finalHeaders; quality = getQualityFromName(manifestUrl) })
+        capturedManifest?.let { manifestUrl ->
+            val finalHeaders = linkedMapOf("Referer" to (capturedManifestHeaders["Referer"] ?: livePlayerUrl), "User-Agent" to (capturedManifestHeaders["User-Agent"] ?: userAgent), "Accept" to (capturedManifestHeaders["Accept"] ?: "*/*"))
+            capturedManifestHeaders["Origin"]?.takeIf { it.isNotBlank() }?.let { finalHeaders["Origin"] = it }
+            capturedManifestHeaders["Accept-Language"]?.takeIf { it.isNotBlank() }?.let { finalHeaders["Accept-Language"] = it }
+            callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = manifestUrl, type = ExtractorLinkType.M3U8) { referer = finalHeaders["Referer"] ?: livePlayerUrl; headers = finalHeaders; quality = getQualityFromName(manifestUrl) })
+            return true
+        }
+        val apiUrl = capturedApiUrl ?: return false
+        val apiHeaders = linkedMapOf("User-Agent" to (capturedApiHeaders["User-Agent"] ?: userAgent), "Referer" to (capturedApiHeaders["Referer"] ?: parentUrl), "Origin" to (capturedApiHeaders["Origin"] ?: "https://www.hintfilmizle.com"), "Accept" to (capturedApiHeaders["Accept"] ?: "application/json,text/plain,*/*"))
+        capturedApiHeaders["Accept-Language"]?.takeIf { it.isNotBlank() }?.let { apiHeaders["Accept-Language"] = it }
+        val apiText = app.get(apiUrl, referer = parentUrl, headers = apiHeaders).text
+        val encrypted = org.json.JSONObject(apiText).optString("p").takeIf { it.isNotBlank() } ?: return false
+        val decodedBase64 = android.util.Base64.decode(encrypted.reversed(), android.util.Base64.DEFAULT)
+        val key = "RySdvcyu5iTUxn97v4HwoniwgxaCynA"
+        val decryptedBytes = ByteArray(decodedBase64.size)
+        for (i in decodedBase64.indices) decryptedBytes[i] = (decodedBase64[i].toInt() xor key[i % key.length].code).toByte()
+        val decrypted = decryptedBytes.toString(Charsets.UTF_8)
+        val streams = Regex("""https?://[^\"'\\s]+\.kinescopecdn\.net/hls/[^\"'\\s]+/index\.m3u8(?:\?[^\"'\\s]*)?""", RegexOption.IGNORE_CASE).findAll(decrypted).map { it.value }.distinct().toList()
+        Log.d("HintFilmIzle", "KINESCOPE_STREAM_COUNT=" + streams.size)
+        if (streams.isEmpty()) return false
+        streams.forEach { stream -> callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = stream, type = ExtractorLinkType.M3U8) { referer = parentUrl; headers = mapOf("Referer" to parentUrl, "User-Agent" to userAgent); quality = getQualityFromName(stream) }) }
         true
     }.getOrElse { Log.e("HintFilmIzle", "KINESCOPE_FAILED", it); false }
 
