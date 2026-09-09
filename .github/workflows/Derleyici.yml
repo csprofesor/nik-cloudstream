@@ -45,18 +45,19 @@ jobs:
           java-version: 17
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
-      - name: Kinescope Android Resolver Testi
+      - name: Kinescope Android WebView Test Yaması
         run: |
           cd $GITHUB_WORKSPACE/src
           python3 - <<'PY'
           from pathlib import Path
           p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
           s = p.read_text(encoding='utf-8')
-          old = 'useOkhttp = false'
+          old = 'background=1&enableIframeApi=1'
           if old not in s:
-              raise SystemExit('Beklenen useOkhttp = false bulunamadı')
-          p.write_text(s.replace(old, 'useOkhttp = true', 1), encoding='utf-8')
-          print('Kinescope Resolver build sırasında useOkhttp=true yapıldı; master kaynak dosyası değiştirilmedi.')
+              raise SystemExit('Beklenen Kinescope background/enableIframeApi parametreleri bulunamadı')
+          s = s.replace(old, 'dnt=1', 1)
+          p.write_text(s, encoding='utf-8')
+          print('Build test patch: Kinescope background=1 ve enableIframeApi=1 kaldırıldı, dnt=1 eklendi; master kaynak dosyası değiştirilmedi.')
           PY
       - name: Tüm Eklentileri Derle
         run: |
