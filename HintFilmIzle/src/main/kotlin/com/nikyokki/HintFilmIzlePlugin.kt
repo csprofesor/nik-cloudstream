@@ -167,22 +167,75 @@ class HintFilmIzle : MainAPI() {
         selectors.asSequence().mapNotNull { document.selectFirst(it)?.text()?.trim() }.firstOrNull { it.isNotBlank() }
 
     private fun findNumber(text: String, vararg labels: String): String? =
-        Regex("(?:${labels.joinToString("|") { Regex.escape(it) }})\\s*[:\\-]?\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE)
+        Regex("(?:${labels.joinToString("|") { Regex.escape(it) }})(?:\s+[A-Za-zÇĞİÖŞÜçğıöşü]+){0,3}\s*[:\-]?\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE)
             .find(text)?.groupValues?.getOrNull(1)
+
+    private fun sectionText(body: String, start: String, end: String): String? =
+        Regex("${Regex.escape(start)}\s+(.*?)\s+${Regex.escape(end)}", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .find(body)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+
+    private fun extractGenreTags(document: org.jsoup.nodes.Document, body: String): List<String> {
+        val domTags = document.select(".genres a, .genre a, .genreList a, .categories a, .post-categories a, a[href*='/tur/']")
+            .map { it.text().trim() }
+            .filter { it.isNotBlank() && it.length < 80 && it.contains("Film", true) }
+            .distinct()
+        if (domTags.isNotEmpty()) return domTags
+
+        val match = Regex(
+            "Türü\s*:\s*((?:[A-ZÇĞİÖŞÜ][^,]+?Filmleri(?:\s*,\s*)?)+)",
+            RegexOption.IGNORE_CASE
+        ).find(body) ?: return emptyList()
+
+        return match.groupValues[1]
+            .split(',')
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
+    private fun extractActors(document: org.jsoup.nodes.Document, body: String): List<Actor> {
+        val direct = document.select(".actors a, .cast a, .oyuncular a, .cast-list a, .actor-list a")
+            .mapNotNull { it.text().trim().takeIf(String::isNotBlank)?.let(::Actor) }
+            .distinctBy { it.name }
+        if (direct.isNotEmpty()) return direct
+
+        val heading = document.getElementsContainingOwnText("ÖNE ÇIKAN OYUNCULAR").firstOrNull()
+        val container = heading?.parents()?.plus(heading)?.firstOrNull { element ->
+            val text = element.text()
+            val links = element.select("a")
+            text.contains("ÖNE ÇIKAN OYUNCULAR", true) &&
+                text.contains("YÖNETMEN", true) &&
+                links.size in 1..30
+        }
+        return container?.select("a")
+            ?.mapNotNull { it.text().trim().takeIf(String::isNotBlank)?.let(::Actor) }
+            ?.distinctBy { it.name }
+            .orEmpty()
+    }
 
     override suspend fun load(url: String): LoadResponse? {
         val document = runCatching { app.get(url, referer = "$mainUrl/", headers = browserHeaders()).document }.getOrNull() ?: return null
         val title = firstText(document, "h1", ".entry-title", ".film-title", ".movie-title", ".serieTitle") ?: return null
         val poster = cleanUrl(document.selectFirst("meta[property='og:image']")?.attr("content"))
             ?: document.selectFirst("article, .movie-detail, .film-detail, .serie-detail")?.posterUrl()
-        val body = document.text()
-        val description = firstText(document, ".description", ".film-description", ".movie-description", ".serieDescription", ".plot", ".summary", ".synopsis", ".film-summary", ".movie-summary", ".entry-content p", ".entry-content > p")
-        val year = Regex("\\b(19|20)\\d{2}\\b").find(body)?.value?.toIntOrNull()
+        val body = document.text().replace(Regex("\s+"), " ").trim()
+
+        val overview = sectionText(body, "GENEL BAKIŞ", "HATA BİLDİR")
+        val description = firstText(
+            document,
+            ".description", ".film-description", ".movie-description", ".serieDescription",
+            ".plot", ".summary", ".synopsis", ".film-summary", ".movie-summary", ".entry-content p", ".entry-content > p"
+        ) ?: overview?.let {
+            it.replaceFirst(Regex("^Türü\s*:\s*(?:[A-ZÇĞİÖŞÜ][^,]+?Filmleri(?:\s*,\s*)?)+\s+", RegexOption.IGNORE_CASE), "")
+                .substringBefore("Bu Film özeti")
+                .trim()
+                .takeIf { text -> text.isNotBlank() }
+        }
+
+        val year = Regex("\b(19|20)\d{2}\b").find(body)?.value?.toIntOrNull()
         val rating = findNumber(body, "IMDb", "IMDB")
-        val tags = document.select(".genres a, .genre a, .genreList a, .categories a, .post-categories a").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
-        val actors = document.select(".actors a, .cast a, .oyuncular a").mapNotNull {
-            it.text().trim().takeIf(String::isNotBlank)?.let(::Actor)
-        }.distinctBy { it.name }
+        val tags = extractGenreTags(document, body)
+        val actors = extractActors(document, body)
         val recommendations = extractResults(document)
         val isSeries = url.contains("/dizi/", true) || document.selectFirst(".episodes, .episode-list, .seasons") != null
         if (isSeries) {
