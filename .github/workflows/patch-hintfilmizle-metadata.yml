@@ -1,0 +1,27 @@
+name: Patch HintFilmIzle metadata
+
+on:
+  push:
+    paths:
+      - ".github/workflows/patch-hintfilmizle-metadata.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'Fix HintFilmIzle metadata parser'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply metadata parser patch
+        run: python3 patch_hintfilmizle_metadata.py
+      - name: Commit source change and remove helper files
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f patch_hintfilmizle_metadata.py .github/workflows/patch-hintfilmizle-metadata.yml
+          git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt patch_hintfilmizle_metadata.py .github/workflows/patch-hintfilmizle-metadata.yml
+          git commit -m "Fix HintFilmIzle metadata parser"
+          git push
