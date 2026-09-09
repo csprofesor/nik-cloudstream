@@ -34,36 +34,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
           token: ${{ github.token }}
-      - name: Kinescope Resolver Düzeltmesi
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import os
-          p = Path(os.environ["GITHUB_WORKSPACE"]) / "src/HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt"
-          s = p.read_text(encoding="utf-8")
-          old = s
-          s = s.replace('additionalUrls = listOf(Regex("""https?://[^\\\"\'\\\\s]*kinescopecdn\\.net/.*""", RegexOption.IGNORE_CASE)),', 'additionalUrls = emptyList(),')
-          s = s.replace('useOkhttp = false,', 'useOkhttp = true,')
-          old_xhr = "this.addEventListener('load', function() { if (String(this.__csUrl || '').indexOf('/api/v1/embed/') >= 0) inspectText(this.responseText || ''); });"
-          new_xhr = "this.addEventListener('load', function() { var u = String(this.__csUrl || ''); if (/\\.m3u8(?:\\?|$)/i.test(u)) trigger(u); if (u.indexOf('/api/v1/embed/') >= 0) { try { inspectText(this.responseText || ''); } catch (_) {} } });"
-          s = s.replace(old_xhr, new_xhr)
-          old_fetch = "window.fetch = function() {\n                            return nativeFetch.apply(this, arguments).then(function(response) {"
-          new_fetch = "window.fetch = function() {\n                            try { var fi = arguments[0]; var fu = typeof fi === 'string' ? fi : (fi && fi.url); if (/\\.m3u8(?:\\?|$)/i.test(String(fu || ''))) trigger(String(fu)); } catch (_) {}\n                            return nativeFetch.apply(this, arguments).then(function(response) {"
-          s = s.replace(old_fetch, new_fetch)
-          if s != old:
-              p.write_text(s, encoding='utf-8')
-              print('Kinescope source patched')
-          else:
-              print('Kinescope source already patched')
-          PY
-          cd "$GITHUB_WORKSPACE/src"
-          if ! git diff --quiet -- HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt; then
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git config user.name "github-actions[bot]"
-            git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
-            git commit -m "Fix Kinescope HLS request discovery [skip ci]"
-            git push origin HEAD:master
-          fi
       - name: Cache Temizle
         run: |
           rm -rf ~/.gradle/caches
