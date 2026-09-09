@@ -84,3 +84,4 @@ jobs:
           git push origin HEAD:builds --force
 
 # Force a fresh manifest rebuild after plugin removals.
+# Build verification: HintFilmIzle duration API fix is now on master.
