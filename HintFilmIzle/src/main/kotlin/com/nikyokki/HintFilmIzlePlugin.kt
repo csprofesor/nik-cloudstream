@@ -196,7 +196,7 @@ class HintFilmIzle : MainAPI() {
     }
 
     private suspend fun loadKinescope(iframeUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
-        val userAgent = browserHeaders()["User-Agent"].orEmpty()
+        val userAgent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
         val videoId = Regex("""/embed/([A-Za-z0-9_-]+)""", RegexOption.IGNORE_CASE).find(iframeUrl)?.groupValues?.getOrNull(1) ?: return false
         val livePlayerUrl = buildString {
             append("https://river-3-329.kinescopecdn.net/677113747/embed/"); append(videoId); append("?design=3&lang="); append(URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")); append("&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc="); append(System.currentTimeMillis() / 1000L)
@@ -212,17 +212,40 @@ class HintFilmIzle : MainAPI() {
                 try {
                     var nativePlay = HTMLMediaElement.prototype.play;
                     HTMLMediaElement.prototype.play = function() {
-                        try { this.muted = true; this.setAttribute('muted', ''); this.setAttribute('playsinline', ''); } catch (_) {}
+                        try { this.muted = true; this.defaultMuted = true; this.autoplay = true; this.setAttribute('muted', ''); this.setAttribute('autoplay', ''); this.setAttribute('playsinline', ''); } catch (_) {}
                         return nativePlay.apply(this, arguments);
                     };
-                    document.querySelectorAll('video').forEach(function(v) {
-                        try { v.muted = true; v.setAttribute('muted',''); v.setAttribute('playsinline',''); var p=v.play(); if(p&&p.catch)p.catch(function(){}); } catch (_) {}
-                    });
+                    var tryPlay = function() {
+                        try {
+                            document.querySelectorAll('video').forEach(function(v) {
+                                try {
+                                    v.muted = true;
+                                    v.defaultMuted = true;
+                                    v.autoplay = true;
+                                    v.setAttribute('muted','');
+                                    v.setAttribute('autoplay','');
+                                    v.setAttribute('playsinline','');
+                                    var p = v.play();
+                                    if (p && p.catch) p.catch(function(){});
+                                } catch (_) {}
+                            });
+                        } catch (_) {}
+                    };
+                    tryPlay();
+                    if (document.documentElement) {
+                        var observer = new MutationObserver(tryPlay);
+                        observer.observe(document.documentElement, {childList:true, subtree:true});
+                    }
+                    var end = Date.now() + 30000;
+                    var timer = setInterval(function() {
+                        tryPlay();
+                        if (Date.now() >= end) clearInterval(timer);
+                    }, 250);
                     return true;
                 } catch (_) { return false; }
             })()
         """.trimIndent()
-        val resolver = WebViewResolver(interceptUrl = manifestRegex, additionalUrls = listOf(apiRegex), userAgent = userAgent, useOkhttp = true, timeout = 45_000L, script = script)
+        val resolver = WebViewResolver(interceptUrl = manifestRegex, additionalUrls = listOf(apiRegex), userAgent = userAgent, useOkhttp = false, timeout = 45_000L, script = script)
         val requestHeaders = mapOf("Referer" to parentUrl, "Origin" to "https://www.hintfilmizle.com", "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7", "User-Agent" to userAgent)
         resolver.resolveUsingWebView(url = livePlayerUrl, referer = parentUrl, headers = requestHeaders) { request ->
             val requestUrl = request.url.toString(); Log.d("HintFilmIzle", "KINESCOPE_REQUEST=" + requestUrl)
