@@ -45,6 +45,19 @@ jobs:
           java-version: 17
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
+      - name: Kinescope Android Resolver Testi
+        run: |
+          cd $GITHUB_WORKSPACE/src
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
+          s = p.read_text(encoding='utf-8')
+          old = 'useOkhttp = false'
+          if old not in s:
+              raise SystemExit('Beklenen useOkhttp = false bulunamadı')
+          p.write_text(s.replace(old, 'useOkhttp = true', 1), encoding='utf-8')
+          print('Kinescope Resolver build sırasında useOkhttp=true yapıldı; master kaynak dosyası değiştirilmedi.')
+          PY
       - name: Tüm Eklentileri Derle
         run: |
           cd $GITHUB_WORKSPACE/src
