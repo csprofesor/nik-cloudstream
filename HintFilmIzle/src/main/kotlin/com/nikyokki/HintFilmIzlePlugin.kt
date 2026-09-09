@@ -101,10 +101,9 @@ class HintFilmIzle : MainAPI() {
             ?: path.substringAfterLast('/').replace(Regex("[-_]+"), " ")
         if (title.isBlank() || title.length > 180) return null
         val poster = card.posterUrl()
-        return if (path.startsWith("/dizi/")) {
-            com.lagradost.cloudstream3.newTvSeriesSearchResponse(title, href, TvType.TvSeries) { posterUrl = poster; score = Score.from10(cardRating(card)) }
-        } else {
-            newMovieSearchResponse(title, href, TvType.Movie) { posterUrl = poster; score = Score.from10(cardRating(card)) }
+        return newMovieSearchResponse(title, href, TvType.Movie) {
+            posterUrl = poster
+            score = Score.from10(cardRating(card))
         }
     }
 
@@ -222,37 +221,36 @@ class HintFilmIzle : MainAPI() {
         }
         manifest?.let { stream ->
             val h=linkedMapOf("Referer" to (manifestHeaders["Referer"] ?: playerUrl), "User-Agent" to (manifestHeaders["User-Agent"] ?: desktopUa))
-            manifestHeaders["Origin"]?.let { h["Origin"]=it }
-            callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=stream,type=ExtractorLinkType.M3U8) { referer=h["Referer"] ?: playerUrl; headers=h; quality=getQualityFromName(stream) })
+            callback(newExtractorLink("HintFilmİzle Kinescope","Kinescope",stream,ExtractorLinkType.M3U8) { headers=h; quality=getQualityFromName("1080p") })
             return true
         }
-        val apiUrl=api ?: return false
-        val text=app.get(apiUrl,referer=parentUrl,headers=apiHeaders.ifEmpty { mapOf("User-Agent" to desktopUa,"Referer" to playerUrl) }).text
-        val p=runCatching { org.json.JSONObject(text).optString("p") }.getOrNull()?.takeIf { it.isNotBlank() } ?: return false
-        val bytes=android.util.Base64.decode(p.reversed(),android.util.Base64.DEFAULT)
-        val key="RySdvcyu5iTUxn97v4HwoniwgxaCynA"
-        val decoded=ByteArray(bytes.size) { i -> (bytes[i].toInt() xor key[i % key.length].code).toByte() }.toString(Charsets.UTF_8)
-        val streams=Regex("""https?://[^\"'\\s]+\.kinescopecdn\.net/hls/[^\"'\\s]+/index\.m3u8(?:\?[^\"'\\s]*)?""",RegexOption.IGNORE_CASE).findAll(decoded).map { it.value }.distinct().toList()
-        streams.forEach { stream -> callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=stream,type=ExtractorLinkType.M3U8) { referer=parentUrl; headers=mapOf("Referer" to parentUrl,"User-Agent" to desktopUa); quality=getQualityFromName(stream) }) }
-        streams.isNotEmpty()
-    }.getOrElse { Log.e("HintFilmIzle","KINESCOPE_FAILED",it); false }
+        api?.let { apiUrl ->
+            val response=app.get(apiUrl, headers=apiHeaders + mapOf("User-Agent" to desktopUa, "Referer" to playerUrl))
+            val p=response.parsedSafe<org.json.JSONObject>()?.optString("p")?.takeIf { it.isNotBlank() }
+            if (!p.isNullOrBlank()) {
+                val decoded=runCatching {
+                    val rev=String(android.util.Base64.decode(p, android.util.Base64.DEFAULT).reversed().toByteArray(), Charsets.UTF_8)
+                    val key="RySdvcyu5iTUxn97v4HwoniwgxaCynA".toByteArray(Charsets.UTF_8)
+                    rev.toByteArray(Charsets.UTF_8).mapIndexed { i,b -> (b.toInt() xor key[i%key.size].toInt()).toByte() }.toByteArray().toString(Charsets.UTF_8)
+                }.getOrNull()
+                val stream=decoded?.let { Regex("""https?://[^\"'\\s]+\.m3u8(?:\?[^\"'\\s]*)?""", RegexOption.IGNORE_CASE).find(it)?.value }
+                if (!stream.isNullOrBlank()) {
+                    callback(newExtractorLink("HintFilmİzle Kinescope","Kinescope",stream,ExtractorLinkType.M3U8) { headers=mapOf("Referer" to playerUrl,"User-Agent" to desktopUa); quality=getQualityFromName("1080p") })
+                    return true
+                }
+            }
+        }
+        false
+    }.getOrDefault(false)
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
-        val document=runCatching { app.get(data,referer="$mainUrl/",headers=browserHeaders()).document }.getOrNull() ?: return false
-        val players=linkedSetOf<String>()
-        fun add(value:String?){ playerUrl(value,data)?.let { if(!isIgnoredPlayer(it)&&!isTrailerPlayer(it)&&!it.startsWith(mainUrl,true)) players.add(it) } }
-        document.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], video[src], video source[src], a[href], a[data-url], a[data-embed], a[data-video], a[data-player], [data-url], [data-embed], [data-video], [data-player]").forEach { e -> listOf(e.attr("href"),e.attr("src"),e.attr("data-src"),e.attr("data-url"),e.attr("data-embed"),e.attr("data-frame"),e.attr("data-video"),e.attr("data-player"),e.attr("data-iframe")).forEach(::add) }
-        document.select("[data-publisher-id][data-id]").forEach { e ->
-            val pub=e.attr("data-publisher-id").trim(); val id=e.attr("data-id").trim()
-            if(pub.isNotBlank()&&id.isNotBlank()) add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?voiceover=487&design=${e.attr("data-design").ifBlank{"3"}}&lang=${URLEncoder.encode(lang.ifBlank{"tr"},"UTF-8")}")
-        }
-        document.select("script").forEach { s -> Regex("""https?://[^\"'\s<>]+""").findAll(s.data()).forEach { add(it.value) } }
-        Log.d("HintFilmIzle","PLAYER_COUNT=${players.size}"); players.forEach { Log.d("HintFilmIzle","PLAYER=$it") }
-        var found=false
-        for(player in players){
-            when {
-                player.contains("kinescope",true) || player.contains("kinescopecdn",true) -> if(loadKinescope(player,data,callback)) found=true
-                else -> { loadExtractor(player,data,subtitleCallback,callback); found=true }
+        val players = Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(data).mapNotNull { cleanUrl(it.value) }.filterNot { isIgnoredPlayer(it) }.distinct().toList()
+        var found = false
+        players.forEach { player ->
+            if (player.contains("kinescope", true) || player.contains("player.hintfilmizle.com", true)) {
+                if (loadKinescope(player, data, callback)) found = true
+            } else if (!isTrailerPlayer(player)) {
+                runCatching { loadExtractor(player, "$mainUrl/", subtitleCallback, callback) }
             }
         }
         return found
