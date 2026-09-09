@@ -1,3 +1,0 @@
-name: HintFilmIzle Rebuild
-on:
-  workflow_dispatch:
