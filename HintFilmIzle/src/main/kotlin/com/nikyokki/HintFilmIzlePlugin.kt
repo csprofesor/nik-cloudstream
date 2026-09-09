@@ -164,11 +164,11 @@ class HintFilmIzle : MainAPI() {
                 if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee }
             }.distinctBy { it.data }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) {
-                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); addDuration(duration); addActors(cast); recommendations = rec
+                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration?.removeSuffix(" dk.")?.toIntOrNull(); addActors(cast); recommendations = rec
             }
         }
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); addDuration(duration); addActors(cast); recommendations = rec
+            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration?.removeSuffix(" dk.")?.toIntOrNull(); addActors(cast); recommendations = rec
         }
     }
 
