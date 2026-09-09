@@ -10,9 +10,91 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Rewrite HintFilmIzle parser
+      - name: Rewrite HintFilmIzle
         shell: python
         run: |
-          print('workflow installed; parser rewrite runs from repository tree')
-      - name: Commit marker
-        run: echo 'HintFilm parser rebuild workflow installed'
+          from pathlib import Path
+          p = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
+          s = p.read_text()
+          a = s.index('        val overview = sectionText(body, "GENEL BAKIŞ", "HATA BİLDİR")')
+          b = s.index('        val year =', a)
+          s = s[:a] + '''        val overview = sectionText(body, "GENEL BAKIŞ", "HATA BİLDİR")
+        val description = overview?.let {
+            it.substringBefore("Bu Film özeti")
+                .replaceFirst(Regex("^Türü\\\\s*:\\\\s*(?:[^,]+?Filmleri(?:\\\\s*,\\\\s*)?)+\\\\s*", RegexOption.IGNORE_CASE), "")
+                .trim()
+                .takeIf { text -> text.length > 20 }
+        }
+
+''' + s[b:]
+          old = '''        val year = Regex("\\\\b(19|20)\\\\d{2}\\\\b").find(body)?.value?.toIntOrNull()
+        val rating = findNumber(body, "IMDb", "IMDB")
+        val tags = extractGenreTags(document, body)
+'''
+          new = '''        val year = Regex("YAPIM\\\\s+YILI\\\\s+(19|20)\\\\d{2}", RegexOption.IGNORE_CASE).find(body)?.value?.takeLast(4)?.toIntOrNull()
+            ?: Regex("\\\\b(19|20)\\\\d{2}\\\\b").find(body)?.value?.toIntOrNull()
+        val rating = Regex("IMDB\\\\s+PUANI\\\\s+([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(body)?.groupValues?.getOrNull(1)
+        val duration = Regex("SÜRE\\\\s+(\\\\d+)\\\\s*dk", RegexOption.IGNORE_CASE).find(body)?.groupValues?.getOrNull(1)?.let { "$it dk." }
+        val tags = extractGenreTags(document, body)
+'''
+          s = s.replace(old, new)
+          s = s.replace("score = Score.from10(rating)\n                addActors(actors)", "score = Score.from10(rating)\n                addDuration(duration)\n                addActors(actors)")
+          s = s.replace("score = Score.from10(rating)\n            addActors(actors)", "score = Score.from10(rating)\n            addDuration(duration)\n            addActors(actors)")
+          a = s.index("    private fun extractActors")
+          b = s.index("    override suspend fun load(", a)
+          actor = '''    private fun extractActors(document: org.jsoup.nodes.Document, body: String): List<Actor> {
+        val direct = document.select("a[href*='oyuncu'],a[href*='oyuncular'],a[href*='actor'],a[href*='cast'],.actors a,.cast a,.oyuncular a")
+            .map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
+        if (direct.isNotEmpty()) return direct.map(::Actor)
+        val heading = document.getElementsContainingOwnText("ÖNE ÇIKAN OYUNCULAR").firstOrNull() ?: return emptyList()
+        val container = heading.parents().take(7).firstOrNull { e ->
+            val t = e.text()
+            val n = e.select("a").size
+            t.contains("ÖNE ÇIKAN OYUNCULAR", true) && t.contains("YÖNETMEN", true) && n in 7..20
+        }
+        return container?.select("a")?.map { it.text().trim() }?.filter { it.isNotBlank() }?.distinct()?.map(::Actor).orEmpty()
+    }
+
+'''
+          s = s[:a] + actor + s[b:]
+          a = s.index("    override suspend fun loadLinks(")
+          b = s.rfind("\n}")
+          links = '''    override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
+        val document = runCatching { app.get(data, referer = "$mainUrl/", headers = browserHeaders()).document }.getOrNull() ?: return false
+        val players = linkedSetOf<String>()
+        fun addPlayer(value: String?) {
+            if (value.isNullOrBlank()) return
+            val raw = value.replace("\\\\/", "/").replace("\\\\u0026", "&").replace("&amp;", "&").trim().trim('"', '\\'')
+            playerUrl(raw, data)?.let { u -> if (!isIgnoredPlayer(u) && !isTrailerPlayer(u) && !u.startsWith(mainUrl, true)) players.add(u) }
+        }
+        document.select("[data-frame]").forEach { addPlayer(it.attr("data-frame")) }
+        document.select("iframe[src],iframe[data-src],iframe[data-url],[data-player],[data-embed],[data-video],[data-iframe]").forEach { e ->
+            listOf(e.attr("src"),e.attr("data-src"),e.attr("data-url"),e.attr("data-player"),e.attr("data-embed"),e.attr("data-video"),e.attr("data-iframe")).forEach(::addPlayer)
+        }
+        document.select("[data-publisher-id][data-id]").forEach { e ->
+            val pub=e.attr("data-publisher-id").trim(); val id=e.attr("data-id").trim()
+            if(pub.isNotBlank()&&id.isNotBlank()) players.add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?voiceover=487&design=3&lang=tr&nc=${System.currentTimeMillis()/1000L}")
+        }
+        document.select("script").forEach { sc ->
+            Regex("data-frame\\\\s*=\\\\s*[\\\"']([^\\\"']+)[\\\"']",RegexOption.IGNORE_CASE).findAll(sc.data()).forEach{addPlayer(it.groupValues[1])}
+            Regex("https?://player\\\\.hintfilmizle\\\\.com/embed/[A-Za-z0-9_-]+",RegexOption.IGNORE_CASE).findAll(sc.data()).forEach{addPlayer(it.value)}
+        }
+        Log.d("HintFilmIzle","PLAYER_COUNT=${players.size}"); players.forEach{Log.d("HintFilmIzle","PLAYER=$it")}
+        var found=false
+        for(player in players) when {
+            player.contains("kinescope",true)||player.contains("kinescopecdn",true)->if(loadKinescope(player,data,callback))found=true
+            player.contains("playmate.to",true)->if(loadPlaymate(player,data,callback))found=true
+            else->{runCatching{loadExtractor(player,data,subtitleCallback,callback)};found=true}
+        }
+        return found
+    }
+'''
+          s = s[:a] + links + s[b:]
+          p.write_text(s)
+      - name: Commit rewrite
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          git diff --cached --quiet || git commit -m 'HintFilm parser rebuild [skip ci]'
+          git push
