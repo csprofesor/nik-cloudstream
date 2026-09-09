@@ -1,0 +1,29 @@
+name: Fix HintFilmIzle duration
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, '[duration-fix]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix duration API
+        run: |
+          set -e
+          FILE="HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt"
+          sed -i 's/addDuration(duration)/duration = duration?.removeSuffix(" dk.")?.toIntOrNull()/g' "$FILE"
+          git config user.name "csprofesor"
+          git config user.email "199635364+csprofesor@users.noreply.github.com"
+          git add "$FILE"
+          if git diff --cached --quiet; then
+            echo "No duration fix needed."
+            exit 0
+          fi
+          git commit -m "Fix HintFilmIzle duration [duration-fix]"
+          git push origin HEAD:master
