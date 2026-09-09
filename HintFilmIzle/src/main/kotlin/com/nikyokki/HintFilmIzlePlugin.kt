@@ -218,7 +218,7 @@ class HintFilmIzle : MainAPI() {
         val title = firstText(document, "h1", ".entry-title", ".film-title", ".movie-title", ".serieTitle") ?: return null
         val poster = cleanUrl(document.selectFirst("meta[property='og:image']")?.attr("content"))
             ?: document.selectFirst("article, .movie-detail, .film-detail, .serie-detail")?.posterUrl()
-        val body = document.text().replace(Regex("\s+"), " ").trim()
+        val body = document.text().replace(Regex("\\s+"), " ").trim()
 
         val overview = sectionText(body, "GENEL BAKIŞ", "HATA BİLDİR")
         val description = firstText(
