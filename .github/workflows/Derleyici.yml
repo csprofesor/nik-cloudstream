@@ -45,7 +45,7 @@ jobs:
           java-version: 17
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
-      - name: Kinescope Android WebView Voiceover Testi
+      - name: Kinescope Android WebView Voiceover 487 Testi
         run: |
           cd $GITHUB_WORKSPACE/src
           python3 - <<'PY'
@@ -53,21 +53,17 @@ jobs:
           p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
           s = p.read_text(encoding='utf-8')
           old_player = '''if (!id.isNullOrBlank()) return "https://river-3-329.kinescopecdn.net/677113747/embed/" + id + "?design=3&lang=" + URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") + "&nc=" + (System.currentTimeMillis() / 1000L)'''
-          new_player = '''if (!id.isNullOrBlank()) {
-                val voiceover = Regex("""[?&]voiceover=([^&]+)""", RegexOption.IGNORE_CASE).find(url)?.groupValues?.getOrNull(1)
-                return "https://river-3-329.kinescopecdn.net/677113747/embed/" + id + "?design=3&lang=" + URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") + (voiceover?.let { "&voiceover=" + it } ?: "") + "&nc=" + (System.currentTimeMillis() / 1000L)
-            }'''
+          new_player = '''if (!id.isNullOrBlank()) return "https://river-3-329.kinescopecdn.net/677113747/embed/" + id + "?voiceover=487&design=3&lang=" + URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8") + "&nc=" + (System.currentTimeMillis() / 1000L)'''
           if old_player not in s:
-              raise SystemExit('playerUrl voiceover hedefi bulunamadı')
+              raise SystemExit('playerUrl hedefi bulunamadı')
           s = s.replace(old_player, new_player, 1)
           old_live = '''append("https://river-3-329.kinescopecdn.net/677113747/embed/"); append(videoId); append("?design=3&lang="); append(URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")); append("&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc="); append(System.currentTimeMillis() / 1000L)'''
-          new_live = '''val voiceover = Regex("""[?&]voiceover=([^&]+)""", RegexOption.IGNORE_CASE).find(iframeUrl)?.groupValues?.getOrNull(1)
-            append("https://river-3-329.kinescopecdn.net/677113747/embed/"); append(videoId); append("?design=3&lang="); append(URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")); voiceover?.let { append("&voiceover="); append(it) }; append("&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc="); append(System.currentTimeMillis() / 1000L)'''
+          new_live = '''append("https://river-3-329.kinescopecdn.net/677113747/embed/"); append(videoId); append("?voiceover=487&design=3&lang="); append(URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")); append("&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc="); append(System.currentTimeMillis() / 1000L)'''
           if old_live not in s:
-              raise SystemExit('loadKinescope voiceover hedefi bulunamadı')
+              raise SystemExit('loadKinescope hedefi bulunamadı')
           s = s.replace(old_live, new_live, 1)
           p.write_text(s, encoding='utf-8')
-          print('Build test: Kinescope voiceover query parameter is preserved; master source remains unchanged.')
+          print('Build test: voiceover=487 eklendi; master kaynak dosyası değiştirilmedi.')
           PY
       - name: Tüm Eklentileri Derle
         run: |
