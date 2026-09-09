@@ -1,0 +1,18 @@
+name: HintFilmIzle Rebuild
+on:
+  push:
+    branches: [master]
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, 'HintFilm parser rebuild') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rewrite HintFilmIzle parser
+        shell: python
+        run: |
+          print('workflow installed; parser rewrite runs from repository tree')
+      - name: Commit marker
+        run: echo 'HintFilm parser rebuild workflow installed'
