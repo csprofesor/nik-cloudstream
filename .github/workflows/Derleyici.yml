@@ -50,6 +50,18 @@ jobs:
           set -euo pipefail
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
+          s = p.read_text(encoding='utf-8')
+          old = '''        val fallbackUrl = if (page <= 1) "$mainUrl/film?order=DESC&orderby=date" else "$mainUrl/film/page/$page/?order=DESC&orderby=date"\n            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n            if (response != null) {'''
+          new = '''        val fallbackUrl = if (page <= 1) "$mainUrl/film?order=DESC&orderby=date" else "$mainUrl/film/page/$page/?order=DESC&orderby=date"\n            runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()?.let { fallbackResponse ->\n                doc = fallbackResponse.document\n                r = results(doc, slug)\n            }\n            if (r.isNotEmpty()) {'''
+          if old in s:
+              s = s.replace(old, new)
+          else:
+              s = s.replace('response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n            if (response != null) {', 'runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()?.let { fallbackResponse ->\n                doc = fallbackResponse.document\n                r = results(doc, slug)\n            }\n            if (r.isNotEmpty()) {')
+          p.write_text(s, encoding='utf-8')
+          PY
           ./gradlew make --stacktrace
       - name: Tüm Derlemeleri Yükle
         run: |
