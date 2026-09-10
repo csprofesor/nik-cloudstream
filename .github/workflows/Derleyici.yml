@@ -13,7 +13,6 @@ on:
       - "**/*.md"
       - "**/*.jpg"
       - "**/*.png"
-      - "**/*.py"
 
 jobs:
   CloudStreamDerleyici:
