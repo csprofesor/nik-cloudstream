@@ -51,6 +51,8 @@ jobs:
           chmod +x gradlew
           sed -i 's/; duration = duration;/; this.duration = duration;/g' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           sed -i 's/this.duration = durationText/this.duration = durationText?.substringBefore(" ")?.toIntOrNull()/g' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          sed -i 's/        response = runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/        runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          sed -i 's/            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/            runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           ./gradlew make --stacktrace
       - name: Tüm Derlemeleri Yükle
         run: |
