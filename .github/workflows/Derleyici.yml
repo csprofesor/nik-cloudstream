@@ -53,8 +53,18 @@ jobs:
           sed -i 's/this.duration = durationText/this.duration = durationText?.substringBefore(" ")?.toIntOrNull()/g' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           sed -i 's/        response = runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/        runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           sed -i 's/            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/            runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
-          sed -i 's/val title = titleOf(doc) ?: return null/val title = titleOf(doc)?.takeUnless { it.equals("Giriş yap", true) || it.equals("Giris yap", true) } ?: url.substringAfterLast("\\/").substringBefore("?").replace(Regex("[-_]+"), " ").replace(Regex("\\\\s+izle$", RegexOption.IGNORE_CASE), "").trim()/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
-          sed -i 's/val p = plot(text)/val p = plot(text) ?: doc.selectFirst("meta[property=\x27og:description\x27],meta[name=\x27description\x27]")?.attr("content")?.trim()?.takeIf { it.length > 30 && !it.contains("HintFilm", true) }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
+          s = p.read_text(encoding="utf-8")
+          old = 'val title = titleOf(doc) ?: return null'
+          new = 'val title = titleOf(doc)?.takeUnless { it.equals("Giriş yap", true) || it.equals("Giris yap", true) } ?: url.substringAfterLast("/").substringBefore("?").replace(Regex("[-_]+"), " ").replace(Regex("\\\\s+izle$", RegexOption.IGNORE_CASE), "").trim()'
+          s = s.replace(old, new, 1)
+          old = 'val p = plot(text)'
+          new = 'val p = plot(text) ?: doc.selectFirst("meta[property=\'og:description\'],meta[name=\'description\']")?.attr("content")?.trim()?.takeIf { it.length > 30 && !it.contains("HintFilm", true) }'
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding="utf-8")
+          PY
           ./gradlew make --stacktrace
       - name: Tüm Derlemeleri Yükle
         run: |
