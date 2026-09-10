@@ -46,10 +46,11 @@ class HintFilmIzle : MainAPI() {
         "$mainUrl/tur/aile-filmleri" to "Aile", "$mainUrl/tur/aksiyon-filmleri" to "Aksiyon",
         "$mainUrl/tur/animasyon-filmleri" to "Animasyon", "$mainUrl/tur/bilim-kurgu-filmleri" to "Bilim Kurgu",
         "$mainUrl/tur/dram-filmleri" to "Dram", "$mainUrl/tur/fantastik-filmleri" to "Fantastik",
-        "$mainUrl/tur/komedi-filmleri" to "Komedi", "$mainUrl/tur/macera-filmleri" to "Macera",
-        "$mainUrl/tur/romantik-filmleri" to "Romantik", "$mainUrl/tur/savas-filmleri" to "Savaş",
-        "$mainUrl/tur/suc-filmleri" to "Suç", "$mainUrl/tur/tarih-filmleri" to "Tarih",
-        "$mainUrl/tur/gerilim-filmleri" to "Gerilim", "$mainUrl/netflix-izle" to "Netflix"
+        "$mainUrl/tur/komedi-filmleri" to "Komedi", "$mainUrl/tur/korku-filmleri" to "Korku",
+        "$mainUrl/tur/macera-filmleri" to "Macera", "$mainUrl/tur/romantik-filmleri" to "Romantik",
+        "$mainUrl/tur/savas-filmleri" to "Savaş", "$mainUrl/tur/suc-filmleri" to "Suç",
+        "$mainUrl/tur/tarih-filmleri" to "Tarih", "$mainUrl/tur/gerilim-filmleri" to "Gerilim",
+        "$mainUrl/netflix-izle" to "Netflix"
     )
 
     private fun fix(value: String?, base: String = mainUrl): String? {
@@ -98,25 +99,54 @@ class HintFilmIzle : MainAPI() {
         }
     }
 
-    private fun results(doc: org.jsoup.nodes.Document) = doc.select("a[href*='/film/'],a[href*='/dizi/']")
-        .mapNotNull { a -> a.toResult(a.parents().firstOrNull { p -> p.select("img").isNotEmpty() && p.select("a[href*='/film/'],a[href*='/dizi/']").size <= 4 } ?: a) }
-        .distinctBy { it.url }
+    private fun cardFor(anchor: Element): Element {
+        return anchor.parents().firstOrNull { p ->
+            p.select("img").isNotEmpty() &&
+                p.select("a[href*='/film/'],a[href*='/dizi/']").size <= 4
+        } ?: anchor
+    }
+
+    private fun categorySlug(data: String): String? {
+        val path = data.substringBefore("?").trimEnd('/')
+        return path.substringAfter("/tur/", "").takeIf { it.isNotBlank() }
+    }
+
+    private fun categoryMatches(card: Element, slug: String): Boolean {
+        return card.select("a[href*='/tur/']").any { a ->
+            val href = fix(a.attr("href")) ?: return@any false
+            val path = href.substringBefore("?").trimEnd('/')
+            path.equals("$mainUrl/tur/$slug", ignoreCase = true)
+        }
+    }
+
+    private fun results(doc: org.jsoup.nodes.Document, slug: String? = null): List<SearchResponse> {
+        return doc.select("a[href*='/film/'],a[href*='/dizi/']")
+            .mapNotNull { a ->
+                val card = cardFor(a)
+                if (slug != null && !categoryMatches(card, slug)) null else a.toResult(card)
+            }
+            .distinctBy { it.url }
+    }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val base = request.data.substringBefore("?").trimEnd('/')
         val q = request.data.substringAfter("?", "").takeIf { it.isNotBlank() }
         val url = if (page <= 1) request.data else base + "/page/$page/" + if (q != null) "?$q" else ""
-        val response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
+        val slug = categorySlug(request.data)
+        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
             ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
-        val doc = response.document
-        if (request.data.contains("/tur/", ignoreCase = true)) {
-            val heading = doc.selectFirst("h1")?.text()?.trim().orEmpty()
-            val expected = request.name.removeSuffix(" Filmleri").trim()
-            if (expected.isNotBlank() && !heading.contains(expected, ignoreCase = true)) {
-                return newHomePageResponse(request.name, emptyList(), hasNext = false)
+        var doc = response.document
+        var r = results(doc, slug)
+
+        if (slug != null && r.isEmpty()) {
+            val fallbackUrl = if (page <= 1) "$mainUrl/film?order=DESC&orderby=date" else "$mainUrl/film/page/$page/?order=DESC&orderby=date"
+            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()
+            if (response != null) {
+                doc = response.document
+                r = results(doc, slug)
             }
         }
-        val r = results(doc)
+
         return newHomePageResponse(request.name, r, hasNext = r.isNotEmpty())
     }
 
@@ -135,22 +165,44 @@ class HintFilmIzle : MainAPI() {
     private fun label(text: String, name: String, next: String): String? = Regex("${Regex.escape(name)}\\s*[:\\-]?\\s*(.*?)\\s*(?=${Regex.escape(next)}|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
 
     private fun genres(doc: org.jsoup.nodes.Document, text: String): List<String> {
-        val dom = doc.select("a[href*='/tur/'],.genres a,.genre a,.categories a").map { it.text().trim() }.filter { it.contains("Film", true) }.distinct()
+        val dom = doc.select("a[href*='/tur/'],.genres a,.genre a,.categories a")
+            .map { it.text().trim() }
+            .filter { it.contains("Film", true) }
+            .distinct()
         if (dom.isNotEmpty()) return dom
         return label(text, "Türü", "Bu Film özeti").orEmpty().split(",").map { it.trim() }.filter { it.isNotBlank() && it.contains("Film", true) }
     }
 
     private fun actors(doc: org.jsoup.nodes.Document): List<Actor> {
-        val links = doc.select("a[href*='oyuncu'],a[href*='oyuncular'],a[href*='actor'],a[href*='cast'],.actors a,.cast a,.oyuncular a").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
+        val links = doc.select("a[href*='oyuncu'],a[href*='oyuncular'],a[href*='actor'],a[href*='cast'],.actors a,.cast a,.oyuncular a")
+            .map { it.text().trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
         if (links.isNotEmpty()) return links.map(::Actor)
-        val h = doc.getElementsContainingOwnText("ÖNE ÇIKAN OYUNCULAR").firstOrNull()
-        val p = h?.parents()?.firstOrNull { it.text().contains("YÖNETMEN", true) && it.text().length < 1800 }
-        return p?.select("a")?.map { it.text().trim() }?.filter { it.isNotBlank() }?.distinct()?.map(::Actor).orEmpty()
+
+        val heading = doc.getElementsContainingOwnText("ÖNE ÇIKAN OYUNCULAR").firstOrNull()
+        val container = heading?.parents()?.firstOrNull {
+            it.text().contains("YÖNETMEN", true) && it.text().length < 2500
+        }
+        return container?.select("a, .actor, .cast-item, li")
+            ?.map { it.text().trim() }
+            ?.map { it.substringBefore(" - ").trim() }
+            ?.filter { it.isNotBlank() && it.length < 100 }
+            ?.distinct()
+            ?.map(::Actor)
+            .orEmpty()
     }
 
     private fun plot(text: String): String? {
-        val s = Regex("GENEL BAKIŞ\\s+(.*?)\\s+HATA BİLDİR", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1) ?: return null
-        return s.replace(Regex("^Türü\\s*:\\s*.*?\\s+(?=[A-ZÇĞİÖŞÜ])"), "").substringBefore("Bu Film özeti").trim().takeIf { it.length > 20 }
+        val section = Regex(
+            "GENEL BAKIŞ\\s+(.*?)(?=HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|$)",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(text)?.groupValues?.getOrNull(1) ?: return null
+        return section
+            .replace(Regex("^Türü\\s*:\\s*.*?(?=\\S)", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .takeIf { it.length > 20 }
     }
 
     override suspend fun load(url: String): LoadResponse? {
@@ -160,7 +212,7 @@ class HintFilmIzle : MainAPI() {
         val poster = fix(doc.selectFirst("meta[property='og:image'],meta[name='twitter:image']")?.attr("content")) ?: doc.selectFirst("article,.movie-detail,.film-detail")?.poster()
         val year = Regex("YAPIM YILI\\s+(\\d{4})", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Regex("\\b(19|20)\\d{2}\\b").find(text)?.value?.toIntOrNull()
         val imdb = Regex("IMDB\\s+PUANI\\s+([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)
-        val durationText = Regex("SÜRE\\s+(\\d+)\\s*dk", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.let { "$it dk." }
+        val duration = Regex("SÜRE\\s+(\\d+)\\s*dk", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
         val tag = genres(doc, text)
         val cast = actors(doc)
         val rec = results(doc)
@@ -174,11 +226,11 @@ class HintFilmIzle : MainAPI() {
                 if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee }
             }.distinctBy { it.data }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) {
-                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = durationText; addActors(cast); recommendations = rec
+                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = duration; addActors(cast); recommendations = rec
             }
         }
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = durationText; addActors(cast); recommendations = rec
+            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = duration; addActors(cast); recommendations = rec
         }
     }
 
