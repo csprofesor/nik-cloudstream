@@ -8,95 +8,84 @@ if start < 0:
 end = text.find('        """.trimIndent()', start)
 if end < 0:
     raise SystemExit('Kinescope script end not found')
+
 script = r'''        val script = """
             (function() {
               try {
-                if (window.__csHintKineV7) return true;
-                window.__csHintKineV7 = true;
-                var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
-                var done = false;
-                function manifest(s) {
+                if (window.__csHintKineV11) return true;
+                window.__csHintKineV11 = true;
+
+                function manifest(u) {
                   try {
-                    if (typeof s !== 'string') return null;
-                    var m = s.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                    if (typeof u !== 'string') return null;
+                    var m = u.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
                     return m ? m[0] : null;
                   } catch (_) { return null; }
                 }
-                function emit(u) {
+
+                function cleanOverlays(root) {
                   try {
-                    u = manifest(u) || u;
-                    if (!u || done) return;
-                    done = true;
-                    window.__csHintManifest = u;
-                    var v = document.createElement('video');
-                    v.muted = true;
-                    v.setAttribute('muted', '');
-                    v.setAttribute('playsinline', '');
-                    v.preload = 'metadata';
-                    v.src = u;
-                    (document.documentElement || document.body).appendChild(v);
-                    v.load();
+                    root.querySelectorAll('.belink,.belink.active,[class*="belink"],[id*="belink"]').forEach(function(e) {
+                      e.style.setProperty('display','none','important');
+                      e.style.setProperty('visibility','hidden','important');
+                      e.style.setProperty('pointer-events','none','important');
+                    });
                   } catch (_) {}
                 }
-                function decodeApi(text) {
+
+                function startVideos(root) {
                   try {
-                    var o = JSON.parse(text);
-                    if (!o || typeof o.p !== 'string') return;
-                    var b = atob(o.p.split('').reverse().join(''));
-                    var out = new Uint8Array(b.length);
-                    for (var i = 0; i < b.length; i++) out[i] = b.charCodeAt(i) ^ KEY.charCodeAt(i % KEY.length);
-                    var s = new TextDecoder('utf-8').decode(out);
-                    var u = manifest(s);
-                    if (!u) {
-                      var p = JSON.parse(s);
-                      var stack = [p];
-                      while (stack.length && !u) {
-                        var x = stack.pop();
-                        if (typeof x === 'string') u = manifest(x);
-                        else if (x && typeof x === 'object') for (var k in x) stack.push(x[k]);
-                      }
-                    }
-                    if (u) emit(u);
+                    root.querySelectorAll('video').forEach(function(v) {
+                      try {
+                        v.muted = true;
+                        v.setAttribute('muted','');
+                        v.setAttribute('playsinline','');
+                        v.autoplay = true;
+                        if (v.paused) {
+                          var p = v.play();
+                          if (p && p.catch) p.catch(function(){});
+                        }
+                      } catch (_) {}
+                    });
                   } catch (_) {}
                 }
-                function inspectEntries() {
+
+                function inspect() {
                   try {
+                    cleanOverlays(document);
+                    startVideos(document);
+
+                    // The resolver watches network requests. We only read the
+                    // browser's resource list; we never cancel or replay API calls.
                     var es = performance.getEntriesByType('resource') || [];
                     for (var i = 0; i < es.length; i++) {
                       var u = String(es[i].name || '');
-                      if (/\\/api\\/v1\\/embed\\//i.test(u)) {
-                        fetch(u, {credentials:'include'}).then(function(r){return r.text();}).then(decodeApi).catch(function(){});
-                      } else if (/\\.m3u8(?:\\?|$)/i.test(u)) emit(u);
+                      if (manifest(u)) {
+                        window.__csHintManifest = manifest(u);
+                        return;
+                      }
                     }
                   } catch (_) {}
                 }
-                var ofetch = window.fetch;
-                if (ofetch) {
-                  window.fetch = function() {
-                    var a = arguments;
-                    return ofetch.apply(this, a).then(function(r) {
-                      try {
-                        var u = typeof a[0] === 'string' ? a[0] : (a[0] && a[0].url);
-                        if (/\\.m3u8(?:\\?|$)/i.test(String(u || ''))) emit(String(u));
-                        if (/\\/api\\/v1\\/embed\\//i.test(String(u || ''))) r.clone().text().then(decodeApi).catch(function(){});
-                      } catch (_) {}
-                      return r;
-                    });
-                  };
-                }
-                var oo = XMLHttpRequest.prototype.open;
-                var os = XMLHttpRequest.prototype.send;
-                XMLHttpRequest.prototype.open = function(method, url) { this.__csUrl = String(url || ''); return oo.apply(this, arguments); };
-                XMLHttpRequest.prototype.send = function() {
-                  try { this.addEventListener('load', function() { var u=String(this.__csUrl||''); if (/\\.m3u8(?:\\?|$)/i.test(u)) emit(u); if (/\\/api\\/v1\\/embed\\//i.test(u)) decodeApi(this.responseText||''); }); } catch (_) {}
-                  return os.apply(this, arguments);
-                };
-                setInterval(inspectEntries, 250);
-                setTimeout(inspectEntries, 100);
+
+                // Start as soon as the Kinescope DOM/player exists, then keep
+                // nudging playback without touching the signed API handshake.
+                inspect();
+                setTimeout(inspect, 100);
+                setTimeout(inspect, 300);
+                setTimeout(inspect, 700);
+                setTimeout(inspect, 1500);
+                setInterval(inspect, 1000);
+
+                new MutationObserver(function() {
+                  try { cleanOverlays(document); startVideos(document); } catch (_) {}
+                }).observe(document.documentElement || document, {subtree:true, childList:true});
+
                 return true;
               } catch (_) { return false; }
             })()
         """.trimIndent()'''
+
 text = text[:start] + script + text[end + len('        """.trimIndent()'):]
 PATH.write_text(text, encoding='utf-8')
-print('HintFilmIzle Kinescope script upgraded to V7 timing-safe API/resource detection')
+print('HintFilmIzle Kinescope runtime upgraded to V11: no API replay/interception, playback is triggered safely')
