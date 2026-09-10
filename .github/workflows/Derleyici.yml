@@ -50,139 +50,24 @@ jobs:
           cd $GITHUB_WORKSPACE/src
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
           path = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
           s = path.read_text(encoding='utf-8')
 
-          if 'import android.util.Base64' not in s:
-              s = s.replace('import android.util.Log', 'import android.util.Base64\nimport android.util.Log', 1)
+          old = '            return "https://river-3-329.kinescopecdn.net/677113747/embed/$id?voiceover=487&design=3&lang=tr&nc=${System.currentTimeMillis() / 1000L}"'
+          if old in s:
+              s = s.replace(old, '            return u', 1)
+          else:
+              raise SystemExit('HintFilmIzle player dönüş satırı bulunamadı')
 
-          old_player = re.compile(r'    private fun player\(value: String\?, base: String\): String\? \{.*?\n    \}\n\n    private suspend fun kinescope', re.S)
-          new_player = '''    private fun player(value: String?, base: String): String? {
-        val u = fix(value, base) ?: return null
-        if (u.contains("youtube", true) || u.contains("schema.org", true) || u.contains("imdb.com", true) ||
-            u.contains("google.com/search", true) || u.contains("yandex", true) || u.contains("dmca.com", true) ||
-            u.contains("wp-content", true) || u.contains("wp-includes", true)) return null
-        if (u.contains("player.hintfilmizle.com", true) || u.contains("kinescopecdn.net", true) || u.contains("kinescope.io", true)) return u
-        if (u.contains("playmate.to", true)) return u
-        return null
-    }
-
-    private suspend fun kinescope'''
-          s, n = old_player.subn(new_player, s, count=1)
-          if n != 1:
-              raise SystemExit('player fonksiyonu bulunamadı')
-
-          old_kine = re.compile(r'    private suspend fun kinescope\(kine: String, parent: String, callback: \(ExtractorLink\) -> Unit\): Boolean = runCatching \{.*?\n    \}\n\n    override suspend fun loadLinks', re.S)
-          new_kine = '''    private fun decodeKinescopeApi(value: String): String? {
-        val clean = value.trim().trim('"').replace("\\n", "").replace("\\r", "")
-        val key = "RySdvcyu5iTUxn97v4HwoniwgxaCynA".toByteArray(Charsets.UTF_8)
-        fun decode(input: String, reverse: Boolean): String? = runCatching {
-            val b64 = if (reverse) input.reversed() else input
-            val bytes = Base64.decode(b64, Base64.DEFAULT)
-            val out = ByteArray(bytes.size)
-            for (i in bytes.indices) out[i] = (bytes[i].toInt() xor key[i % key.size].toInt()).toByte()
-            out.toString(Charsets.UTF_8)
-        }.getOrNull()
-
-        val candidates = listOf(
-            decode(clean, true),
-            decode(clean, false)
-        ).filterNotNull()
-
-        val regex = Regex("https?://[^\\\"'\\s<>]+\\\\.kinescopecdn\\\\.net/hls/[^\\\"'\\s<>]+/index\\\\.m3u8(?:\\\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
-        return candidates.firstNotNullOfOrNull { text -> regex.find(text)?.value ?: text.takeIf { it.contains(".m3u8", true) } }
-    }
-
-    private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
-        val id = Regex("/embed/([A-Za-z0-9_-]+)").find(kine)?.groupValues?.getOrNull(1) ?: return false
-        val target = "https://player.hintfilmizle.com/embed/$id"
-        val m3u = Regex("https?://[^\\\"'\\s<>]+\\\\.kinescopecdn\\\\.net/hls/[^\\\"'\\s<>]+/index\\\\.m3u8(?:\\\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
-        val api = Regex("https?://[^\\\"'\\s<>]+/api/v1/embed/$id(?:\\\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
-        var stream: String? = null
-
-        val script = """
-            (function() {
-              try {
-                function scan(t) {
-                  try {
-                    var m = t.match(/https?:\\\\/\\\\/[^\\\\s\"']+\\\\.kinescopecdn\\\\.net\\\\/hls\\\\/[^\\\\s\"']+\\\\/index\\\\.m3u8(?:\\\\?[^\\\\s\"']*)?/i);
-                    if (m) window.__csManifest = m[0];
-                  } catch(e) {}
-                }
-                var originalFetch = window.fetch;
-                window.fetch = function() {
-                  return originalFetch.apply(this, arguments).then(function(r) {
-                    try { r.clone().text().then(scan); } catch(e) {}
-                    return r;
-                  });
-                };
-                var o = XMLHttpRequest.prototype.open;
-                XMLHttpRequest.prototype.open = function(m,u) { this.__csUrl=u; return o.apply(this,arguments); };
-                var s = XMLHttpRequest.prototype.send;
-                XMLHttpRequest.prototype.send = function() {
-                  this.addEventListener('load', function() { scan(this.responseText||''); });
-                  return s.apply(this,arguments);
-                };
-                return true;
-              } catch(e) { return false; }
-            })()
-        """.trimIndent()
-
-        val resolver = WebViewResolver(
-            interceptUrl = Regex("(?:$m3u|$api.pattern)", RegexOption.IGNORE_CASE),
-            additionalUrls = emptyList(),
-            userAgent = ua,
-            useOkhttp = true,
-            timeout = 90_000L,
-            script = script
-        )
-
-        resolver.resolveUsingWebView(
-            url = target,
-            referer = parent,
-            headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua)
-        ) { req ->
-            val requestUrl = req.url.toString()
-            Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$requestUrl")
-            when {
-                m3u.containsMatchIn(requestUrl) -> {
-                    stream = requestUrl
-                    true
-                }
-                api.containsMatchIn(requestUrl) -> {
-                    val apiText = runCatching {
-                        app.get(requestUrl, referer = target, headers = headers()).text
-                    }.getOrNull().orEmpty()
-                    val encoded = Regex("\\\"p\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(apiText)?.groupValues?.getOrNull(1)
-                    val decoded = encoded?.let(::decodeKinescopeApi)
-                    if (!decoded.isNullOrBlank()) {
-                        stream = decoded
-                        Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=$decoded")
-                        true
-                    } else false
-                }
-                else -> false
-            }
-        }
-
-        val final = stream ?: return false
-        callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = final, type = ExtractorLinkType.M3U8) {
-            referer = parent
-            headers = mapOf("Referer" to parent, "User-Agent" to ua)
-            quality = getQualityFromName(final)
-        })
-        true
-    }.getOrElse { Log.e("HintFilmIzle", "KINESCOPE_FAILED", it); false }
-
-    override suspend fun loadLinks'''
-          s, n = old_kine.subn(new_kine, s, count=1)
-          if n != 1:
-              raise SystemExit('kinescope fonksiyonu bulunamadı')
+          old = '        val target = "https://river-3-329.kinescopecdn.net/677113747/embed/$id?voiceover=487&design=3&lang=tr&autoplay=1&muted=1&preload=1&playsinline=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"'
+          if old in s:
+              s = s.replace(old, '        val target = kine', 1)
+          else:
+              raise SystemExit('HintFilmIzle kinescope target satırı bulunamadı')
 
           path.write_text(s, encoding='utf-8')
-          print('HintFilmIzle oynatıcı patch uygulandı')
+          print('HintFilmIzle: orijinal player.hintfilmizle.com embed akışı etkin')
           PY
       - name: Tüm Eklentileri Derle
         run: |
