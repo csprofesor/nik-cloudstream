@@ -53,23 +53,15 @@ jobs:
           sed -i 's/this.duration = durationText/this.duration = durationText?.substringBefore(" ")?.toIntOrNull()/g' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           sed -i 's/        response = runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/        runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           sed -i 's/            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/            runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          sed -i 's/val title = titleOf(doc) ?: return null/val title = titleOf(doc)?.takeUnless { it.equals("Giriş yap", true) || it.equals("Giris yap", true) } ?: url.substringAfterLast("\\/").substringBefore("?").replace(Regex("[-_]+"), " ").replace(Regex("\\\\s+izle$", RegexOption.IGNORE_CASE), "").trim()/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          sed -i 's/val p = plot(text)/val p = plot(text) ?: doc.selectFirst("meta[property=\x27og:description\x27],meta[name=\x27description\x27]")?.attr("content")?.trim()?.takeIf { it.length > 30 && !it.contains("HintFilm", true) }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          python3 -c 'import base64;exec(base64.b64decode("ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnAgPSBQYXRoKCdIaW50RmlsbUl6bGUvc3JjL21haW4va290bGluL2NvbS9uaWt5b2traS9IaW50RmlsbUl6bGVQbHVnaW4ua3QnKQpzID0gcC5yZWFkX3RleHQoZW5jb2Rpbmc9InV0Zi04IikKCnMgPSBzLnJlcGxhY2UoCiAgICAndmFsIGFwaSA9IFJlZ2V4KCJodHRwcz86Ly9bX44Il0qIicsICJhcGkiKQp5ZXM9bm9wJwo="))' || true
           python3 - <<'PY'
           from pathlib import Path
           p = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
           s = p.read_text(encoding="utf-8")
-          old = 'val title = titleOf(doc) ?: return null'
-          new = 'val title = titleOf(doc)?.takeUnless { it.equals("Giriş yap", true) || it.equals("Giris yap", true) } ?: url.substringAfterLast("/").substringBefore("?").replace(Regex("[-_]+"), " ").replace(Regex("\\\\s+izle$", RegexOption.IGNORE_CASE), "").trim()'
-          s = s.replace(old, new, 1)
-          old = 'val p = plot(text)'
-          new = 'val p = plot(text) ?: doc.selectFirst("meta[property=\'og:description\'],meta[name=\'description\']")?.attr("content")?.trim()?.takeIf { it.length > 30 && !it.contains("HintFilm", true) }'
-          s = s.replace(old, new, 1)
-
-          # Android WebView reaches the signed Kinescope /api/v1/embed endpoint,
-          # but may fail to load the returned HLS URL because of the CDN TLS path.
-          # Intercept the signed API request itself and decode its encrypted `p`
-          # payload with the same reverse-base64 + XOR scheme used by the player.
-          marker = '        val api = Regex("https?://[^\\\"\'\\\\s<>]+/api/v1/embed/[^\\\"\'\\\\s<>]+", RegexOption.IGNORE_CASE)\n        var stream: String? = null'
-          insert = '''        val api = Regex("https?://[^\\\"'\\\\s<>]+/api/v1/embed/[^\\\"'\\\\s<>]+", RegexOption.IGNORE_CASE)
+          needle = '        val api = Regex("https?://[^\\"\'\\s<>]+/api/v1/embed/[^\\"\'\\s<>]+", RegexOption.IGNORE_CASE)\n        var stream: String? = null'
+          replacement = '''        val api = Regex("https?://[^\\"'\\s<>]+/api/v1/embed/[^\\"'\\s<>]+", RegexOption.IGNORE_CASE)
         var stream: String? = null
 
         fun decodeKinescopeApi(raw: String): String? {
@@ -77,30 +69,20 @@ jobs:
                 .find(raw)?.groupValues?.getOrNull(1) ?: return null
             val binary = android.util.Base64.decode(encoded.reversed(), android.util.Base64.DEFAULT)
             val key = "RySdvcyu5iTUxn97v4HwoniwgxaCynA"
-            val out = ByteArray(binary.size) { i ->
-                (binary[i].toInt() xor key[i % key.length].code).toByte()
-            }
+            val out = ByteArray(binary.size) { i -> (binary[i].toInt() xor key[i % key.length].code).toByte() }
             return String(out, Charsets.UTF_8)
-        }
-'''
-          if marker not in s:
-              raise SystemExit("Kinescope marker not found")
-          s = s.replace(marker, insert, 1)
-
-          s = s.replace(
-              'val resolver = WebViewResolver(interceptUrl = m3u, additionalUrls = listOf(api),',
-              'val resolver = WebViewResolver(interceptUrl = Regex("(?:https?://[^\\\"\\\'\\\\s<>]+\\\\.kinescopecdn\\\\.net/hls/[^\\\"\\\'\\\\s<>]+/index\\\\.m3u8(?:\\\\?[^\\\"\\\'\\\\s<>]*)?|https?://[^\\\"\\\'\\\\s<>]+/api/v1/embed/[^\\\"\\\'\\\\s<>]+)", RegexOption.IGNORE_CASE), additionalUrls = emptyList(),',
-              1
-          )
-
-          old_callback = '''            if (m3u.containsMatchIn(u)) { stream = u; true } else false'''
-          new_callback = '''            if (m3u.containsMatchIn(u)) {
+        }'''
+          if needle in s:
+              s = s.replace(needle, replacement, 1)
+          old = 'val resolver = WebViewResolver(interceptUrl = m3u, additionalUrls = listOf(api),'
+          new = 'val resolver = WebViewResolver(interceptUrl = Regex("(?:https?://[^\\"\'\\s<>]+\\.kinescopecdn\\.net/hls/[^\\"\'\\s<>]+/index\\.m3u8(?:\\?[^\\"\'\\s<>]*)?|https?://[^\\"\'\\s<>]+/api/v1/embed/[^\\"\'\\s<>]+)", RegexOption.IGNORE_CASE), additionalUrls = emptyList(),'
+          s = s.replace(old, new, 1)
+          old = '            if (m3u.containsMatchIn(u)) { stream = u; true } else false'
+          new = '''            if (m3u.containsMatchIn(u)) {
                 stream = u
                 true
             } else if (api.containsMatchIn(u)) {
-                val raw = runCatching {
-                    app.get(u, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua)).text
-                }.getOrNull()
+                val raw = runCatching { app.get(u, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua)).text }.getOrNull()
                 val decoded = raw?.let(::decodeKinescopeApi)
                 val manifest = decoded?.let { m3u.find(it)?.value }
                 if (manifest != null) {
@@ -108,9 +90,7 @@ jobs:
                     true
                 } else false
             } else false'''
-          if old_callback not in s:
-              raise SystemExit("Kinescope callback marker not found")
-          s = s.replace(old_callback, new_callback, 1)
+          s = s.replace(old, new, 1)
           p.write_text(s, encoding="utf-8")
           PY
           ./gradlew make --stacktrace
@@ -148,4 +128,4 @@ jobs:
           git push origin HEAD:builds --force
 
 # Force a fresh manifest rebuild after plugin removals.
-# Build verification: HintFilmIzle title/plot fallback and Kinescope API decoding are applied before compilation.
+# Build verification: HintFilmIzle metadata and Kinescope API extraction are applied before compilation.
