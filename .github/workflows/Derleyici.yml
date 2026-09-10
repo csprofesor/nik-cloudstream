@@ -53,6 +53,69 @@ jobs:
           sed -i 's/this.duration = durationText/this.duration = durationText?.substringBefore(" ")?.toIntOrNull()/g' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           sed -i 's/        response = runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/        runCatching { app.get(url, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           sed -i 's/            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()/            runCatching { app.get(fallbackUrl, referer = "$mainUrl\/", headers = headers()) }.getOrNull()?.let { response = it }/' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
+          s = p.read_text(encoding='utf-8')
+
+          old_plot = '''    private fun plot(text: String): String? {
+          section = Regex(
+            "GENEL BAKIŞ\\\\s+(.*?)(?=HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|$)",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(text)?.groupValues?.getOrNull(1) ?: return null
+        return section
+            .replace(Regex("^Türü\\\\s*:\\\\s*.*?(?=\\\\S)", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\\\s+"), " ")
+            .trim()
+            .takeIf { it.length > 20 }
+    }'''
+          # Replace the whole existing plot function by locating its boundaries.
+          start = s.find('    private fun plot(text: String): String? {')
+          end = s.find('\n    override suspend fun load', start)
+          if start >= 0 and end > start:
+              new_plot = '''    private fun plot(doc: org.jsoup.nodes.Document, text: String): String? {
+        val heading = doc.getElementsContainingOwnText("GENEL BAKIŞ").firstOrNull()
+        if (heading != null) {
+            val candidates = mutableListOf<String>()
+            var node = heading.nextElementSibling()
+            var guard = 0
+            while (node != null && guard++ < 8) {
+                val value = node.text().replace(Regex("\\\\s+"), " ").trim()
+                if (value.matches(Regex("(?i)HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN.*"))) break
+                if (value.length > 20 && !value.startsWith("Türü", true) && !value.contains("Bu Film özeti admin", true)) {
+                    candidates.add(value)
+                }
+                node = node.nextElementSibling()
+            }
+            candidates.firstOrNull()?.let { return it }
+        }
+
+        val section = Regex(
+            "(?:GENEL BAKIŞ|KONU|KONUSU)\\\\s+(.*?)(?=HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|$)",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(text)?.groupValues?.getOrNull(1)
+            ?.replace(Regex("^Türü\\\\s*:\\\\s*.*?(?=\\\\S)", RegexOption.IGNORE_CASE), "")
+            ?.replace(Regex("\\\\s+"), " ")
+            ?.trim()
+            ?.takeIf { it.length > 20 && !it.contains("Bu Film özeti admin", true) }
+        if (section != null) return section
+
+        val meta = doc.selectFirst("meta[property='og:description'],meta[name='description']")?.attr("content")?.trim()
+        return meta?.takeIf { it.length > 30 && !it.contains("HintFilmİzle", true) && !it.contains("HintFilmizle", true) }
+    }'''
+              s = s[:start] + new_plot + s[end:]
+
+          s = s.replace('val title = titleOf(doc) ?: return null', '''val title = sequenceOf(
+            doc.selectFirst("meta[property='og:title']")?.attr("content"),
+            doc.selectFirst("meta[name='twitter:title']")?.attr("content"),
+            titleOf(doc)
+        ).mapNotNull { it?.trim()?.takeIf { value -> value.isNotBlank() } }
+            .map { it.replace(Regex("\\\\s+"), " ").replace(Regex("\\\\s+(Türkçe\\\\s+(Altyazı|Dublaj)|izle)\\\\s*$", RegexOption.IGNORE_CASE), "").trim() }
+            .firstOrNull { !it.equals("Giriş yap", true) && !it.equals("Giris yap", true) }
+            ?: url.substringAfterLast('/').substringBefore('?').replace(Regex("[-_]+"), " ").replace(Regex("\\\\s+izle$", RegexOption.IGNORE_CASE), "").trim()''')
+          s = s.replace('val p = plot(text)', 'val p = plot(doc, text)')
+          p.write_text(s, encoding='utf-8')
+          PY
           ./gradlew make --stacktrace
       - name: Tüm Derlemeleri Yükle
         run: |
@@ -88,4 +151,4 @@ jobs:
           git push origin HEAD:builds --force
 
 # Force a fresh manifest rebuild after plugin removals.
-# Build verification: HintFilmIzle duration is converted to Int before compilation.
+# Build verification: HintFilmIzle title/plot extraction is patched before compilation.
