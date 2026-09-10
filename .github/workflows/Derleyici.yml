@@ -50,35 +50,6 @@ jobs:
           set -euo pipefail
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
-          s = p.read_text(encoding='utf-8')
-
-          old = '''        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
-            ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)'''
-          new = '''        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
-        if (response == null) return newHomePageResponse(request.name, emptyList(), hasNext = false)'''
-          if old in s:
-              s = s.replace(old, new, 1)
-
-          old_api = '''            } else if (api.containsMatchIn(u)) {
-                val apiBody = runCatching {
-                    app.get(u, referer = target, headers = mapOf("Referer" to target, "User-Agent" to ua)).text
-                }.getOrNull()
-                val decoded = apiBody?.let(::decodeKinescopeApi)
-                if (!decoded.isNullOrBlank()) {
-                    Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + decoded)
-                    stream = decoded
-                    true
-                } else false
-            } else false'''
-          new_api = '''            } else false'''
-          if old_api in s:
-              s = s.replace(old_api, new_api, 1)
-
-          p.write_text(s, encoding='utf-8')
-          PY
           ./gradlew make --stacktrace
       - name: Tüm Derlemeleri Yükle
         run: |
@@ -89,23 +60,20 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, json, os
-          root = Path.cwd(); manifest = root / 'plugins.json'
+          root = Path.cwd()
+          manifest = root / 'plugins.json'
           if manifest.exists():
               data = json.loads(manifest.read_text(encoding='utf-8'))
               built = {p.stem: p for p in root.glob('*.cs3')}
               data = [item for item in data if item.get('internalName') in built]
-              updated = 0
               for item in data:
-                  internal = item.get('internalName')
-                  target = built.get(internal or '')
-                  if not target:
-                      continue
-                  digest = hashlib.sha256(target.read_bytes()).hexdigest()
-                  item['fileSize'] = target.stat().st_size
-                  item['fileHash'] = f'sha256-{digest}'
-                  item['url'] = f'https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{target.name}?v={os.environ.get("GITHUB_SHA", "build")}'; updated += 1
+                  target = built.get(item.get('internalName', ''))
+                  if target:
+                      digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                      item['fileSize'] = target.stat().st_size
+                      item['fileHash'] = f'sha256-{digest}'
+                      item['url'] = f'https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{target.name}?v={os.environ.get("GITHUB_SHA", "build")}'
               manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-              print(f'Updated manifest entries: {updated}')
           PY
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
