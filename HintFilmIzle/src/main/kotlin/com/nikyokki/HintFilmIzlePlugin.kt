@@ -241,16 +241,33 @@ class HintFilmIzle : MainAPI() {
             u.contains("wp-content", true) || u.contains("wp-includes", true)) return null
         if (u.contains("player.hintfilmizle.com", true)) {
             val id = Regex("/embed/([A-Za-z0-9_-]+)").find(u)?.groupValues?.getOrNull(1) ?: return null
-            return "https://river-3-329.kinescopecdn.net/677113747/embed/$id?voiceover=487&design=3&lang=tr&nc=${System.currentTimeMillis() / 1000L}"
+            return u
         }
         if (u.contains("kinescopecdn.net", true) || u.contains("kinescope.io", true)) return u
         if (u.contains("playmate.to", true)) return u
         return null
     }
 
+    private fun decodeKinescopeApi(body: String): String? {
+        val encoded = Regex("\\\"p\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"")
+            .find(body)?.groupValues?.getOrNull(1) ?: return null
+        val encrypted = runCatching {
+            android.util.Base64.decode(encoded.reversed(), android.util.Base64.DEFAULT)
+        }.getOrNull() ?: return null
+        val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray(Charsets.UTF_8)
+        val plain = ByteArray(encrypted.size) { i ->
+            (encrypted[i].toInt() xor key[i % key.size].toInt()).toByte()
+        }
+        val decoded = runCatching { String(plain, Charsets.UTF_8) }.getOrNull() ?: return null
+        return Regex("https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
+            .find(decoded)?.value
+            ?.replace("\\/", "/")
+            ?.replace("\\u0026", "&")
+    }
+
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         val id = Regex("/embed/([A-Za-z0-9_-]+)").find(kine)?.groupValues?.getOrNull(1) ?: return false
-        val target = "https://river-3-329.kinescopecdn.net/677113747/embed/$id?voiceover=487&design=3&lang=tr&autoplay=1&muted=1&preload=1&playsinline=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
+        val target = kine
         val m3u = Regex("https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
         val api = Regex("https?://[^\"'\\s<>]+/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
         var stream: String? = null
@@ -284,10 +301,23 @@ class HintFilmIzle : MainAPI() {
               } catch(e) { return false; }
             })()
         """.trimIndent()
-        val resolver = WebViewResolver(interceptUrl = m3u, additionalUrls = listOf(api), userAgent = ua, useOkhttp = true, timeout = 90_000L, script = script)
+        val resolver = WebViewResolver(interceptUrl = Regex("(?:m3u8|/api/v1/embed/)", RegexOption.IGNORE_CASE), additionalUrls = emptyList(), userAgent = ua, useOkhttp = true, timeout = 90_000L, script = script)
         resolver.resolveUsingWebView(target, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua)) { req ->
             val u = req.url.toString()
-            if (m3u.containsMatchIn(u)) { stream = u; true } else false
+            if (m3u.containsMatchIn(u)) {
+                stream = u
+                true
+            } else if (api.containsMatchIn(u)) {
+                val apiBody = runCatching {
+                    app.get(u, referer = target, headers = mapOf("Referer" to target, "User-Agent" to ua)).text
+                }.getOrNull()
+                val decoded = apiBody?.let(::decodeKinescopeApi)
+                if (!decoded.isNullOrBlank()) {
+                    Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + decoded)
+                    stream = decoded
+                    true
+                } else false
+            } else false
         }
         val final = stream ?: return false
         callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = final, type = ExtractorLinkType.M3U8) {
@@ -306,7 +336,7 @@ class HintFilmIzle : MainAPI() {
         var found = false
         for (p in players) {
             when {
-                p.contains("kinescope", true) -> if (kinescope(p, data, callback)) found = true
+                p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) -> if (kinescope(p, data, callback)) found = true
                 p.contains("playmate.to", true) -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
                 else -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
             }
