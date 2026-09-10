@@ -26,21 +26,36 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
             "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?",
             RegexOption.IGNORE_CASE
         )
-        val apiRegex = Regex(
-            "https?://[^\"'\\s<>]+/api/v1/embed/[A-Za-z0-9_-]+(?:\\?[^\"'\\s<>]*)?",
-            RegexOption.IGNORE_CASE
-        )
         var stream: String? = null
-        var apiUrl: String? = null
         var streamHeaders: Map<String, String> = emptyMap()
 
+        // Kinescope itself creates the signed API request and then the real M3U8 request.
+        // Do not intercept the API: WebViewResolver would cancel it before Kinescope can
+        // finish the player handshake. We only intercept the final M3U8.
         val script = """
             (function() {
               try {
-                if (window.__csHintKineV6) return true;
-                window.__csHintKineV6 = true;
+                if (window.__csHintKineV8) return true;
+                window.__csHintKineV8 = true;
                 var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
-                function findManifest(value, seen) {
+
+                // Remove the site's click-blocking ad layers. No synthetic click is used.
+                function cleanAds() {
+                  try {
+                    document.querySelectorAll('.belink, .belink.active').forEach(function(e) {
+                      e.style.setProperty('display', 'none', 'important');
+                      e.style.setProperty('pointer-events', 'none', 'important');
+                    });
+                    document.querySelectorAll('[class*="belink"], [id*="belink"]').forEach(function(e) {
+                      e.style.setProperty('display', 'none', 'important');
+                      e.style.setProperty('pointer-events', 'none', 'important');
+                    });
+                  } catch (_) {}
+                }
+                cleanAds();
+                new MutationObserver(cleanAds).observe(document.documentElement, {subtree:true, childList:true, attributes:true});
+
+                function manifest(value, seen) {
                   try {
                     if (value == null) return null;
                     if (typeof value === 'string') {
@@ -52,83 +67,108 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                     if (seen.indexOf(value) >= 0) return null;
                     seen.push(value);
                     if (Array.isArray(value)) {
-                      for (var i = 0; i < value.length; i++) { var a = findManifest(value[i], seen); if (a) return a; }
+                      for (var i=0;i<value.length;i++) { var a=manifest(value[i],seen); if(a)return a; }
                     } else {
-                      for (var k in value) { try { var b = findManifest(value[k], seen); if (b) return b; } catch (_) {} }
+                      for (var k in value) { try { var b=manifest(value[k],seen); if(b)return b; } catch(_){} }
                     }
                   } catch (_) {}
                   return null;
                 }
-                function trigger(url) {
+
+                function forceVideo(url) {
                   try {
                     if (!url || window.__csHintManifest === url) return;
                     window.__csHintManifest = url;
                     var v = document.createElement('video');
                     v.muted = true;
-                    v.setAttribute('muted', '');
-                    v.setAttribute('playsinline', '');
+                    v.setAttribute('muted','');
+                    v.setAttribute('playsinline','');
                     v.preload = 'metadata';
                     v.src = url;
-                    (document.documentElement || document.body).appendChild(v);
+                    document.documentElement.appendChild(v);
                     v.load();
                   } catch (_) {}
                 }
+
                 function inspect(text) {
                   try {
-                    var direct = findManifest(text, []);
-                    if (direct) { trigger(direct); return; }
-                    var parsed = JSON.parse(text);
-                    if (!parsed || typeof parsed.p !== 'string') return;
-                    var encoded = parsed.p.split('').reverse().join('');
-                    var binary = atob(encoded);
+                    var direct = manifest(text, []);
+                    if (direct) { forceVideo(direct); return; }
+                    var obj = JSON.parse(text);
+                    if (!obj || typeof obj.p !== 'string') return;
+                    var binary = atob(obj.p.split('').reverse().join(''));
                     var out = new Uint8Array(binary.length);
-                    for (var i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i) ^ KEY.charCodeAt(i % KEY.length);
+                    for (var i=0;i<binary.length;i++) out[i] = binary.charCodeAt(i) ^ KEY.charCodeAt(i % KEY.length);
                     var decoded = new TextDecoder('utf-8').decode(out);
-                    var manifest = findManifest(JSON.parse(decoded), []);
-                    if (manifest) trigger(manifest);
+                    var found = manifest(JSON.parse(decoded), []);
+                    if (found) forceVideo(found);
                   } catch (_) {}
                 }
-                var ofetch = window.fetch;
-                if (ofetch) {
+
+                // Capture future API responses without cancelling them.
+                var of = window.fetch;
+                if (of) {
                   window.fetch = function() {
                     var args = arguments;
-                    try {
-                      var u = typeof args[0] === 'string' ? args[0] : (args[0] && args[0].url);
-                      if (/\\.m3u8(?:\\?|$)/i.test(String(u || ''))) trigger(String(u));
-                    } catch (_) {}
-                    return ofetch.apply(this, args).then(function(r) {
-                      try { r.clone().text().then(inspect).catch(function(){}); } catch (_) {}
+                    return of.apply(this,args).then(function(r) {
+                      try { r.clone().text().then(inspect).catch(function(){}); } catch(_) {}
                       return r;
                     });
                   };
                 }
-                var oopen = XMLHttpRequest.prototype.open;
-                var osend = XMLHttpRequest.prototype.send;
-                XMLHttpRequest.prototype.open = function(method, url) {
-                  this.__csUrl = String(url || '');
-                  return oopen.apply(this, arguments);
+                var oo = XMLHttpRequest.prototype.open;
+                var os = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.open = function(method,url) {
+                  this.__csHintUrl = String(url || '');
+                  return oo.apply(this,arguments);
                 };
                 XMLHttpRequest.prototype.send = function() {
-                  try {
-                    this.addEventListener('load', function() {
-                      var u = String(this.__csUrl || '');
-                      if (/\\.m3u8(?:\\?|$)/i.test(u)) trigger(u);
-                      if (u.indexOf('/api/v1/embed/') >= 0) inspect(this.responseText || '');
-                    });
-                  } catch (_) {}
-                  return osend.apply(this, arguments);
+                  try { this.addEventListener('load', function(){ inspect(this.responseText || ''); }); } catch(_) {}
+                  return os.apply(this,arguments);
                 };
+
+                // The player may have already made the API request before our hooks ran.
+                // Resource Timing lets us recover that URL and fetch its completed response.
+                function scanResources() {
+                  try {
+                    var es = performance.getEntriesByType('resource') || [];
+                    for (var i=0;i<es.length;i++) {
+                      var u = String(es[i].name || '');
+                      if (/\\/api\\/v1\\/embed\\//i.test(u)) {
+                        fetch(u, {credentials:'include'}).then(function(r){ return r.text(); }).then(inspect).catch(function(){});
+                      } else if (/\\.m3u8(?:\\?|$)/i.test(u)) {
+                        forceVideo(u);
+                      }
+                    }
+                  } catch(_) {}
+                }
+                setTimeout(scanResources, 50);
+                setTimeout(scanResources, 300);
+                setInterval(scanResources, 500);
+
+                // Also look for direct video/source URLs exposed in the DOM/config.
+                function scanDom() {
+                  try {
+                    document.querySelectorAll('video,source').forEach(function(e){
+                      var u=e.currentSrc||e.src||e.getAttribute('src')||'';
+                      if(/\\.m3u8(?:\\?|$)/i.test(u)) forceVideo(u);
+                    });
+                  } catch(_) {}
+                }
+                setInterval(scanDom, 500);
                 return true;
               } catch (_) { return false; }
             })()
         """.trimIndent()
 
         val resolver = WebViewResolver(
-            interceptUrl = Regex("(?:m3u8|/api/v1/embed/)", RegexOption.IGNORE_CASE),
+            // IMPORTANT: only the final media request is intercepted. The signed API
+            // request must be allowed to complete inside Kinescope.
+            interceptUrl = Regex("m3u8", RegexOption.IGNORE_CASE),
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = true,
-            timeout = 45_000L,
+            timeout = 60_000L,
             script = script
         )
 
@@ -143,41 +183,12 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
             )
         ) { req ->
             val u = req.url.toString()
-            when {
-                manifestRegex.containsMatchIn(u) -> {
-                    stream = u
-                    streamHeaders = req.headers.toMap()
-                    Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + u)
-                    true
-                }
-                apiRegex.containsMatchIn(u) -> {
-                    apiUrl = u
-                    Log.d("HintFilmIzle", "KINESCOPE_API=" + u)
-                    // Do NOT abort the signed API request. Kinescope needs its response
-                    // to continue initialization; the following m3u8 request is the
-                    // reliable extraction target. Returning true here destroys the WebView
-                    // before the player can request the manifest.
-                    false
-                }
-                else -> false
-            }
-        }
-
-        if (stream.isNullOrBlank() && !apiUrl.isNullOrBlank()) {
-            val apiBody = runCatching {
-                app.get(
-                    apiUrl!!,
-                    referer = target,
-                    headers = mapOf(
-                        "Referer" to target,
-                        "Origin" to "https://river-3-329.kinescopecdn.net",
-                        "User-Agent" to ua,
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                    )
-                ).text
-            }.getOrNull()
-            stream = apiBody?.let(::decodeKinescopeApi)
-            if (!stream.isNullOrBlank()) Log.d("HintFilmIzle", "KINESCOPE_API_DECODED=" + stream)
+            if (manifestRegex.containsMatchIn(u)) {
+                stream = u
+                streamHeaders = req.headers.toMap()
+                Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + u)
+                true
+            } else false
         }
 
         val final = stream ?: return false
@@ -201,4 +212,4 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
 
 text = text[:start] + replacement + text[end:]
 PATH.write_text(text, encoding='utf-8')
-print('HintFilmIzle source patched: category-safe main page + Kinescope API allowed to continue until m3u8 interception')
+print('HintFilmIzle source patched: Kinescope V8 - never intercept API, remove belink overlays, capture final M3U8')
