@@ -106,7 +106,17 @@ class HintFilmIzle : MainAPI() {
         val base = request.data.substringBefore("?").trimEnd('/')
         val q = request.data.substringAfter("?", "").takeIf { it.isNotBlank() }
         val url = if (page <= 1) request.data else base + "/page/$page/" + if (q != null) "?$q" else ""
-        val r = runCatching { results(app.get(url, referer = "$mainUrl/", headers = headers()).document) }.getOrDefault(emptyList())
+        val response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
+            ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
+        val doc = response.document
+        if (request.data.contains("/tur/", ignoreCase = true)) {
+            val heading = doc.selectFirst("h1")?.text()?.trim().orEmpty()
+            val expected = request.name.removeSuffix(" Filmleri").trim()
+            if (expected.isNotBlank() && !heading.contains(expected, ignoreCase = true)) {
+                return newHomePageResponse(request.name, emptyList(), hasNext = false)
+            }
+        }
+        val r = results(doc)
         return newHomePageResponse(request.name, r, hasNext = r.isNotEmpty())
     }
 
@@ -164,11 +174,11 @@ class HintFilmIzle : MainAPI() {
                 if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee }
             }.distinctBy { it.data }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) {
-                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration?.removeSuffix(" dk.")?.toIntOrNull(); addActors(cast); recommendations = rec
+                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration; addActors(cast); recommendations = rec
             }
         }
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration?.removeSuffix(" dk.")?.toIntOrNull(); addActors(cast); recommendations = rec
+            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration; addActors(cast); recommendations = rec
         }
     }
 
