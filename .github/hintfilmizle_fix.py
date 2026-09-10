@@ -26,16 +26,20 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
             "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?",
             RegexOption.IGNORE_CASE
         )
+        val apiRegex = Regex(
+            "https?://[^\"'\\s<>]+/api/v1/embed/[A-Za-z0-9_-]+(?:\\?[^\"'\\s<>]*)?",
+            RegexOption.IGNORE_CASE
+        )
         var stream: String? = null
+        var apiUrl: String? = null
         var streamHeaders: Map<String, String> = emptyMap()
 
         val script = """
             (function() {
               try {
-                if (window.__csHintKineV5) return true;
-                window.__csHintKineV5 = true;
+                if (window.__csHintKineV6) return true;
+                window.__csHintKineV6 = true;
                 var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
-
                 function findManifest(value, seen) {
                   try {
                     if (value == null) return null;
@@ -55,7 +59,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                   } catch (_) {}
                   return null;
                 }
-
                 function trigger(url) {
                   try {
                     if (!url || window.__csHintManifest === url) return;
@@ -64,13 +67,12 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                     v.muted = true;
                     v.setAttribute('muted', '');
                     v.setAttribute('playsinline', '');
-                    v.preload = 'auto';
+                    v.preload = 'metadata';
                     v.src = url;
                     (document.documentElement || document.body).appendChild(v);
                     v.load();
                   } catch (_) {}
                 }
-
                 function inspect(text) {
                   try {
                     var direct = findManifest(text, []);
@@ -86,7 +88,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                     if (manifest) trigger(manifest);
                   } catch (_) {}
                 }
-
                 var ofetch = window.fetch;
                 if (ofetch) {
                   window.fetch = function() {
@@ -101,7 +102,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                     });
                   };
                 }
-
                 var oopen = XMLHttpRequest.prototype.open;
                 var osend = XMLHttpRequest.prototype.send;
                 XMLHttpRequest.prototype.open = function(method, url) {
@@ -128,7 +128,7 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = true,
-            timeout = 90_000L,
+            timeout = 45_000L,
             script = script
         )
 
@@ -143,12 +143,37 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
             )
         ) { req ->
             val u = req.url.toString()
-            if (manifestRegex.containsMatchIn(u)) {
-                stream = u
-                streamHeaders = req.headers.toMap()
-                Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + u)
-                true
-            } else false
+            when {
+                manifestRegex.containsMatchIn(u) -> {
+                    stream = u
+                    streamHeaders = req.headers.toMap()
+                    Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + u)
+                    true
+                }
+                apiRegex.containsMatchIn(u) -> {
+                    apiUrl = u
+                    Log.d("HintFilmIzle", "KINESCOPE_API=" + u)
+                    true
+                }
+                else -> false
+            }
+        }
+
+        if (stream.isNullOrBlank() && !apiUrl.isNullOrBlank()) {
+            val apiBody = runCatching {
+                app.get(
+                    apiUrl!!,
+                    referer = target,
+                    headers = mapOf(
+                        "Referer" to target,
+                        "Origin" to "https://river-3-329.kinescopecdn.net",
+                        "User-Agent" to ua,
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )
+                ).text
+            }.getOrNull()
+            stream = apiBody?.let(::decodeKinescopeApi)
+            if (!stream.isNullOrBlank()) Log.d("HintFilmIzle", "KINESCOPE_API_DECODED=" + stream)
         }
 
         val final = stream ?: return false
@@ -172,4 +197,4 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
 
 text = text[:start] + replacement + text[end:]
 PATH.write_text(text, encoding='utf-8')
-print('HintFilmIzle source patched: category-safe main page + ZIP-compatible Kinescope API decoder + suspend-safe resolver')
+print('HintFilmIzle source patched: category-safe main page + suspend-safe Kinescope API interception/decoding')
