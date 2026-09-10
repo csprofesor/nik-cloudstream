@@ -153,7 +153,11 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                 apiRegex.containsMatchIn(u) -> {
                     apiUrl = u
                     Log.d("HintFilmIzle", "KINESCOPE_API=" + u)
-                    true
+                    // Do NOT abort the signed API request. Kinescope needs its response
+                    // to continue initialization; the following m3u8 request is the
+                    // reliable extraction target. Returning true here destroys the WebView
+                    // before the player can request the manifest.
+                    false
                 }
                 else -> false
             }
@@ -197,4 +201,4 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
 
 text = text[:start] + replacement + text[end:]
 PATH.write_text(text, encoding='utf-8')
-print('HintFilmIzle source patched: category-safe main page + suspend-safe Kinescope API interception/decoding')
+print('HintFilmIzle source patched: category-safe main page + Kinescope API allowed to continue until m3u8 interception')
