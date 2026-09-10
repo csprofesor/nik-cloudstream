@@ -160,7 +160,7 @@ class HintFilmIzle : MainAPI() {
         val poster = fix(doc.selectFirst("meta[property='og:image'],meta[name='twitter:image']")?.attr("content")) ?: doc.selectFirst("article,.movie-detail,.film-detail")?.poster()
         val year = Regex("YAPIM YILI\\s+(\\d{4})", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Regex("\\b(19|20)\\d{2}\\b").find(text)?.value?.toIntOrNull()
         val imdb = Regex("IMDB\\s+PUANI\\s+([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)
-        val duration = Regex("SÜRE\\s+(\\d+)\\s*dk", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.let { "$it dk." }
+        val durationText = Regex("SÜRE\\s+(\\d+)\\s*dk", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.let { "$it dk." }
         val tag = genres(doc, text)
         val cast = actors(doc)
         val rec = results(doc)
@@ -174,11 +174,11 @@ class HintFilmIzle : MainAPI() {
                 if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee }
             }.distinctBy { it.data }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) {
-                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration; addActors(cast); recommendations = rec
+                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = durationText; addActors(cast); recommendations = rec
             }
         }
         return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); duration = duration; addActors(cast); recommendations = rec
+            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = durationText; addActors(cast); recommendations = rec
         }
     }
 
@@ -187,12 +187,10 @@ class HintFilmIzle : MainAPI() {
         if (u.contains("youtube", true) || u.contains("schema.org", true) || u.contains("imdb.com", true) ||
             u.contains("google.com/search", true) || u.contains("yandex", true) || u.contains("dmca.com", true) ||
             u.contains("wp-content", true) || u.contains("wp-includes", true)) return null
-
         if (u.contains("player.hintfilmizle.com", true)) {
             val id = Regex("/embed/([A-Za-z0-9_-]+)").find(u)?.groupValues?.getOrNull(1) ?: return null
             return "https://river-3-329.kinescopecdn.net/677113747/embed/$id?voiceover=487&design=3&lang=tr&nc=${System.currentTimeMillis() / 1000L}"
         }
-
         if (u.contains("kinescopecdn.net", true) || u.contains("kinescope.io", true)) return u
         if (u.contains("playmate.to", true)) return u
         return null
@@ -204,128 +202,74 @@ class HintFilmIzle : MainAPI() {
         val m3u = Regex("https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
         val api = Regex("https?://[^\"'\\s<>]+/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
         var stream: String? = null
-        var sh = emptyMap<String, String>()
-        var apiUrl: String? = null
-        var ah = emptyMap<String, String>()
-
-        val js = """
-            (function(){
-              try{
-                var t=${org.json.JSONObject.quote(target)};
-                function f(){
-                  var n=document.querySelectorAll('[data-frame],[data-src],[data-url],[data-iframe],iframe');
-                  for(var i=0;i<n.length;i++){
-                    var x=n[i],s=x.getAttribute('data-frame')||x.getAttribute('data-src')||x.getAttribute('data-url')||x.getAttribute('data-iframe')||x.getAttribute('src')||'';
-                    if(s.indexOf('/embed/$id')>=0||/player\\.hintfilmizle\\.com|kinescope/i.test(s)){
-                      var q=x.tagName.toLowerCase()==='iframe'?x:document.createElement('iframe');
-                      if(q!==x){x.parentNode.insertBefore(q,x.nextSibling);}
-                      q.src=t;
-                      q.setAttribute('allow','autoplay; fullscreen; picture-in-picture; encrypted-media; gyroscope; accelerometer; clipboard-write; screen-wake-lock;');
-                      q.setAttribute('allowfullscreen','');
-                      q.style.width='100%';q.style.height='100%';q.style.minHeight='360px';q.style.border='0';
-                      return;
-                    }
-                  }
-                }
-                f();
-                new MutationObserver(f).observe(document.documentElement,{childList:true,subtree:true});
-                setInterval(f,1000);
-              }catch(e){console.log('HintFilmIzle inject error',e);}
-            })();
+        val script = """
+            (function() {
+              try {
+                var originalFetch = window.fetch;
+                window.fetch = function() {
+                  return originalFetch.apply(this, arguments).then(function(r) {
+                    try { r.clone().text().then(function(t) {
+                      var m = t.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                      if (m) window.__csManifest = m[0];
+                    }); } catch(e) {}
+                    return r;
+                  });
+                };
+                var o = XMLHttpRequest.prototype.open;
+                XMLHttpRequest.prototype.open = function(m,u) { this.__csUrl=u; return o.apply(this,arguments); };
+                var s = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.send = function() {
+                  this.addEventListener('load', function() {
+                    try {
+                      var t=this.responseText||'';
+                      var m=t.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                      if(m) window.__csManifest=m[0];
+                    } catch(e) {}
+                  });
+                  return s.apply(this,arguments);
+                };
+                return true;
+              } catch(e) { return false; }
+            })()
         """.trimIndent()
-
-        WebViewResolver(
-            interceptUrl = m3u,
-            additionalUrls = listOf(api),
-            userAgent = ua,
-            useOkhttp = false,
-            timeout = 90000L,
-            script = js
-        ).resolveUsingWebView(url = parent, referer = "$mainUrl/", headers = headers()) { r ->
-            val u = r.url.toString()
-            Log.d("HintFilmIzle", "KINESCOPE_REQUEST=$u")
-            when {
-                m3u.containsMatchIn(u) -> { stream = u; sh = r.headers.toMap(); true }
-                api.containsMatchIn(u) -> { apiUrl = u; ah = r.headers.toMap(); true }
-                else -> false
-            }
+        val resolver = WebViewResolver(interceptUrl = m3u, additionalUrls = listOf(api), userAgent = ua, useOkhttp = true, timeout = 90_000L, script = script)
+        resolver.resolveUsingWebView(target, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua)) { req ->
+            val u = req.url.toString()
+            if (m3u.containsMatchIn(u)) { stream = u; true } else false
         }
-
-        stream?.let { s ->
-            callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = s, type = ExtractorLinkType.M3U8) {
-                referer = sh["Referer"] ?: target
-                headers = sh + mapOf("User-Agent" to (sh["User-Agent"] ?: ua))
-                quality = getQualityFromName(s)
-            })
-            return true
-        }
-
-        apiUrl?.let { a ->
-            val r = app.get(a, referer = parent, headers = ah.ifEmpty { mapOf("User-Agent" to ua, "Referer" to target) })
-            val p = runCatching { org.json.JSONObject(r.text).optString("p") }.getOrNull().orEmpty()
-            if (p.isNotBlank()) {
-                runCatching { android.util.Base64.decode(p.reversed(), android.util.Base64.DEFAULT) }.getOrNull()?.let { b ->
-                    val k = "RySdvcyu5iTUxn97v4HwoniwgxaCynA"
-                    val d = ByteArray(b.size) { i -> (b[i].toInt() xor k[i % k.length].code).toByte() }.toString(Charsets.UTF_8)
-                    Regex("https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
-                        .findAll(d).map { it.value }.distinct().forEach { s ->
-                            callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = s, type = ExtractorLinkType.M3U8) {
-                                referer = parent
-                                headers = mapOf("Referer" to parent, "User-Agent" to ua)
-                                quality = getQualityFromName(s)
-                            })
-                        }
-                    return true
-                }
-            }
-        }
-        false
+        val final = stream ?: return false
+        callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = final, type = ExtractorLinkType.M3U8) {
+            referer = parent
+            headers = mapOf("Referer" to parent, "User-Agent" to ua)
+            quality = getQualityFromName(final)
+        })
+        true
     }.getOrElse { Log.e("HintFilmIzle", "KINESCOPE_FAILED", it); false }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         val doc = runCatching { app.get(data, referer = "$mainUrl/", headers = headers()).document }.getOrNull() ?: return false
         val players = linkedSetOf<String>()
-        fun add(v: String?) { player(v, data)?.let { u -> players.add(u) } }
-
-        doc.select("[data-frame]").forEach { add(it.attr("data-frame")) }
-        doc.select("iframe[src],iframe[data-src],iframe[data-url],[data-player],[data-embed],[data-video],[data-iframe]").forEach { e ->
-            listOf(e.attr("src"), e.attr("data-src"), e.attr("data-url"), e.attr("data-player"), e.attr("data-embed"), e.attr("data-video"), e.attr("data-iframe")).forEach(::add)
-        }
-        doc.select("[data-publisher-id][data-id]").forEach { e ->
-            val pub = e.attr("data-publisher-id")
-            val id = e.attr("data-id")
-            if (pub == "677113747" && id.isNotBlank()) players.add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?voiceover=487&design=3&lang=tr&nc=${System.currentTimeMillis() / 1000L}")
-        }
-        doc.select("script").forEach { sc ->
-            Regex("https?://player\\.hintfilmizle\\.com/embed/[A-Za-z0-9_-]+", RegexOption.IGNORE_CASE).findAll(sc.data()).forEach { add(it.value) }
-            Regex("data-frame\\s*=\\s*[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).findAll(sc.data()).forEach { add(it.groupValues[1]) }
-        }
-
-        Log.d("HintFilmIzle", "PLAYER_COUNT=${players.size}")
-        players.forEach { Log.d("HintFilmIzle", "PLAYER=$it") }
-
+        fun add(value: String?) { player(value, data)?.let { players.add(it) } }
+        documentFrames(doc, data, ::add)
         var found = false
-        for (p in players) when {
-            p.contains("kinescope", true) || p.contains("kinescopecdn", true) -> if (kinescope(p, data, callback)) found = true
-            p.contains("playmate.to", true) -> if (loadPlaymate(p, data, callback)) found = true
-            else -> {
-                runCatching { loadExtractor(p, data, subtitleCallback, callback) }
-                found = true
+        for (p in players) {
+            when {
+                p.contains("kinescope", true) -> if (kinescope(p, data, callback)) found = true
+                p.contains("playmate.to", true) -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
+                else -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
             }
         }
         return found
     }
 
-    private suspend fun loadPlaymate(playerUrl: String, parentUrl: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
-        val id = playerUrl.substringAfterLast('/').substringBefore('?').trim()
-        if (id.isBlank()) return false
-        val r = app.post("https://playmate.to/api/s", json = mapOf("c" to id, "d" to "web"), headers = mapOf("User-Agent" to ua, "Referer" to parentUrl))
-        val stream = org.json.JSONObject(r.text).optString("sx").takeIf { it.startsWith("http", true) && it.contains(".m3u8", true) } ?: return false
-        callback(newExtractorLink(source = name, name = "HintFilmİzle Playmate", url = stream, type = ExtractorLinkType.M3U8) {
-            referer = parentUrl
-            headers = mapOf("Referer" to parentUrl, "User-Agent" to ua)
-            quality = getQualityFromName(stream)
-        })
-        true
-    }.getOrElse { Log.e("HintFilmIzle", "PLAYMATE_FAILED", it); false }
+    private fun documentFrames(doc: org.jsoup.nodes.Document, base: String, add: (String?) -> Unit) {
+        doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach { e ->
+            listOf(e.attr("data-frame"), e.attr("src"), e.attr("data-src"), e.attr("data-url"), e.attr("data-iframe")).forEach(add)
+        }
+        doc.select("[data-publisher-id][data-id]").forEach { e ->
+            val pub = e.attr("data-publisher-id").trim(); val id = e.attr("data-id").trim()
+            if (pub.isNotBlank() && id.isNotBlank()) add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")
+        }
+        doc.select("script").forEach { s -> Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(s.data()).forEach { add(it.value) } }
+    }
 }
