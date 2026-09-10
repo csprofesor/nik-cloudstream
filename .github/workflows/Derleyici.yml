@@ -49,10 +49,8 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew
-          # HintFilmIzle load-response builder has a local `duration` value;
-          # qualify the receiver property so Kotlin does not resolve the
-          # assignment as a reassignment of that local val.
           sed -i 's/; duration = duration;/; this.duration = duration;/g' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          sed -i 's/this.duration = durationText/this.duration = durationText?.substringBefore(" ")?.toIntOrNull()/g' HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
           ./gradlew make --stacktrace
       - name: Tüm Derlemeleri Yükle
         run: |
@@ -88,4 +86,4 @@ jobs:
           git push origin HEAD:builds --force
 
 # Force a fresh manifest rebuild after plugin removals.
-# Build verification: HintFilmIzle duration receiver qualification is applied before compilation.
+# Build verification: HintFilmIzle duration is converted to Int before compilation.
