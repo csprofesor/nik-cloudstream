@@ -1,0 +1,64 @@
+name: Fix HintFilmIzle Home
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, 'fix HintFilmIzle home sections') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch HintFilmIzle
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
+          s = p.read_text()
+
+          old_duration = 'duration = duration?.removeSuffix(" dk.")?.toIntOrNull()'
+          count = s.count(old_duration)
+          if count != 2:
+              raise SystemExit(f'Expected 2 duration assignments, found {count}')
+          s = s.replace(old_duration, 'duration = duration')
+
+          old = '''        val r = runCatching { results(app.get(url, referer = "$mainUrl/", headers = headers()).document) }.getOrDefault(emptyList())
+        return newHomePageResponse(request.name, r, hasNext = r.isNotEmpty())'''
+          new = '''        val response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
+            ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
+        val doc = response.document
+
+        // Some stale/broken genre URLs (currently Aile) redirect to /film.
+        // Do not turn the generic /film list into a duplicate genre row.
+        if (request.data.contains("/tur/", ignoreCase = true)) {
+            val heading = doc.selectFirst("h1")?.text()?.trim().orEmpty()
+            val expected = request.name.removeSuffix(" Filmleri").trim()
+            if (expected.isNotBlank() && !heading.contains(expected, ignoreCase = true)) {
+                return newHomePageResponse(request.name, emptyList(), hasNext = false)
+            }
+        }
+
+        val r = results(doc)
+        return newHomePageResponse(request.name, r, hasNext = r.isNotEmpty())'''
+          if old not in s:
+              raise SystemExit('HomePage block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Build
+        run: |
+          cd src
+          chmod +x gradlew
+          ./gradlew make --stacktrace
+      - name: Commit fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix HintFilmIzle home sections'
+          git push
