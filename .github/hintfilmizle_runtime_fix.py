@@ -54,9 +54,6 @@ script = r'''        val script = """
                   try {
                     cleanOverlays(document);
                     startVideos(document);
-
-                    // The resolver watches network requests. We only read the
-                    // browser's resource list; we never cancel or replay API calls.
                     var es = performance.getEntriesByType('resource') || [];
                     for (var i = 0; i < es.length; i++) {
                       var u = String(es[i].name || '');
@@ -68,8 +65,6 @@ script = r'''        val script = """
                   } catch (_) {}
                 }
 
-                // Start as soon as the Kinescope DOM/player exists, then keep
-                // nudging playback without touching the signed API handshake.
                 inspect();
                 setTimeout(inspect, 100);
                 setTimeout(inspect, 300);
@@ -88,4 +83,4 @@ script = r'''        val script = """
 
 text = text[:start] + script + text[end + len('        """.trimIndent()'):]
 PATH.write_text(text, encoding='utf-8')
-print('HintFilmIzle Kinescope runtime upgraded to V11: no API replay/interception, playback is triggered safely')
+print('HintFilmIzle Kinescope runtime upgraded to V11: API is never replayed/intercepted; playback is triggered safely; final M3U8 only')
