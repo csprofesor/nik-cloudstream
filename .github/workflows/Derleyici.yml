@@ -49,6 +49,7 @@ jobs:
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/src"
           python3 .github/hintfilmizle_fix.py
+          python3 .github/hintfilmizle_resolver_patch.py
           python3 .github/hintfilmizle_runtime_fix.py
       - name: HintFilmIzle Derleme Kontrolü
         run: |
