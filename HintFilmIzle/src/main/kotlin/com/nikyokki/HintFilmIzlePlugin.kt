@@ -1,8 +1,8 @@
 package com.nikyokki
 
-// V9 ad-bypass update: Kinescope ad endpoints are blocked at the WebView layer while
-// the real embed/API/HLS chain is allowed to complete. The player is also monitored
-// for ad overlays and programmatically advanced when a skip control exists.
+// V10 Kinescope WebView fix: only the real HLS manifest terminates the resolver.
+// Analytics/ad requests are blocked in-page without using interceptUrl, because
+// WebViewResolver destroys the WebView whenever interceptUrl matches.
 
 import android.util.Log
 import com.lagradost.cloudstream3.Actor
@@ -217,22 +217,42 @@ class HintFilmIzle : MainAPI() {
         val script = """
             (function() {
               try {
-                var blocked = /(?:\\/api\\/v1\\/ad-tags|\\/vast(?:[/?]|$)|\\bad[s_-]?\\b|doubleclick|googlesyndication|googleadservices)/i;
+                var blocked = /(?:
+                  \/api\/v1\/ad-tags|
+                  \/vast(?:[/?]|$)|
+                  \/ads?(?:[/?._-]|$)|
+                  doubleclick|
+                  googlesyndication|
+                  googleadservices|
+                  googletagmanager|
+                  google-analytics|
+                  analytics\.google\.com|
+                  www\.google-analytics\.com|
+                  mc\.yandex\.ru|
+                  metrika\.yandex\.ru|
+                  yandex\.ru\/metrika
+                )/i;
+
+                function isBlocked(u) {
+                  try { return blocked.test(String(u || '')); } catch(e) { return false; }
+                }
+
                 var originalFetch = window.fetch;
                 window.fetch = function(input, init) {
                   var u = '';
                   try { u = typeof input === 'string' ? input : (input && input.url) || ''; } catch(e) {}
-                  if (blocked.test(u)) {
+                  if (isBlocked(u)) {
                     console.log('[CS-AD-BLOCK] fetch ' + u);
-                    return Promise.reject(new TypeError('blocked ad request'));
+                    return Promise.reject(new TypeError('blocked tracking request'));
                   }
                   return originalFetch.apply(this, arguments);
                 };
+
                 var xo = XMLHttpRequest.prototype.open;
                 var xs = XMLHttpRequest.prototype.send;
                 XMLHttpRequest.prototype.open = function(method, url) {
                   this.__csUrl = String(url || '');
-                  if (blocked.test(this.__csUrl)) this.__csBlocked = true;
+                  if (isBlocked(this.__csUrl)) this.__csBlocked = true;
                   return xo.apply(this, arguments);
                 };
                 XMLHttpRequest.prototype.send = function() {
@@ -243,6 +263,17 @@ class HintFilmIzle : MainAPI() {
                   }
                   return xs.apply(this, arguments);
                 };
+
+                var originalBeacon = navigator.sendBeacon;
+                if (originalBeacon) {
+                  navigator.sendBeacon = function(url, data) {
+                    if (isBlocked(url)) {
+                      console.log('[CS-AD-BLOCK] beacon ' + url);
+                      return true;
+                    }
+                    return originalBeacon.apply(this, arguments);
+                  };
+                }
 
                 function clickSkip(root) {
                   var all = [];
@@ -277,7 +308,7 @@ class HintFilmIzle : MainAPI() {
                   try {
                     performance.getEntriesByType('resource').forEach(function(e) {
                       var u=e.name||'';
-                      if (/\\.kinescopecdn\\.net\\/hls\\/.+\\/index\\.m3u8/i.test(u)) window.__csManifest=u;
+                      if (/\.kinescopecdn\.net\/hls\/.+\/index\.m3u8/i.test(u)) window.__csManifest=u;
                     });
                   } catch(e) {}
                 }
@@ -289,21 +320,36 @@ class HintFilmIzle : MainAPI() {
             })()
         """.trimIndent()
 
-        // Do not intercept API: returning true for it cancels Kinescope's handshake.
-        // Block only known ad endpoints; allow embed API and HLS to pass normally.
-        val intercept = Regex("(?:m3u8|/api/v1/ad-tags|/vast(?:[/?]|$)|doubleclick|googlesyndication|googleadservices)", RegexOption.IGNORE_CASE)
-        val resolver = WebViewResolver(interceptUrl = intercept, additionalUrls = emptyList(), userAgent = ua, useOkhttp = true, timeout = 90_000L, script = script)
+        // IMPORTANT: WebViewResolver destroys the WebView when interceptUrl matches.
+        // Therefore only the actual Kinescope HLS manifest belongs here. Ad/tracking
+        // endpoints are filtered by the injected JS above and are never allowed to
+        // terminate the resolver before the manifest is discovered.
+        val intercept = Regex(
+            "\\.kinescopecdn\\.net/hls/.+/index\\.m3u8(?:\\?.*)?$",
+            RegexOption.IGNORE_CASE
+        )
+        val resolver = WebViewResolver(
+            interceptUrl = intercept,
+            additionalUrls = emptyList(),
+            userAgent = ua,
+            useOkhttp = true,
+            timeout = 90_000L,
+            script = script
+        )
 
-        resolver.resolveUsingWebView(kine, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua)) { req ->
+        resolver.resolveUsingWebView(
+            kine,
+            referer = parent,
+            headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua)
+        ) { req ->
             val u = req.url.toString()
             if (m3u.containsMatchIn(u)) {
                 stream = u
                 Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + u)
                 true
-            } else if (u.contains("/api/v1/ad-tags", true) || Regex("/(?:vast)(?:[/?]|$)", RegexOption.IGNORE_CASE).containsMatchIn(u) || Regex("(?:doubleclick|googlesyndication|googleadservices)", RegexOption.IGNORE_CASE).containsMatchIn(u)) {
-                Log.d("HintFilmIzle", "KINESCOPE_AD_BLOCKED=" + u)
-                true
-            } else false
+            } else {
+                false
+            }
         }
 
         val final = stream ?: return false
