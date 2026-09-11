@@ -27,9 +27,11 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class HintFilmWebViewResolver(
     private val interceptUrl: Regex,
+    private val additionalUrls: List<Regex> = emptyList(),
     private val userAgent: String?,
-    private val script: String?,
+    private val useOkhttp: Boolean = false,
     private val timeout: Long = 60_000L,
+    private val script: String?,
     private val blockedDomains: Set<String> = setOf(
         "mc.yandex.ru",
         "mc.yandex.com",
