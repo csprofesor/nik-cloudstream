@@ -3,12 +3,8 @@ from pathlib import Path
 PATH = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
 text = PATH.read_text(encoding='utf-8')
 
-old = '''        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
-            ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
-'''
-new = '''        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()
-        if (response == null) return newHomePageResponse(request.name, emptyList(), hasNext = false)
-'''
+old = '''        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n            ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)\n'''
+new = '''        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n        if (response == null) return newHomePageResponse(request.name, emptyList(), hasNext = false)\n'''
 if old in text:
     text = text.replace(old, new, 1)
 
@@ -29,17 +25,12 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
         var stream: String? = null
         var streamHeaders: Map<String, String> = emptyMap()
 
-        // Kinescope must be allowed to complete both the signed ad-tags request and
-        // the signed embed API request. Cancelling either request breaks the player.
         val script = """
             (function() {
               try {
                 if (window.__csHintKineV10) return true;
                 window.__csHintKineV10 = true;
                 var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
-
-                // CloudStream has no real pointer interaction. Remove the site's
-                // transparent ad/click layers instead of trying to click through them.
                 function cleanAds() {
                   try {
                     document.querySelectorAll('.belink, .belink.active, [class*="belink"], [id*="belink"]').forEach(function(e) {
@@ -51,7 +42,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                 }
                 cleanAds();
                 new MutationObserver(cleanAds).observe(document.documentElement, {subtree:true, childList:true, attributes:true});
-
                 function findManifest(value, seen) {
                   try {
                     if (value == null) return null;
@@ -71,7 +61,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                   } catch (_) {}
                   return null;
                 }
-
                 function forceVideo(url) {
                   try {
                     if (!url || window.__csHintManifest === url) return;
@@ -86,7 +75,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                     v.load();
                   } catch (_) {}
                 }
-
                 function inspectResponse(text) {
                   try {
                     var direct=findManifest(text,[]);
@@ -101,8 +89,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                     if(found) forceVideo(found);
                   }catch(_){}
                 }
-
-                // Observe responses without blocking/cancelling them.
                 var of=window.fetch;
                 if(of){
                   window.fetch=function(){
@@ -120,8 +106,6 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
                   try{this.addEventListener('load',function(){inspectResponse(this.responseText||'');});}catch(_){}
                   return os.apply(this,arguments);
                 };
-
-                // Recover API/M3U8 URLs if the player requested them before our hooks ran.
                 function scanResources(){
                   try{
                     var es=performance.getEntriesByType('resource')||[];
@@ -141,13 +125,11 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
             })()
         """.trimIndent()
 
-        // CRITICAL: API is deliberately NOT in interceptUrl. WebViewResolver cancels
-        // intercepted requests; Kinescope needs the API request to finish normally.
         val resolver = WebViewResolver(
             interceptUrl = Regex("m3u8", RegexOption.IGNORE_CASE),
             additionalUrls = emptyList(),
             userAgent = ua,
-            useOkhttp = true,
+            useOkhttp = false,
             timeout = 60_000L,
             script = script
         )
@@ -192,4 +174,25 @@ replacement = r'''    private suspend fun kinescope(kine: String, parent: String
 
 text = text[:start] + replacement + text[end:]
 PATH.write_text(text, encoding='utf-8')
-print('HintFilmIzle source patched: V10 - Kinescope API is never intercepted/cancelled; only final M3U8 is intercepted')
+
+# Patch CloudStream's WebViewResolver at build time so only the Kinescope
+# player and HintFilmIzle origin are allowed to use the WebView network stack.
+# shouldInterceptRequest must return a non-null empty response to block a request;
+# returning null means WebView continues the request normally.
+WEBVIEW = Path('library/src/androidMain/kotlin/com/lagradost/cloudstream3/network/WebViewResolver.android.kt')
+if WEBVIEW.exists():
+    wv = WEBVIEW.read_text(encoding='utf-8')
+    marker = '                    webView?.webViewClient = object : WebViewClient() {'
+    if marker in wv and 'HINTFILMIZLE_BLOCKLIST_V14' not in wv:
+        inject = '''                    // HINTFILMIZLE_BLOCKLIST_V14\n                    // Keep Kinescope/player traffic on the real WebView network stack,\n                    // but drop analytics/ad traffic before it reaches the network.\n                    fun hintFilmAllowed(url: String): Boolean {\n                        val host = runCatching { android.net.Uri.parse(url).host?.lowercase() }.getOrNull() ?: return false\n                        return host == "hintfilmizle.com" ||\n                            host.endsWith(".hintfilmizle.com") ||\n                            host == "kinescopecdn.net" ||\n                            host.endsWith(".kinescopecdn.net")\n                    }\n\n                    fun hintFilmBlocked(url: String): Boolean {\n                        val host = runCatching { android.net.Uri.parse(url).host?.lowercase() }.getOrNull() ?: return false\n                        return host == "googletagmanager.com" || host.endsWith(".googletagmanager.com") ||\n                            host == "google-analytics.com" || host.endsWith(".google-analytics.com") ||\n                            host == "mc.yandex.ru" || host.endsWith(".mc.yandex.ru")\n                    }\n\n                    fun hintFilmEmptyResponse(): WebResourceResponse =\n                        WebResourceResponse("text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0)))\n\n'''
+        wv = wv.replace(marker, inject + marker, 1)
+        needle = '''                        val webViewUrl = request.url.toString()\n                        Log.i(TAG, "Loading WebView URL: $webViewUrl")\n'''
+        repl = '''                        val webViewUrl = request.url.toString()\n                        Log.i(TAG, "Loading WebView URL: $webViewUrl")\n\n                        if (hintFilmBlocked(webViewUrl)) {\n                            Log.i(TAG, "HINTFILMIZLE_BLOCKED=$webViewUrl")\n                            return@runBlocking hintFilmEmptyResponse()\n                        }\n\n                        // For the HintFilmIzle/Kinescope resolver, keep the network\n                        // surface tight. Non-http(s) resources are left to WebView.\n                        val scheme = runCatching { android.net.Uri.parse(webViewUrl).scheme?.lowercase() }.getOrNull()\n                        if ((scheme == "http" || scheme == "https") && !hintFilmAllowed(webViewUrl)) {\n                            Log.i(TAG, "HINTFILMIZLE_BLOCKED_EXTERNAL=$webViewUrl")\n                            return@runBlocking hintFilmEmptyResponse()\n                        }\n'''
+        if needle in wv:
+            wv = wv.replace(needle, repl, 1)
+        WEBVIEW.write_text(wv, encoding='utf-8')
+        print('HintFilmIzle V14: WebView uses native network stack + Kinescope/main-site allowlist + analytics blocklist')
+    else:
+        print('HintFilmIzle V14 WebView patch already present or marker not found')
+else:
+    print('CloudStream WebViewResolver.android.kt not found; skipping V14 network filter')
