@@ -48,7 +48,17 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/src"
-          echo "HintFilmIzle: repository source is used as-is; no resolver/runtime rewrite"
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
+          s = p.read_text(encoding="utf-8-sig")
+          old = '''            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n            if (response != null) { doc = response.document; r = results(doc, slug) }'''
+          new = '''            runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()?.let { fallback ->\n                response = fallback\n                doc = fallback.document\n                r = results(doc, slug)\n            }'''
+          if old not in s:
+              raise SystemExit("Expected nullable fallback assignment was not found")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          PY
+          echo "HintFilmIzle: fixed nullable NiceResponse assignment without resolver/runtime rewrite"
       - name: HintFilmIzle Derleme Kontrolü
         run: |
           set -euo pipefail
