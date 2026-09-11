@@ -12,11 +12,11 @@ if end < 0:
 script = r'''        val script = """
             (function() {
               try {
-                if (window.__csHintKineV12) return true;
-                window.__csHintKineV12 = true;
+                if (window.__csHintKineV13) return true;
+                window.__csHintKineV13 = true;
 
-                // Do not replay, replace, or cancel the Kinescope API request.
-                // The player must complete its own handshake and create the signed HLS URL.
+                // Never replay/cancel Kinescope API requests. The player owns the
+                // handshake and must be allowed to create its signed HLS URL.
                 function isManifest(u) {
                   try {
                     if (typeof u !== 'string') return null;
@@ -25,14 +25,15 @@ script = r'''        val script = """
                   } catch (_) { return null; }
                 }
 
-                // Remove transparent/click-blocking advertisement overlays only.
-                // Never touch video, source, iframe, API, player or HLS elements.
-                function cleanOverlays(root) {
+                // Remove known transparent ad/click overlays. Do not hide video,
+                // source, iframe, player, API or HLS elements.
+                function cleanAds(root) {
                   try {
                     var selectors = [
-                      '.belink', '.belink.active', '[class*="belink"]', '[id*="belink"]',
-                      '.ad-overlay', '.ad-overlay-container', '.advertisement-overlay',
-                      '.video-ad-overlay', '.player-ad-overlay'
+                      '.belink', '[class*="belink"]', '[id*="belink"]',
+                      '.ad-overlay', '.ad-overlay-container',
+                      '.advertisement-overlay', '.video-ad-overlay',
+                      '.player-ad-overlay', '[data-ad-overlay]'
                     ];
                     root.querySelectorAll(selectors.join(',')).forEach(function(e) {
                       e.style.setProperty('display','none','important');
@@ -42,32 +43,56 @@ script = r'''        val script = """
                   } catch (_) {}
                 }
 
-                // Kinescope may wait for a user gesture before starting. CloudStream has
-                // already requested autoplay, so keep the actual player video running.
-                function startVideos(root) {
+                // Block popup/new-tab navigation commonly used by ad click layers,
+                // while leaving the current Kinescope document and network untouched.
+                try {
+                  window.open = function() { return null; };
+                } catch (_) {}
+
+                function startPlayer() {
                   try {
-                    root.querySelectorAll('video').forEach(function(v) {
+                    cleanAds(document);
+                    document.querySelectorAll('video').forEach(function(v) {
                       try {
                         v.muted = true;
+                        v.autoplay = true;
                         v.setAttribute('muted','');
+                        v.setAttribute('autoplay','');
                         v.setAttribute('playsinline','');
                         v.setAttribute('webkit-playsinline','');
-                        v.autoplay = true;
+                        v.removeAttribute('controlslist');
                         if (v.paused || v.readyState < 2) {
                           var p = v.play();
                           if (p && p.catch) p.catch(function(){});
                         }
                       } catch (_) {}
                     });
+
+                    // Some Kinescope builds expose a native play button after the
+                    // player is mounted. Clicking only recognized play controls avoids
+                    // clicking arbitrary ad links.
+                    var buttons = document.querySelectorAll(
+                      'button[aria-label*="Play" i], button[title*="Play" i], ' +
+                      '[role="button"][aria-label*="Play" i], .kinescope-player button'
+                    );
+                    for (var i = 0; i < buttons.length; i++) {
+                      try {
+                        var b = buttons[i];
+                        var label = ((b.getAttribute('aria-label') || '') + ' ' +
+                                     (b.getAttribute('title') || '')).toLowerCase();
+                        if (label.indexOf('play') >= 0 && label.indexOf('playlist') < 0) {
+                          b.click();
+                          break;
+                        }
+                      } catch (_) {}
+                    }
                   } catch (_) {}
                 }
 
-                // Watch only what the player has already requested. We do not make our
-                // own API request and therefore do not duplicate nonce/signature traffic.
                 function scanResources() {
                   try {
-                    cleanOverlays(document);
-                    startVideos(document);
+                    cleanAds(document);
+                    startPlayer();
                     var es = performance.getEntriesByType('resource') || [];
                     for (var i = es.length - 1; i >= 0; i--) {
                       var u = String(es[i].name || '');
@@ -81,24 +106,22 @@ script = r'''        val script = """
                 }
 
                 scanResources();
-                setTimeout(scanResources, 100);
-                setTimeout(scanResources, 300);
-                setTimeout(scanResources, 700);
-                setTimeout(scanResources, 1500);
-                setTimeout(scanResources, 3000);
+                [100,300,700,1500,3000,5000,10000].forEach(function(ms) {
+                  setTimeout(scanResources, ms);
+                });
                 setInterval(scanResources, 1000);
 
-                new MutationObserver(function() {
-                  try {
-                    cleanOverlays(document);
-                    startVideos(document);
-                  } catch (_) {}
-                }).observe(document.documentElement || document, {
-                  subtree:true,
-                  childList:true,
-                  attributes:true,
-                  attributeFilter:['class','style']
-                });
+                try {
+                  new MutationObserver(function() {
+                    cleanAds(document);
+                    startPlayer();
+                  }).observe(document.documentElement || document, {
+                    subtree:true,
+                    childList:true,
+                    attributes:true,
+                    attributeFilter:['class','style','aria-label']
+                  });
+                } catch (_) {}
 
                 return true;
               } catch (_) { return false; }
@@ -107,4 +130,4 @@ script = r'''        val script = """
 
 text = text[:start] + script + text[end + len('        """.trimIndent()'):]
 PATH.write_text(text, encoding='utf-8')
-print('HintFilmIzle Kinescope runtime upgraded to V12: player handshake untouched, ad overlays cleaned, playback triggered, final signed M3U8 only')
+print('HintFilmIzle Kinescope runtime upgraded to V13: player startup + safe ad overlay/popup suppression; no API replay/interception')
