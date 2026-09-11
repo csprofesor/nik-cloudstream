@@ -48,8 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/src"
-          python3 .github/hintfilmizle_fix.py
-          python3 .github/hintfilmizle_runtime_fix.py
+          echo "HintFilmIzle: repository source is used as-is; no resolver/runtime rewrite"
       - name: HintFilmIzle Derleme Kontrolü
         run: |
           set -euo pipefail
