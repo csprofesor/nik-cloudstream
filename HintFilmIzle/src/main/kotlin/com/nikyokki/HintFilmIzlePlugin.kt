@@ -29,10 +29,14 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.json.JSONArray
 import org.json.JSONObject
+import org.json.JSONTokener
 import org.jsoup.nodes.Element
 import java.net.URI
+import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.ArrayDeque
 
 class HintFilmIzle : MainAPI() {
     override var mainUrl = "https://www.hintfilmizle.com"
@@ -170,25 +174,91 @@ class HintFilmIzle : MainAPI() {
     }
 
     private val kinescopeManifestRegex = Regex(
-        "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
+        "https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
         RegexOption.IGNORE_CASE
     )
-    private val kinescopeApiRegex = Regex("https?://kinescope\\.io/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\"'\\s<>]*kinescopecdn\\.net)/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+
+    private fun normalizeKinescopeValue(value: String?): String? = value
+        ?.replace("\\/", "/")
+        ?.replace("\\u0026", "&")
+        ?.replace("\\u003d", "=")
+        ?.replace("&amp;", "&")
+        ?.trim()
+        ?.trim('"')
+        ?.takeIf { it.isNotBlank() }
 
     private fun firstManifest(value: String?): String? = value
-        ?.replace("\\/", "/")
-        ?.let { kinescopeManifestRegex.find(it)?.value }
+        ?.let(::normalizeKinescopeValue)
+        ?.let { normalized ->
+            kinescopeManifestRegex.find(normalized)?.value
+                ?: normalized.takeIf { '%' in it }?.let { encoded ->
+                    runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrNull()
+                }?.let { kinescopeManifestRegex.find(it)?.value }
+        }
+
+    private fun decodeBase64Candidates(value: String): List<String> {
+        fun decodeBytes(candidate: String): ByteArray? {
+            val normalized = candidate.replace('-', '+').replace('_', '/')
+            val padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '=')
+            return runCatching { Base64.decode(padded, Base64.DEFAULT) }.getOrNull()
+        }
+
+        val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray()
+        return linkedSetOf(value, value.reversed()).flatMap { candidate ->
+            val decoded = decodeBytes(candidate) ?: return@flatMap emptyList()
+            buildList {
+                add(String(decoded, Charsets.UTF_8))
+                add(String(ByteArray(decoded.size) { i -> (decoded[i].toInt() xor key[i % key.size].toInt()).toByte() }, Charsets.UTF_8))
+            }
+        }.distinct()
+    }
+
+    private fun findManifestInJson(value: String): String? {
+        val root = runCatching { JSONTokener(value).nextValue() }.getOrNull() ?: return null
+        val queue = ArrayDeque<Any?>()
+        val seenStrings = linkedSetOf<String>()
+        queue.add(root)
+
+        fun enqueueJson(candidate: String) {
+            when (val parsed = runCatching { JSONTokener(candidate).nextValue() }.getOrNull()) {
+                is JSONObject, is JSONArray -> queue.add(parsed)
+            }
+        }
+
+        while (queue.isNotEmpty()) {
+            when (val current = queue.removeFirst()) {
+                is JSONObject -> {
+                    val keys = current.keys()
+                    while (keys.hasNext()) queue.add(current.opt(keys.next()))
+                }
+                is JSONArray -> for (i in 0 until current.length()) queue.add(current.opt(i))
+                is String -> {
+                    val normalized = normalizeKinescopeValue(current) ?: continue
+                    if (!seenStrings.add(normalized)) continue
+                    firstManifest(normalized)?.let { return it }
+                    enqueueJson(normalized)
+                    decodeBase64Candidates(normalized).forEach { decoded ->
+                        val candidate = normalizeKinescopeValue(decoded) ?: return@forEach
+                        if (seenStrings.add(candidate)) {
+                            firstManifest(candidate)?.let { return it }
+                            enqueueJson(candidate)
+                        }
+                    }
+                }
+            }
+        }
+
+        return null
+    }
 
     private fun decodeKinescopeManifestResponse(responseBody: String): String? {
         firstManifest(responseBody)?.let { return it }
+        findManifestInJson(responseBody)?.let { return it }
         val encrypted = runCatching { JSONObject(responseBody).optString("p") }.getOrNull()
-            ?.replace("\\/", "/")
-            ?.takeIf { it.isNotBlank() }
+            ?.let(::normalizeKinescopeValue)
             ?: return null
-        val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray()
-        val decoded = runCatching { Base64.decode(encrypted.reversed(), Base64.DEFAULT) }.getOrNull() ?: return null
-        val plain = ByteArray(decoded.size) { i -> (decoded[i].toInt() xor key[i % key.size].toInt()).toByte() }
-        return firstManifest(String(plain, Charsets.UTF_8))
+        return decodeBase64Candidates(encrypted).firstNotNullOfOrNull(::firstManifest)
     }
 
     private fun redactUrlForLog(url: String): String = url.substringBefore('?') + if (url.contains("?")) "?<redacted>" else ""
@@ -218,7 +288,7 @@ class HintFilmIzle : MainAPI() {
                 function isManifest(u) {
                   try {
                     if (typeof u !== 'string') return null;
-                    var m = u.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                    var m = u.match(/https?:\\/\\/[^\\s\"']*(?:kinescopecdn\\.net|kinescope\\.io)\\/[^\\s\"']+\\.m3u8(?:\\?[^\\s\"']*)?/i);
                     return m ? m[0] : null;
                   } catch (_) { return null; }
                 }
@@ -333,7 +403,7 @@ class HintFilmIzle : MainAPI() {
         """.trimIndent()
 
         val resolver = WebViewResolver(
-            interceptUrl = Regex("""https?://(?:kinescope\.io/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*kinescopecdn\.net/hls/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
+            interceptUrl = Regex("""https?://(?:(?:kinescope\.io|[^"'\\s<>]*kinescopecdn\.net)/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*(?:kinescopecdn\.net|kinescope\.io)/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = false,
@@ -353,14 +423,14 @@ class HintFilmIzle : MainAPI() {
         ) { req ->
             val u=req.url.toString()
             if (kinescopeApiRegex.containsMatchIn(u)) {
-                apiRequestUrl = u
+                apiRequestUrl = fix(u, target) ?: normalizeKinescopeValue(u) ?: u
                 apiRequestHeaders = req.headers.toMap()
-                Log.d("HintFilmIzle", "KINESCOPE_API_URL=${redactUrlForLog(u)}")
+                Log.d("HintFilmIzle", "KINESCOPE_API_URL=${redactUrlForLog(apiRequestUrl ?: u)}")
                 false
             } else if (kinescopeManifestRegex.containsMatchIn(u)) {
-                stream=u
+                stream = fix(u, target) ?: normalizeKinescopeValue(u) ?: u
                 streamHeaders=req.headers.toMap()
-                Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=${redactUrlForLog(u)}")
+                Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=${redactUrlForLog(stream ?: u)}")
                 true
             } else false
         }
@@ -381,7 +451,9 @@ class HintFilmIzle : MainAPI() {
                         referer = apiReferer,
                         headers = requestHeaders
                     )
-                    decodeKinescopeManifestResponse(response.text)
+                    decodeKinescopeManifestResponse(response.text).also {
+                        if (it == null) Log.d("HintFilmIzle", "KINESCOPE_API_DECODE_FAILED")
+                    }
                 }.onFailure {
                     Log.e("HintFilmIzle", "KINESCOPE_API_RESOLVE_FAILED", it)
                 }.getOrNull()
