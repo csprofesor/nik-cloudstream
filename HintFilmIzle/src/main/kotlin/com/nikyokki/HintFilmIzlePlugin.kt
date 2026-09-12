@@ -416,7 +416,7 @@ class HintFilmIzle : MainAPI() {
         """.trimIndent()
 
         val resolver = WebViewResolver(
-            interceptUrl = Regex("""https?://(?:(?:kinescope\.io|[^"'\\s<>]*kinescopecdn\.net)(?:/[^"'\\s<>]+)*/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*(?:kinescopecdn\.net|kinescope\.io)/(?:[^"'\\s<>]+/)*hls/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
+            interceptUrl = Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = false,
