@@ -3,8 +3,6 @@ from pathlib import Path
 path = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
 s = path.read_text(encoding="utf-8-sig")
 
-# Keep the Kinescope API decoder: the site's embed API returns an encrypted
-# `p` field which decodes to the real, signed CDN HLS manifest.
 decoder_start = s.find("    private fun decodeKinescopeApi(body: String): String?")
 decoder_end = s.find("    private suspend fun kinescope(", decoder_start)
 if decoder_start < 0 or decoder_end < 0:
@@ -68,18 +66,19 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
         val parsed = runCatching { URI(kine) }.getOrNull() ?: return false
         val playerHost = parsed.host ?: return false
         val query = parsed.rawQuery.orEmpty()
-        val lang = Regex("(?:^|&)lang=([^&]+)").find(query)?.groupValues?.getOrNull(1) ?: "en"
+        val lang = Regex("(?:^|&)lang=([^&]+)").find(query)?.groupValues?.getOrNull(1) ?: "tr"
         val voiceover = Regex("(?:^|&)voiceover=([^&]+)").find(query)?.groupValues?.getOrNull(1)
         val nc = Regex("(?:^|&)nc=([^&]+)").find(query)?.groupValues?.getOrNull(1)
             ?: (System.currentTimeMillis() / 1000L).toString()
 
-        // IMPORTANT: the iframe itself may be served from a river-*.kinescopecdn.net
-        // host, but /api/v1/embed/{id} is the Kinescope API endpoint, not a CDN path.
         val apiBase = "https://kinescope.io/api/v1/embed/$id"
+        val kinescopeIframe = "https://kinescope.io/embed/$id"
         Log.d("HintFilmIzle", "KINESCOPE_API_START=$apiBase")
 
+        // The old player.hintfilmizle.com hostname is currently not resolvable on
+        // the Android resolver. Do not make playback depend on fetching that host.
         val embedBody = runCatching {
-            app.get(kine, referer = parent, headers = headers()).text
+            app.get(kinescopeIframe, referer = parent, headers = headers()).text
         }.getOrNull().orEmpty()
 
         val normalizedEmbed = embedBody
@@ -87,7 +86,6 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
             .replace("\\/", "/")
             .replace("&amp;", "&")
 
-        // Some revisions expose the already-signed API or HLS URL in bootstrap JSON.
         val directHls = Regex(
             """https?://[^\"'\s<>]+\.kinescopecdn\.net/hls/[^\"'\s<>]+/index\.m3u8(?:\?[^\"'\s<>]*)?""",
             RegexOption.IGNORE_CASE
@@ -95,8 +93,8 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
         if (directHls != null) {
             Log.d("HintFilmIzle", "KINESCOPE_EMBED_HLS=$directHls")
             callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = directHls, type = ExtractorLinkType.M3U8) {
-                referer = kine
-                headers = mapOf("Referer" to kine, "Origin" to "https://$playerHost", "User-Agent" to ua)
+                referer = kinescopeIframe
+                headers = mapOf("Referer" to kinescopeIframe, "Origin" to "https://$playerHost", "User-Agent" to ua)
                 quality = getQualityFromName(directHls)
             })
             return true
@@ -109,10 +107,12 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
             ?.replace("\\u0026", "&")
             ?.replace("&amp;", "&")
 
+        val domain = URI(parent).host ?: "www.hintfilmizle.com"
         val params = buildList {
             add("lang=${URLEncoder.encode(lang, "UTF-8")}")
-            add("domain=${URLEncoder.encode(URI(parent).host ?: "hintfilmizle.com", "UTF-8")}")
-            add("iframe_url=${URLEncoder.encode(kine, "UTF-8")}")
+            add("domain=${URLEncoder.encode(domain, "UTF-8")}")
+            // Kinescope's own embed URL is the canonical iframe URL for the API.
+            add("iframe_url=${URLEncoder.encode(kinescopeIframe, "UTF-8")}")
             voiceover?.let { add("voiceover=${URLEncoder.encode(it, "UTF-8")}") }
             add("nc=${URLEncoder.encode(nc, "UTF-8")}")
         }.joinToString("&")
@@ -128,18 +128,33 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
             val body = runCatching {
                 app.get(
                     apiUrl,
-                    referer = kine,
+                    referer = kinescopeIframe,
                     headers = headers() + mapOf(
                         "Origin" to "https://$playerHost",
                         "Accept" to "application/json,text/plain,*/*"
                     )
                 ).text
             }.getOrNull() ?: continue
+            Log.d("HintFilmIzle", "KINESCOPE_API_BODY_LEN=${body.length}")
             stream = decodeKinescopeApi(body)
             if (stream != null) {
                 Log.d("HintFilmIzle", "KINESCOPE_API_OK=$apiUrl")
                 Log.d("HintFilmIzle", "KINESCOPE_HLS=$stream")
                 break
+            }
+        }
+
+        // Last fallback: Kinescope documents this direct HLS form. Keep it after
+        // the embed API because this site's CDN commonly requires a signed URL.
+        if (stream == null) {
+            val directMaster = "https://kinescope.io/$id/master.m3u8"
+            Log.d("HintFilmIzle", "KINESCOPE_MASTER_TRY=$directMaster")
+            val masterBody = runCatching {
+                app.get(directMaster, referer = kinescopeIframe, headers = headers()).text
+            }.getOrNull()
+            if (masterBody?.contains("#EXTM3U") == true) {
+                stream = directMaster
+                Log.d("HintFilmIzle", "KINESCOPE_MASTER_OK=$directMaster")
             }
         }
 
@@ -149,9 +164,9 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
         }
 
         callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = final, type = ExtractorLinkType.M3U8) {
-            referer = kine
+            referer = kinescopeIframe
             headers = mapOf(
-                "Referer" to kine,
+                "Referer" to kinescopeIframe,
                 "Origin" to "https://$playerHost",
                 "User-Agent" to ua
             )
@@ -166,9 +181,7 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
 '''
 s = s[:kine_start] + kine + s[loadlinks_start:]
 
-# The generated source no longer needs WebViewResolver.
 s = s.replace('import com.lagradost.cloudstream3.network.WebViewResolver\n', '')
 s = s.replace('// Kinescope WebView resolver: only the real HLS manifest terminates the resolver.\n// Analytics/ad requests are blocked in-page without using interceptUrl.\n', '// Kinescope resolver: use the embed API to obtain the real signed CDN HLS manifest.\n')
-
 path.write_text(s, encoding="utf-8")
 print("HintFilmIzle Kinescope API resolver patch applied")
