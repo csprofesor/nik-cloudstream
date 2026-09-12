@@ -65,10 +65,13 @@ class MainUrlUpdater:
         return None
 
     def _rectv_ver(self):
+        api_key = os.environ.get("GOOGLE_API_KEY")
+        if not api_key:
+            raise RuntimeError("GOOGLE_API_KEY is not set")
         istek = self.oturum.post(
             url="https://firebaseremoteconfig.googleapis.com/v1/projects/791583031279/namespaces/firebase:fetch",
             headers={
-                "X-Goog-Api-Key": os.environ.get("GOOGLE_API_KEY", ""),
+                "X-Goog-Api-Key": api_key,
                 "X-Android-Package": "com.rectv.shot",
                 "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 12)",
             },
