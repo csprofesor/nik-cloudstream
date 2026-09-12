@@ -1,7 +1,7 @@
-version = 47
+version = 21
 
 cloudstream {
-    authors = listOf("csprofesor")
+    authors     = listOf("keyiflerolsun", "nikyokki")
     language    = "tr"
     description = "Binlerce Film İzleme Seçeneğiyle En İyi Film İzleme Sitesi"
 
@@ -14,5 +14,5 @@ cloudstream {
     **/
     status  = 1 // will be 3 if unspecified
     tvTypes = listOf("Movie")
-    iconUrl = "https://www.google.com/s2/favicons?domain=https://jetfilmizle.de&sz=%size%"
+    iconUrl = "https://www.google.com/s2/favicons?domain=jetfilmizle.de&sz=%size%"
 }
