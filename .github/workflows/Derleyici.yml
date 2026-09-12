@@ -53,6 +53,10 @@ jobs:
         working-directory: src
         run: python3 .github/hintfilmizle_kinescope_fix.py
 
+      - name: HintFilmIzle İmzalı Kinescope Düzeltmesi
+        working-directory: src
+        run: python3 .github/hintfilmizle_signed_fix.py
+
       - name: HintFilmIzle Derleme Kontrolü
         working-directory: src
         run: ./gradlew :HintFilmIzle:make --stacktrace
