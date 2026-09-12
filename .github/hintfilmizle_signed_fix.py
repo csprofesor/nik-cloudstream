@@ -3,6 +3,7 @@ from pathlib import Path
 path = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
 s = path.read_text(encoding="utf-8-sig")
 
+# Keep the fallback response nullable-safe for the current CloudStream API.
 old = '''            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()
             if (response != null) { doc = response.document; r = results(doc, slug) }
 '''
@@ -32,8 +33,6 @@ new_kinescope = r'''    private suspend fun kinescope(kine: String, parent: Stri
         Log.d("HintFilmIzle", "KINESCOPE_EMBED_HOST=${actualParsed.host}")
         Log.d("HintFilmIzle", "KINESCOPE_WEBVIEW_URL=$actualKine")
 
-        // Kinescope embed.js APIDecoder v1: reverse -> Base64 decode -> XOR with the decoder key -> UTF-8.
-        // This is the native equivalent of the decoder used by the player JS.
         fun decodeApiPayload(body: String): String? {
             val encoded = Regex("\\\"p\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(body)?.groupValues?.getOrNull(1) ?: return null
             return runCatching {
@@ -64,7 +63,6 @@ new_kinescope = r'''    private suspend fun kinescope(kine: String, parent: Stri
         }
         Log.d("HintFilmIzle", "KINESCOPE_API_DECODE_FAILED")
 
-        // Keep the WebView path as a fallback for future Kinescope API changes.
         val m3u = Regex("https?://[^\\\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\\\"'\\s<>]+\\.m3u8(?:\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
         var stream: String? = null
         val script = """
@@ -74,7 +72,7 @@ new_kinescope = r'''    private suspend fun kinescope(kine: String, parent: Stri
               var f=window.fetch;window.fetch=function(input,init){var u='';try{u=typeof input==='string'?input:(input&&input.url)||'';}catch(e){}if(isBlocked(u))return Promise.reject(new TypeError('blocked tracking request'));return f.apply(this,arguments);};
               var xo=XMLHttpRequest.prototype.open,xs=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__csUrl=String(url||'');if(isBlocked(this.__csUrl))this.__csBlocked=true;return xo.apply(this,arguments);};XMLHttpRequest.prototype.send=function(){if(this.__csBlocked){try{this.abort();}catch(e){}return;}return xs.apply(this,arguments);};
               var ob=navigator.sendBeacon;if(ob)navigator.sendBeacon=function(url,data){if(isBlocked(url))return true;return ob.apply(this,arguments);};
-              function scan(){try{performance.getEntriesByType('resource').forEach(function(e){var u=e.name||'';if(/\\.kinescopecdn\\.net\\/hls\\/.+\\.m3u8/i.test(u))window.__csManifest=u;});}catch(e){}}
+              function scan(){try{performance.getEntriesByType('resource').forEach(function(e){var u=e.name||'';if(/\\.kinescopecdn\\.net\\/hls\\/.+\\/index\\.m3u8/i.test(u))window.__csManifest=u;});}catch(e){}}
               new MutationObserver(scan).observe(document.documentElement||document,{subtree:true,childList:true});setInterval(scan,150);scan();return true;
             }catch(e){return false;}})()
         """.trimIndent()
@@ -101,5 +99,17 @@ new_kinescope = r'''    private suspend fun kinescope(kine: String, parent: Stri
     }
 '''
 s = s[:start] + new_kinescope + s[end:]
+
+# Final compile guard: older source revisions used a nullable NiceResponse in an existing variable.
+s = s.replace(
+    '            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n',
+    '            val fallbackResponse = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n',
+    1,
+)
+s = s.replace(
+    '            if (response != null) { doc = response.document; r = results(doc, slug) }\n',
+    '            if (fallbackResponse != null) { doc = fallbackResponse.document; r = results(doc, slug) }\n',
+    1,
+)
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle Kinescope native API decoder patch applied")
+print("HintFilmIzle compile-safe Kinescope patch applied")
