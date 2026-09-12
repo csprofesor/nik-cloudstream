@@ -29,6 +29,7 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.json.JSONObject
 import org.jsoup.nodes.Element
 import java.net.URI
 import java.net.URLEncoder
@@ -169,7 +170,7 @@ class HintFilmIzle : MainAPI() {
     }
 
     private val kinescopeManifestRegex = Regex(
-        "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?",
+        "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
         RegexOption.IGNORE_CASE
     )
     private val kinescopeApiRegex = Regex("https?://kinescope\\.io/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
@@ -180,7 +181,7 @@ class HintFilmIzle : MainAPI() {
 
     private fun decodeKinescopeManifestResponse(responseBody: String): String? {
         firstManifest(responseBody)?.let { return it }
-        val encrypted = Regex("\"p\"\\s*:\\s*\"([^\"]+)\"").find(responseBody)?.groupValues?.getOrNull(1)
+        val encrypted = runCatching { JSONObject(responseBody).optString("p") }.getOrNull()
             ?.replace("\\/", "/")
             ?.takeIf { it.isNotBlank() }
             ?: return null
@@ -190,13 +191,20 @@ class HintFilmIzle : MainAPI() {
         return firstManifest(String(plain, Charsets.UTF_8))
     }
 
+    private fun redactUrlForLog(url: String): String = url.substringBefore('?') + if (url.contains("?")) "?<redacted>" else ""
+
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return false
-        val target = if (kine.contains("river-3-329.kinescopecdn.net", true)) kine else
-            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
+        val parsedKine = runCatching { URI(kine) }.getOrNull()
+        val target = if (parsedKine?.host.equals("player.hintfilmizle.com", true))
+            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(this.lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
+        else kine
+        val targetHost = runCatching { URI(target).host }.getOrNull()
+        val targetOrigin = targetHost?.let { "https://$it" } ?: mainUrl
 
         var stream: String? = null
         var apiRequestUrl: String? = null
+        var apiRequestHeaders: Map<String, String> = emptyMap()
         var streamHeaders: Map<String, String> = emptyMap()
 
         val script = """
@@ -210,7 +218,7 @@ class HintFilmIzle : MainAPI() {
                 function isManifest(u) {
                   try {
                     if (typeof u !== 'string') return null;
-                    var m = u.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                    var m = u.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\.m3u8(?:\\?[^\\s\"']*)?/i);
                     return m ? m[0] : null;
                   } catch (_) { return null; }
                 }
@@ -299,7 +307,13 @@ class HintFilmIzle : MainAPI() {
                 [100,300,700,1500,3000,5000,10000].forEach(function(ms) {
                   setTimeout(scanResources, ms);
                 });
-                setInterval(scanResources, 1000);
+                var scanTimer = setInterval(function() {
+                  if (window.__csHintManifest) {
+                    clearInterval(scanTimer);
+                    return;
+                  }
+                  scanResources();
+                }, 1000);
 
                 try {
                   new MutationObserver(function() {
@@ -319,7 +333,7 @@ class HintFilmIzle : MainAPI() {
         """.trimIndent()
 
         val resolver = WebViewResolver(
-            interceptUrl = Regex("""https?://(?:kinescope\.io/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*kinescopecdn\.net/hls/[^"'\\s<>]+/index\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
+            interceptUrl = Regex("""https?://(?:kinescope\.io/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*kinescopecdn\.net/hls/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = false,
@@ -332,7 +346,7 @@ class HintFilmIzle : MainAPI() {
             referer = parent,
             headers = mapOf(
                 "Referer" to parent,
-                "Origin" to mainUrl,
+                "Origin" to targetOrigin,
                 "User-Agent" to ua,
                 "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
             )
@@ -340,12 +354,13 @@ class HintFilmIzle : MainAPI() {
             val u=req.url.toString()
             if (kinescopeApiRegex.containsMatchIn(u)) {
                 apiRequestUrl = u
-                Log.d("HintFilmIzle", "KINESCOPE_API_URL=$u")
+                apiRequestHeaders = req.headers.toMap()
+                Log.d("HintFilmIzle", "KINESCOPE_API_URL=${redactUrlForLog(u)}")
                 false
             } else if (kinescopeManifestRegex.containsMatchIn(u)) {
                 stream=u
                 streamHeaders=req.headers.toMap()
-                Log.d("HintFilmIzle","KINESCOPE_MANIFEST="+u)
+                Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=${redactUrlForLog(u)}")
                 true
             } else false
         }
@@ -353,14 +368,18 @@ class HintFilmIzle : MainAPI() {
         if (stream == null) {
             val apiManifest = apiRequestUrl?.let { url ->
                 runCatching {
+                    val apiReferer = apiRequestHeaders["Referer"] ?: target
+                    val apiOrigin = apiRequestHeaders["Origin"] ?: targetOrigin
+                    val requestHeaders = linkedMapOf<String, String>()
+                    requestHeaders["Accept"] = apiRequestHeaders["Accept"] ?: "application/json,text/plain,*/*"
+                    requestHeaders["Accept-Language"] = apiRequestHeaders["Accept-Language"] ?: "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    requestHeaders["Origin"] = apiOrigin
+                    requestHeaders["User-Agent"] = apiRequestHeaders["User-Agent"] ?: ua
+                    apiRequestHeaders["Cookie"]?.takeIf { it.isNotBlank() }?.let { requestHeaders["Cookie"] = it }
                     val response = app.get(
                         url,
-                        referer = target,
-                        headers = mapOf(
-                            "Accept" to "application/json,text/plain,*/*",
-                            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
-                            "User-Agent" to ua
-                        )
+                        referer = apiReferer,
+                        headers = requestHeaders
                     )
                     decodeKinescopeManifestResponse(response.text)
                 }.onFailure {
@@ -369,8 +388,14 @@ class HintFilmIzle : MainAPI() {
             }
             if (!apiManifest.isNullOrBlank()) {
                 stream = apiManifest
-                streamHeaders = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
-                Log.d("HintFilmIzle", "KINESCOPE_API_MANIFEST=$apiManifest")
+                streamHeaders = buildMap {
+                    put("Referer", apiRequestHeaders["Referer"] ?: target)
+                    put("Origin", apiRequestHeaders["Origin"] ?: targetOrigin)
+                    put("User-Agent", apiRequestHeaders["User-Agent"] ?: ua)
+                    put("Accept-Language", apiRequestHeaders["Accept-Language"] ?: "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")
+                    apiRequestHeaders["Cookie"]?.takeIf { it.isNotBlank() }?.let { put("Cookie", it) }
+                }
+                Log.d("HintFilmIzle", "KINESCOPE_API_MANIFEST=${redactUrlForLog(apiManifest)}")
             }
         }
 
@@ -382,6 +407,7 @@ class HintFilmIzle : MainAPI() {
         )
         streamHeaders["Origin"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Origin"]=it}
         streamHeaders["Accept-Language"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Accept-Language"]=it}
+        streamHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Cookie"]=it}
 
         callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){
             referer=finalHeaders["Referer"] ?: target
