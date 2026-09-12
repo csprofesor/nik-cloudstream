@@ -174,10 +174,10 @@ class HintFilmIzle : MainAPI() {
     }
 
     private val kinescopeManifestRegex = Regex(
-        "https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
+        "https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/(?:[^\"'\\s<>]+/)*hls/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
         RegexOption.IGNORE_CASE
     )
-    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\"'\\s<>]*kinescopecdn\\.net)/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\"'\\s<>]*kinescopecdn\\.net)(?:/[^\"'\\s<>]+)*/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
 
     private fun normalizeKinescopeValue(value: String?): String? = value
         ?.replace("\\/", "/")
@@ -220,10 +220,23 @@ class HintFilmIzle : MainAPI() {
         val seenStrings = linkedSetOf<String>()
         queue.add(root)
 
-        fun enqueueJson(candidate: String) {
-            when (val parsed = runCatching { JSONTokener(candidate).nextValue() }.getOrNull()) {
-                is JSONObject, is JSONArray -> queue.add(parsed)
+        fun enqueueJson(candidate: String): String? {
+            var parsed: Any? = runCatching { JSONTokener(candidate).nextValue() }.getOrNull() ?: return null
+            repeat(4) {
+                when (parsed) {
+                    is JSONObject, is JSONArray -> {
+                        queue.add(parsed)
+                        return null
+                    }
+                    is String -> {
+                        val normalized = normalizeKinescopeValue(parsed as String) ?: return null
+                        firstManifest(normalized)?.let { return it }
+                        parsed = runCatching { JSONTokener(normalized).nextValue() }.getOrNull() ?: return null
+                    }
+                    else -> return null
+                }
             }
+            return null
         }
 
         while (queue.isNotEmpty()) {
@@ -237,12 +250,12 @@ class HintFilmIzle : MainAPI() {
                     val normalized = normalizeKinescopeValue(current) ?: continue
                     if (!seenStrings.add(normalized)) continue
                     firstManifest(normalized)?.let { return it }
-                    enqueueJson(normalized)
+                    enqueueJson(normalized)?.let { return it }
                     decodeBase64Candidates(normalized).forEach { decoded ->
                         val candidate = normalizeKinescopeValue(decoded) ?: return@forEach
                         if (seenStrings.add(candidate)) {
                             firstManifest(candidate)?.let { return it }
-                            enqueueJson(candidate)
+                            enqueueJson(candidate)?.let { return it }
                         }
                     }
                 }
@@ -288,7 +301,7 @@ class HintFilmIzle : MainAPI() {
                 function isManifest(u) {
                   try {
                     if (typeof u !== 'string') return null;
-                    var m = u.match(/https?:\\/\\/[^\\s\"']*(?:kinescopecdn\\.net|kinescope\\.io)\\/[^\\s\"']+\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                    var m = u.match(/https?:\\/\\/[^\\s\"']*(?:kinescopecdn\\.net|kinescope\\.io)\\/(?:[^\\s\"']+\\/)*hls\\/[^\\s\"']+\\.m3u8(?:\\?[^\\s\"']*)?/i);
                     return m ? m[0] : null;
                   } catch (_) { return null; }
                 }
@@ -403,7 +416,7 @@ class HintFilmIzle : MainAPI() {
         """.trimIndent()
 
         val resolver = WebViewResolver(
-            interceptUrl = Regex("""https?://(?:(?:kinescope\.io|[^"'\\s<>]*kinescopecdn\.net)/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*(?:kinescopecdn\.net|kinescope\.io)/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
+            interceptUrl = Regex("""https?://(?:(?:kinescope\.io|[^"'\\s<>]*kinescopecdn\.net)(?:/[^"'\\s<>]+)*/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*(?:kinescopecdn\.net|kinescope\.io)/(?:[^"'\\s<>]+/)*hls/[^"'\\s<>]+\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = false,
