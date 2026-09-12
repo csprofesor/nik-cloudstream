@@ -201,7 +201,7 @@ class HintFilmIzle : MainAPI() {
         fun decodeBytes(candidate: String): ByteArray? {
             val normalized = candidate.replace('-', '+').replace('_', '/')
             val padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '=')
-            return runCatching { Base64.decode(padded, Base64.DEFAULT) }.getOrNull()
+            return runCatching { Base64.decode(padded, Base64.NO_WRAP) }.getOrNull()
         }
 
         val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray()
