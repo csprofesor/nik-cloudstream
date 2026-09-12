@@ -9,8 +9,20 @@ if decoder_start < 0 or decoder_end < 0:
     raise SystemExit("Kinescope decoder function not found")
 
 decoder = r'''    private fun decodeKinescopeApi(body: String): String? {
+        val normalized = body
+            .replace("\\u0026", "&")
+            .replace("\\/", "/")
+            .replace("&amp;", "&")
+
+        // Some Kinescope responses expose the signed manifest directly.
+        val direct = Regex(
+            """https?://[^\"'\s<>]+\.kinescopecdn\.net/[^\"'\s<>]*\.m3u8(?:\?[^\"'\s<>]*)?""",
+            RegexOption.IGNORE_CASE
+        ).find(normalized)?.value
+        if (direct != null) return direct
+
         val encoded = Regex("""\"p\"\s*:\s*\"([^\"]+)\"""")
-            .find(body)?.groupValues?.getOrNull(1) ?: return null
+            .find(normalized)?.groupValues?.getOrNull(1) ?: return null
         val encrypted = runCatching {
             android.util.Base64.decode(encoded.reversed(), android.util.Base64.DEFAULT)
         }.getOrNull() ?: return null
@@ -23,8 +35,6 @@ decoder = r'''    private fun decodeKinescopeApi(body: String): String? {
             """https?://[^\"'\s<>]+\.kinescopecdn\.net/hls/[^\"'\s<>]+/index\.m3u8(?:\?[^\"'\s<>]*)?""",
             RegexOption.IGNORE_CASE
         ).find(decoded)?.value
-            ?.replace("\\/", "/")
-            ?.replace("\\u0026", "&")
     }
 
 '''
@@ -64,7 +74,6 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
             ?: return false
 
         val parsed = runCatching { URI(kine) }.getOrNull() ?: return false
-        val playerHost = parsed.host ?: return false
         val query = parsed.rawQuery.orEmpty()
         val lang = Regex("(?:^|&)lang=([^&]+)").find(query)?.groupValues?.getOrNull(1) ?: "tr"
         val voiceover = Regex("(?:^|&)voiceover=([^&]+)").find(query)?.groupValues?.getOrNull(1)
@@ -75,8 +84,6 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
         val kinescopeIframe = "https://kinescope.io/embed/$id"
         Log.d("HintFilmIzle", "KINESCOPE_API_START=$apiBase")
 
-        // The old player.hintfilmizle.com hostname is currently not resolvable on
-        // the Android resolver. Do not make playback depend on fetching that host.
         val embedBody = runCatching {
             app.get(kinescopeIframe, referer = parent, headers = headers()).text
         }.getOrNull().orEmpty()
@@ -87,14 +94,14 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
             .replace("&amp;", "&")
 
         val directHls = Regex(
-            """https?://[^\"'\s<>]+\.kinescopecdn\.net/hls/[^\"'\s<>]+/index\.m3u8(?:\?[^\"'\s<>]*)?""",
+            """https?://[^\"'\s<>]+\.kinescopecdn\.net/[^\"'\s<>]*\.m3u8(?:\?[^\"'\s<>]*)?""",
             RegexOption.IGNORE_CASE
         ).find(normalizedEmbed)?.value
         if (directHls != null) {
             Log.d("HintFilmIzle", "KINESCOPE_EMBED_HLS=$directHls")
             callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = directHls, type = ExtractorLinkType.M3U8) {
                 referer = kinescopeIframe
-                headers = mapOf("Referer" to kinescopeIframe, "Origin" to "https://$playerHost", "User-Agent" to ua)
+                headers = mapOf("Referer" to kinescopeIframe, "Origin" to "https://kinescope.io", "User-Agent" to ua)
                 quality = getQualityFromName(directHls)
             })
             return true
@@ -111,31 +118,32 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
         val params = buildList {
             add("lang=${URLEncoder.encode(lang, "UTF-8")}")
             add("domain=${URLEncoder.encode(domain, "UTF-8")}")
-            // Kinescope's own embed URL is the canonical iframe URL for the API.
             add("iframe_url=${URLEncoder.encode(kinescopeIframe, "UTF-8")}")
             voiceover?.let { add("voiceover=${URLEncoder.encode(it, "UTF-8")}") }
             add("nc=${URLEncoder.encode(nc, "UTF-8")}")
         }.joinToString("&")
 
-        val candidates = listOfNotNull(
-            signedApi,
-            "$apiBase?$params"
-        ).distinct()
+        val candidates = listOfNotNull(signedApi, "$apiBase?$params").distinct()
 
         var stream: String? = null
         for (apiUrl in candidates) {
             Log.d("HintFilmIzle", "KINESCOPE_API_TRY=$apiUrl")
-            val body = runCatching {
+            val response = runCatching {
                 app.get(
                     apiUrl,
                     referer = kinescopeIframe,
                     headers = headers() + mapOf(
-                        "Origin" to "https://$playerHost",
+                        "Origin" to "https://kinescope.io",
                         "Accept" to "application/json,text/plain,*/*"
                     )
-                ).text
+                )
             }.getOrNull() ?: continue
+            val body = response.text
+            Log.d("HintFilmIzle", "KINESCOPE_API_CODE=${response.code}")
             Log.d("HintFilmIzle", "KINESCOPE_API_BODY_LEN=${body.length}")
+            Log.d("HintFilmIzle", "KINESCOPE_API_HAS_P=${body.contains(\"\"p\"\")}")
+            Log.d("HintFilmIzle", "KINESCOPE_API_HAS_CDN=${body.contains(\"kinescopecdn.net\", ignoreCase = true)}")
+            Log.d("HintFilmIzle", "KINESCOPE_API_HEAD=${body.take(300).replace("\\n", " ").replace("\\r", " ")}")
             stream = decodeKinescopeApi(body)
             if (stream != null) {
                 Log.d("HintFilmIzle", "KINESCOPE_API_OK=$apiUrl")
@@ -144,15 +152,16 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
             }
         }
 
-        // Last fallback: Kinescope documents this direct HLS form. Keep it after
-        // the embed API because this site's CDN commonly requires a signed URL.
         if (stream == null) {
             val directMaster = "https://kinescope.io/$id/master.m3u8"
             Log.d("HintFilmIzle", "KINESCOPE_MASTER_TRY=$directMaster")
-            val masterBody = runCatching {
-                app.get(directMaster, referer = kinescopeIframe, headers = headers()).text
+            val masterResponse = runCatching {
+                app.get(directMaster, referer = kinescopeIframe, headers = headers())
             }.getOrNull()
-            if (masterBody?.contains("#EXTM3U") == true) {
+            val masterBody = masterResponse?.text.orEmpty()
+            Log.d("HintFilmIzle", "KINESCOPE_MASTER_CODE=${masterResponse?.code ?: -1}")
+            Log.d("HintFilmIzle", "KINESCOPE_MASTER_LEN=${masterBody.length}")
+            if (masterResponse?.code == 200 && masterBody.trimStart().startsWith("#EXTM3U")) {
                 stream = directMaster
                 Log.d("HintFilmIzle", "KINESCOPE_MASTER_OK=$directMaster")
             }
@@ -167,7 +176,7 @@ kine = r'''    private suspend fun kinescope(kine: String, parent: String, callb
             referer = kinescopeIframe
             headers = mapOf(
                 "Referer" to kinescopeIframe,
-                "Origin" to "https://$playerHost",
+                "Origin" to "https://kinescope.io",
                 "User-Agent" to ua
             )
             quality = getQualityFromName(final)
@@ -184,4 +193,4 @@ s = s[:kine_start] + kine + s[loadlinks_start:]
 s = s.replace('import com.lagradost.cloudstream3.network.WebViewResolver\n', '')
 s = s.replace('// Kinescope WebView resolver: only the real HLS manifest terminates the resolver.\n// Analytics/ad requests are blocked in-page without using interceptUrl.\n', '// Kinescope resolver: use the embed API to obtain the real signed CDN HLS manifest.\n')
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle Kinescope API resolver patch applied")
+print("HintFilmIzle Kinescope diagnostics and playback headers patch applied")
