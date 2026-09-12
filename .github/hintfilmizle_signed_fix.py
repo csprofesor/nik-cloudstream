@@ -56,4 +56,4 @@ if old not in s:
 s = s.replace(old, new, 1)
 
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle signed Kinescope CDN host fix applied")
+print("HintFilmIzle signed Kinescope CDN host fix applied; retrigger")
