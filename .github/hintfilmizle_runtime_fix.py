@@ -2,6 +2,11 @@ from pathlib import Path
 
 PATH = Path('HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt')
 text = PATH.read_text(encoding='utf-8')
+
+if "kinescopeApiRegex" in text and "KINESCOPE_API_MANIFEST=" in text:
+    print("HintFilmIzle runtime patch skipped: native Kinescope API patch already present")
+    raise SystemExit(0)
+
 start = text.find('        val script = """')
 if start < 0:
     raise SystemExit('Kinescope script start not found')

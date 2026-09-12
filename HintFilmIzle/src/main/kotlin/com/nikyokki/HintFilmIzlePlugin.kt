@@ -3,6 +3,7 @@ package com.nikyokki
 // Kinescope WebView resolver: only the real HLS manifest terminates the resolver.
 // Analytics/ad requests are blocked in-page without using interceptUrl.
 
+import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
@@ -167,36 +168,228 @@ class HintFilmIzle : MainAPI() {
         return null
     }
 
+    private val kinescopeManifestRegex = Regex(
+        "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?",
+        RegexOption.IGNORE_CASE
+    )
+    private val kinescopeApiRegex = Regex("https?://kinescope\\.io/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+
+    private fun firstManifest(value: String?): String? = value
+        ?.replace("\\/", "/")
+        ?.let { kinescopeManifestRegex.find(it)?.value }
+
+    private fun decodeKinescopeManifestResponse(responseBody: String): String? {
+        firstManifest(responseBody)?.let { return it }
+        val encrypted = Regex("\"p\"\\s*:\\s*\"([^\"]+)\"").find(responseBody)?.groupValues?.getOrNull(1)
+            ?.replace("\\/", "/")
+            ?.takeIf { it.isNotBlank() }
+            ?: return null
+        val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray()
+        val decoded = runCatching { Base64.decode(encrypted.reversed(), Base64.DEFAULT) }.getOrNull() ?: return null
+        val plain = ByteArray(decoded.size) { i -> (decoded[i].toInt() xor key[i % key.size].toInt()).toByte() }
+        return firstManifest(String(plain, Charsets.UTF_8))
+    }
+
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
-        val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return@runCatching false
-        val parsed = runCatching { URI(kine) }.getOrNull() ?: return@runCatching false
-        val query = parsed.rawQuery.orEmpty()
-        val lang = Regex("(?:^|&)lang=([^&]+)").find(query)?.groupValues?.getOrNull(1) ?: "tr"
-        val nc = Regex("(?:^|&)nc=([^&]+)").find(query)?.groupValues?.getOrNull(1) ?: (System.currentTimeMillis()/1000L).toString()
-        val actualKine = if (parsed.host.equals("player.hintfilmizle.com", true)) "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang,"UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${URLEncoder.encode(nc,"UTF-8")}" else kine
-        val actualParsed = runCatching { URI(actualKine) }.getOrNull() ?: return@runCatching false
-        Log.d("HintFilmIzle", "KINESCOPE_EMBED_HOST=${actualParsed.host}")
-        Log.d("HintFilmIzle", "KINESCOPE_WEBVIEW_URL=$actualKine")
-        val m3u = Regex("https?://[^\\\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\\\"'\\s<>]+\\.m3u8(?:\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
+        val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return false
+        val target = if (kine.contains("river-3-329.kinescopecdn.net", true)) kine else
+            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
+
         var stream: String? = null
+        var apiRequestUrl: String? = null
+        var streamHeaders: Map<String, String> = emptyMap()
+
         val script = """
-            (function(){try{
-              var blocked=/(?:\\/api\\/v1\\/ad-tags|\\/vast(?:[/?]|$)|\\/ads?(?:[/?._-]|$)|doubleclick|googlesyndication|googleadservices|googletagmanager|google-analytics|analytics\\.google\\.com|www\\.google-analytics\\.com|mc\\.yandex\\.ru|metrika\\.yandex\\.ru|yandex\\.ru\\/metrika)/i;
-              function isBlocked(u){try{return blocked.test(String(u||''));}catch(e){return false;}}
-              var f=window.fetch;window.fetch=function(input,init){var u='';try{u=typeof input==='string'?input:(input&&input.url)||'';}catch(e){}if(isBlocked(u))return Promise.reject(new TypeError('blocked tracking request'));return f.apply(this,arguments);};
-              var xo=XMLHttpRequest.prototype.open,xs=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__csUrl=String(url||'');if(isBlocked(this.__csUrl))this.__csBlocked=true;return xo.apply(this,arguments);};XMLHttpRequest.prototype.send=function(){if(this.__csBlocked){try{this.abort();}catch(e){}return;}return xs.apply(this,arguments);};
-              var ob=navigator.sendBeacon;if(ob)navigator.sendBeacon=function(url,data){if(isBlocked(url))return true;return ob.apply(this,arguments);};
-              function scan(){try{performance.getEntriesByType('resource').forEach(function(e){var u=e.name||'';if(/\\.kinescopecdn\\.net\\/hls\\/.+\\/index\\.m3u8/i.test(u))window.__csManifest=u;});}catch(e){}}
-              new MutationObserver(scan).observe(document.documentElement||document,{subtree:true,childList:true});setInterval(scan,150);scan();return true;
-            }catch(e){return false;}})()
+            (function() {
+              try {
+                if (window.__csHintKineV13) return true;
+                window.__csHintKineV13 = true;
+
+                // Never replay/cancel Kinescope API requests. The player owns the
+                // handshake and must be allowed to create its signed HLS URL.
+                function isManifest(u) {
+                  try {
+                    if (typeof u !== 'string') return null;
+                    var m = u.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                    return m ? m[0] : null;
+                  } catch (_) { return null; }
+                }
+
+                // Remove known transparent ad/click overlays. Do not hide video,
+                // source, iframe, player, API or HLS elements.
+                function cleanAds(root) {
+                  try {
+                    var selectors = [
+                      '.belink', '[class*="belink"]', '[id*="belink"]',
+                      '.ad-overlay', '.ad-overlay-container',
+                      '.advertisement-overlay', '.video-ad-overlay',
+                      '.player-ad-overlay', '[data-ad-overlay]'
+                    ];
+                    root.querySelectorAll(selectors.join(',')).forEach(function(e) {
+                      e.style.setProperty('display','none','important');
+                      e.style.setProperty('visibility','hidden','important');
+                      e.style.setProperty('pointer-events','none','important');
+                    });
+                  } catch (_) {}
+                }
+
+                // Block popup/new-tab navigation commonly used by ad click layers,
+                // while leaving the current Kinescope document and network untouched.
+                try {
+                  window.open = function() { return null; };
+                } catch (_) {}
+
+                function startPlayer() {
+                  try {
+                    cleanAds(document);
+                    document.querySelectorAll('video').forEach(function(v) {
+                      try {
+                        v.muted = true;
+                        v.autoplay = true;
+                        v.setAttribute('muted','');
+                        v.setAttribute('autoplay','');
+                        v.setAttribute('playsinline','');
+                        v.setAttribute('webkit-playsinline','');
+                        v.removeAttribute('controlslist');
+                        if (v.paused || v.readyState < 2) {
+                          var p = v.play();
+                          if (p && p.catch) p.catch(function(){});
+                        }
+                      } catch (_) {}
+                    });
+
+                    // Some Kinescope builds expose a native play button after the
+                    // player is mounted. Clicking only recognized play controls avoids
+                    // clicking arbitrary ad links.
+                    var buttons = document.querySelectorAll(
+                      'button[aria-label*="Play" i], button[title*="Play" i], ' +
+                      '[role="button"][aria-label*="Play" i], .kinescope-player button'
+                    );
+                    for (var i = 0; i < buttons.length; i++) {
+                      try {
+                        var b = buttons[i];
+                        var label = ((b.getAttribute('aria-label') || '') + ' ' +
+                                     (b.getAttribute('title') || '')).toLowerCase();
+                        if (label.indexOf('play') >= 0 && label.indexOf('playlist') < 0) {
+                          b.click();
+                          break;
+                        }
+                      } catch (_) {}
+                    }
+                  } catch (_) {}
+                }
+
+                function scanResources() {
+                  try {
+                    cleanAds(document);
+                    startPlayer();
+                    var es = performance.getEntriesByType('resource') || [];
+                    for (var i = es.length - 1; i >= 0; i--) {
+                      var u = String(es[i].name || '');
+                      var m = isManifest(u);
+                      if (m) {
+                        window.__csHintManifest = m;
+                        return;
+                      }
+                    }
+                  } catch (_) {}
+                }
+
+                scanResources();
+                [100,300,700,1500,3000,5000,10000].forEach(function(ms) {
+                  setTimeout(scanResources, ms);
+                });
+                setInterval(scanResources, 1000);
+
+                try {
+                  new MutationObserver(function() {
+                    cleanAds(document);
+                    startPlayer();
+                  }).observe(document.documentElement || document, {
+                    subtree:true,
+                    childList:true,
+                    attributes:true,
+                    attributeFilter:['class','style','aria-label']
+                  });
+                } catch (_) {}
+
+                return true;
+              } catch (_) { return false; }
+            })()
         """.trimIndent()
-        val intercept = Regex("\\.kinescopecdn\\.net/hls/.+\\.m3u8(?:\\?.*)?$", RegexOption.IGNORE_CASE)
-        val resolver = WebViewResolver(interceptUrl=intercept,additionalUrls=emptyList(),userAgent=ua,useOkhttp=false,timeout=25_000L,script=script)
-        resolver.resolveUsingWebView(actualKine,referer=parent,headers=mapOf("Referer" to parent,"Origin" to "https://${actualParsed.host}","User-Agent" to ua)){req -> val u=req.url.toString(); if(m3u.containsMatchIn(u)){stream=u;Log.d("HintFilmIzle","KINESCOPE_MANIFEST="+u);true}else false}
-        val final=stream?:return@runCatching false
-        callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){referer=actualKine;headers=mapOf("Referer" to actualKine,"Origin" to "https://${actualParsed.host}","User-Agent" to ua);quality=getQualityFromName(final)})
+
+        val resolver = WebViewResolver(
+            interceptUrl = Regex("""https?://(?:kinescope\.io/api/v1/embed/[^"'\\s<>]+|[^"'\\s<>]*kinescopecdn\.net/hls/[^"'\\s<>]+/index\.m3u8(?:\?[^"'\\s<>]*)?)""", RegexOption.IGNORE_CASE),
+            additionalUrls = emptyList(),
+            userAgent = ua,
+            useOkhttp = false,
+            timeout = 60_000L,
+            script = script
+        )
+
+        resolver.resolveUsingWebView(
+            target,
+            referer = parent,
+            headers = mapOf(
+                "Referer" to parent,
+                "Origin" to mainUrl,
+                "User-Agent" to ua,
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ) { req ->
+            val u=req.url.toString()
+            if (kinescopeApiRegex.containsMatchIn(u)) {
+                apiRequestUrl = u
+                Log.d("HintFilmIzle", "KINESCOPE_API_URL=$u")
+                false
+            } else if (kinescopeManifestRegex.containsMatchIn(u)) {
+                stream=u
+                streamHeaders=req.headers.toMap()
+                Log.d("HintFilmIzle","KINESCOPE_MANIFEST="+u)
+                true
+            } else false
+        }
+
+        if (stream == null) {
+            val apiManifest = apiRequestUrl?.let { url ->
+                runCatching {
+                    val response = app.get(
+                        url,
+                        referer = target,
+                        headers = mapOf(
+                            "Accept" to "application/json,text/plain,*/*",
+                            "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7",
+                            "User-Agent" to ua
+                        )
+                    )
+                    decodeKinescopeManifestResponse(response.text)
+                }.onFailure {
+                    Log.e("HintFilmIzle", "KINESCOPE_API_RESOLVE_FAILED", it)
+                }.getOrNull()
+            }
+            if (!apiManifest.isNullOrBlank()) {
+                stream = apiManifest
+                streamHeaders = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
+                Log.d("HintFilmIzle", "KINESCOPE_API_MANIFEST=$apiManifest")
+            }
+        }
+
+        val final=stream ?: return false
+        val finalHeaders=linkedMapOf(
+            "Referer" to (streamHeaders["Referer"] ?: target),
+            "User-Agent" to (streamHeaders["User-Agent"] ?: ua),
+            "Accept" to (streamHeaders["Accept"] ?: "*/*")
+        )
+        streamHeaders["Origin"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Origin"]=it}
+        streamHeaders["Accept-Language"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Accept-Language"]=it}
+
+        callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){
+            referer=finalHeaders["Referer"] ?: target
+            headers=finalHeaders
+            quality=getQualityFromName(final)
+        })
         true
-    }.getOrElse{Log.e("HintFilmIzle","KINESCOPE_FAILED",it);false}
+    }.getOrElse { Log.e("HintFilmIzle","KINESCOPE_FAILED",it); false }
 
     override suspend fun loadLinks(data:String,isCasting:Boolean,subtitleCallback:(SubtitleFile)->Unit,callback:(ExtractorLink)->Unit):Boolean {
         val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers()).document}.getOrNull()?:return false
