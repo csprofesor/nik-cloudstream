@@ -3,8 +3,10 @@ from pathlib import Path
 path = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
 s = path.read_text(encoding="utf-8-sig")
 
-# Replace the Kinescope decoder with Kotlin raw-string regexes so backslashes
-# are not interpreted as invalid Kotlin string escapes.
+# Keep the Kinescope decoder available for a future API fallback, but make the
+# primary resolver direct: current Kinescope documentation exposes a public
+# master.m3u8 URL for video IDs, so there is no reason to start a WebView just
+# to wait for the player to request HLS.
 decoder_start = s.find("    private fun decodeKinescopeApi(body: String): String?")
 decoder_end = s.find("    private suspend fun kinescope(", decoder_start)
 if decoder_start < 0 or decoder_end < 0:
@@ -21,20 +23,10 @@ decoder = r'''    private fun decodeKinescopeApi(body: String): String? {
             (encrypted[i].toInt() xor key[i % key.size].toInt()).toByte()
         }
         val decoded = runCatching { String(plain, Charsets.UTF_8) }.getOrNull() ?: return null
-
-        val labelled = Regex(
-            """\[(\d{3,4})p\]\{[^}]*\}(https?://[^"'\s<>]+\.kinescopecdn\.net/hls/[^"',\s<>]+/index\.m3u8(?:\?[^"',\s<>]*)?)""",
-            RegexOption.IGNORE_CASE
-        ).findAll(decoded)
-            .mapNotNull { m -> m.groupValues.getOrNull(1)?.toIntOrNull()?.let { it to m.groupValues[2] } }
-            .maxByOrNull { it.first }?.second
-
-        val fallback = Regex(
-            """https?://[^"'\s<>]+\.kinescopecdn\.net/hls/[^"',\s<>]+/index\.m3u8(?:\?[^"',\s<>]*)?""",
+        return Regex(
+            """https?://[^"'\s<>]+\.kinescopecdn\.net/hls/[^"'\s<>]+/index\.m3u8(?:\?[^"'\s<>]*)?""",
             RegexOption.IGNORE_CASE
         ).find(decoded)?.value
-
-        return (labelled ?: fallback)
             ?.replace("\\/", "/")
             ?.replace("\\u0026", "&")
     }
@@ -63,68 +55,49 @@ new_main = '''        val response = runCatching { app.get(url, referer = "$main
             if (fallbackResponse != null) { doc = fallbackResponse.document; r = results(doc, slug) }
         }
 '''
-if old_main not in s:
-    raise SystemExit("getMainPage response block not found")
-s = s.replace(old_main, new_main, 1)
+if old_main in s:
+    s = s.replace(old_main, new_main, 1)
 
-# Replace the WebView resolver block with API interception + response decoding.
+# Replace the complete WebView-based Kinescope resolver with direct HLS links.
 kine_start = s.find("    private suspend fun kinescope(")
-resolver_start = s.find("        val intercept = Regex(", kine_start)
-end_marker = "        val final = stream ?: return false"
-resolver_end = s.find(end_marker, resolver_start)
-if kine_start < 0 or resolver_start < 0 or resolver_end < 0:
-    raise SystemExit("Kinescope WebView resolver block not found")
+loadlinks_start = s.find("    override suspend fun loadLinks(", kine_start)
+if kine_start < 0 or loadlinks_start < 0:
+    raise SystemExit("Kinescope function boundaries not found")
 
-replacement = r'''        val apiIntercept = Regex(
-            "\\.kinescopecdn\\.net/api/v1/embed/[A-Za-z0-9_-]+(?:\\?.*)?$",
-            RegexOption.IGNORE_CASE
+kine = r'''    private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
+        val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE)
+            .find(kine)?.groupValues?.getOrNull(1)
+            ?: return false
+
+        // Kinescope's public HLS endpoint. The embed URL may use a CDN host and
+        // publisher prefix, but the video ID itself is the value after /embed/.
+        val direct = "https://kinescope.io/$id/master.m3u8"
+        Log.d("HintFilmIzle", "KINESCOPE_DIRECT=" + direct)
+
+        callback(
+            newExtractorLink(
+                source = name,
+                name = "HintFilmİzle Kinescope",
+                url = direct,
+                type = ExtractorLinkType.M3U8
+            ) {
+                referer = parent
+                headers = mapOf(
+                    "Referer" to parent,
+                    "Origin" to mainUrl,
+                    "User-Agent" to ua
+                )
+                quality = getQualityFromName(direct)
+            }
         )
-        var apiUrl: String? = null
-        val resolver = WebViewResolver(
-            interceptUrl = apiIntercept,
-            additionalUrls = emptyList(),
-            userAgent = ua,
-            useOkhttp = true,
-            timeout = 45_000L,
-            script = script
-        )
-
-        resolver.resolveUsingWebView(
-            kine,
-            referer = parent,
-            headers = mapOf(
-                "Referer" to parent,
-                "Origin" to mainUrl,
-                "User-Agent" to ua
-            )
-        ) { req ->
-            val u = req.url.toString()
-            if (apiIntercept.containsMatchIn(u)) {
-                apiUrl = u
-                Log.d("HintFilmIzle", "KINESCOPE_API=" + u)
-                true
-            } else false
-        }
-
-        if (stream == null && apiUrl != null) {
-            val apiBody = runCatching {
-                app.get(
-                    apiUrl!!,
-                    referer = kine,
-                    headers = mapOf(
-                        "Referer" to kine,
-                        "Origin" to mainUrl,
-                        "User-Agent" to ua,
-                        "Accept" to "application/json,text/plain,*/*"
-                    )
-                ).text
-            }.getOrNull()
-            stream = apiBody?.let { decodeKinescopeApi(it) }
-            if (stream != null) Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + stream)
-        }
+        true
+    }.getOrElse {
+        Log.e("HintFilmIzle", "KINESCOPE_FAILED", it)
+        false
+    }
 
 '''
-s = s[:resolver_start] + replacement + s[resolver_end:]
+s = s[:kine_start] + kine + s[loadlinks_start:]
 
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle Kinescope patch applied")
+print("HintFilmIzle Kinescope direct resolver patch applied")
