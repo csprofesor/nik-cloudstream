@@ -1,8 +1,7 @@
 package com.nikyokki
 
-// V10 Kinescope WebView fix: only the real HLS manifest terminates the resolver.
-// Analytics/ad requests are blocked in-page without using interceptUrl, because
-// WebViewResolver destroys the WebView whenever interceptUrl matches.
+// Kinescope WebView resolver: only the real HLS manifest terminates the resolver.
+// Analytics/ad requests are blocked in-page without using interceptUrl.
 
 import android.util.Log
 import com.lagradost.cloudstream3.Actor
@@ -45,8 +44,8 @@ class HintFilmIzle : MainAPI() {
     private val ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
     private fun headers() = mapOf("User-Agent" to ua, "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")
 
+    // Yeni Filmler bilerek kaldırıldı. Diğer kategori sırası/değerleri değiştirilmedi.
     override val mainPage = mainPageOf(
-        "$mainUrl/film?order=DESC&orderby=date" to "Yeni Filmler",
         "$mainUrl/tur/aile-filmleri" to "Aile", "$mainUrl/tur/aksiyon-filmleri" to "Aksiyon",
         "$mainUrl/tur/animasyon-filmleri" to "Animasyon", "$mainUrl/tur/bilim-kurgu-filmleri" to "Bilim Kurgu",
         "$mainUrl/tur/dram-filmleri" to "Dram", "$mainUrl/tur/fantastik-filmleri" to "Fantastik",
@@ -72,21 +71,46 @@ class HintFilmIzle : MainAPI() {
     private fun Element.poster(): String? {
         val attrs = listOf("data-src", "data-lazy-src", "data-original", "data-image", "data-poster", "data-thumb", "src")
         select("img,picture source").forEach { img ->
-            attrs.firstNotNullOfOrNull { fix(img.attr(it))?.takeIf { u -> !u.startsWith("data:") && !u.contains("placeholder", true) } }?.let { return it }
+            attrs.firstNotNullOfOrNull {
+                fix(img.attr(it))?.takeIf { u -> !u.startsWith("data:") && !u.contains("placeholder", true) }
+            }?.let { return it }
         }
         return null
     }
 
-    private fun titleOf(card: Element): String? = sequenceOf(
-        card.selectFirst(".film-title")?.text(), card.selectFirst(".movie-title")?.text(),
-        card.selectFirst(".entry-title")?.text(), card.selectFirst(".card-title")?.text(),
-        card.selectFirst("h2")?.text(), card.selectFirst("h3")?.text(),
-        card.selectFirst(".title")?.text(), card.selectFirst(".name")?.text(),
-        card.selectFirst("img")?.attr("alt"), card.attr("title")
-    ).mapNotNull { it?.trim()?.takeIf(String::isNotBlank) }.firstOrNull()
+    private fun cleanTitle(value: String?): String? = value?.trim()
         ?.replace(Regex("\\s+"), " ")
         ?.replace(Regex("\\s+(Türkçe\\s+(Altyazı|Dublaj)|izle)\\s*$", RegexOption.IGNORE_CASE), "")
         ?.trim()
+        ?.takeIf { it.isNotBlank() && !it.equals("Giriş yap", true) && !it.equals("Oturum Aç", true) }
+
+    private fun titleOf(card: Element): String? = sequenceOf(
+        card.selectFirst("h1")?.text(),
+        card.selectFirst(".film-title")?.text(), card.selectFirst(".movie-title")?.text(),
+        card.selectFirst(".entry-title")?.text(), card.selectFirst(".single-title")?.text(),
+        card.selectFirst(".post-title")?.text(), card.selectFirst(".card-title")?.text(),
+        card.selectFirst("h2")?.text(), card.selectFirst("h3")?.text(),
+        card.selectFirst(".title")?.text(), card.selectFirst(".name")?.text(),
+        card.selectFirst("img")?.attr("alt"), card.attr("title")
+    ).mapNotNull(::cleanTitle).firstOrNull()
+
+    private fun detailTitle(doc: org.jsoup.nodes.Document, url: String): String? {
+        val target = url.substringBefore("?").trimEnd('/')
+        val exactLink = doc.select("a[href]").firstOrNull { a ->
+            val href = fix(a.attr("href"), url)?.substringBefore("?")?.trimEnd('/')
+            href.equals(target, true) && cleanTitle(a.text()) != null
+        }
+        return sequenceOf(
+            exactLink?.text(),
+            doc.selectFirst("main h1")?.text(),
+            doc.selectFirst("article h1")?.text(),
+            doc.selectFirst("h1")?.text(),
+            doc.selectFirst(".film-title")?.text(),
+            doc.selectFirst(".movie-title")?.text(),
+            doc.selectFirst(".entry-title")?.text()
+        ).mapNotNull(::cleanTitle).firstOrNull()
+            ?: url.substringBefore("?").substringAfterLast('/').replace(Regex("[-_]+"), " ").replaceFirstChar { it.uppercase() }
+    }
 
     private fun rating(card: Element): String? = Regex("(?<!\\d)(?:10(?:[.,]0+)?|[1-9](?:[.,]\\d{1,3})?)(?!\\d)")
         .findAll(card.text()).mapNotNull { it.value.replace(',', '.').toFloatOrNull() }.firstOrNull { it in 0f..10f }?.toString()
@@ -150,50 +174,102 @@ class HintFilmIzle : MainAPI() {
     override suspend fun quickSearch(query: String) = search(query)
 
     private fun body(doc: org.jsoup.nodes.Document) = doc.body()?.text()?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
-    private fun label(text: String, name: String, next: String): String? = Regex("${Regex.escape(name)}\\s*[:\\-]?\\s*(.*?)\\s*(?=${Regex.escape(next)}|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
+
+    private fun label(text: String, name: String, next: String): String? = Regex(
+        "${Regex.escape(name)}\\s*[:\\-]?\\s*(.*?)\\s*(?=${Regex.escape(next)}|$)",
+        setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+    ).find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
 
     private fun genres(doc: org.jsoup.nodes.Document, text: String): List<String> {
-        val dom = doc.select("a[href*='/tur/'],.genres a,.genre a,.categories a").map { it.text().trim() }.filter { it.contains("Film", true) }.distinct()
+        val dom = doc.select("a[href*='/tur/'],.genres a,.genre a,.categories a")
+            .map { it.text().trim() }
+            .filter { it.isNotBlank() && it.contains("Film", true) }
+            .distinct()
         if (dom.isNotEmpty()) return dom
-        return label(text, "Türü", "Bu Film özeti").orEmpty().split(",").map { it.trim() }.filter { it.isNotBlank() && it.contains("Film", true) }
+        return label(text, "Türü", "Bu Film özeti").orEmpty()
+            .split(",").map { it.trim() }.filter { it.isNotBlank() && it.contains("Film", true) }
     }
 
     private fun actors(doc: org.jsoup.nodes.Document): List<Actor> {
-        val links = doc.select("a[href*='oyuncu'],a[href*='oyuncular'],a[href*='actor'],a[href*='cast'],.actors a,.cast a,.oyuncular a").map { it.text().trim() }.filter { it.isNotBlank() }.distinct()
+        // The site uses /oyuncular/... links. Do not depend on the heading's exact case.
+        val links = doc.select("a[href*='/oyuncular/'],a[href*='/oyuncu/'],a[href*='/actor/'],a[href*='/cast/']")
+            .map { cleanTitle(it.text()) }
+            .filterNotNull()
+            .filter { it.length < 100 }
+            .distinct()
         if (links.isNotEmpty()) return links.map(::Actor)
-        val heading = doc.getElementsContainingOwnText("ÖNE ÇIKAN OYUNCULAR").firstOrNull()
-        val container = heading?.parents()?.firstOrNull { it.text().contains("YÖNETMEN", true) && it.text().length < 2500 }
-        return container?.select("a, .actor, .cast-item, li")?.map { it.text().trim() }?.map { it.substringBefore(" - ").trim() }?.filter { it.isNotBlank() && it.length < 100 }?.distinct()?.map(::Actor).orEmpty()
+
+        val heading = doc.select("h1,h2,h3,h4,h5,h6").firstOrNull { it.text().contains("Öne Çıkan Oyuncular", true) }
+        val container = heading?.parents()?.firstOrNull { p ->
+            val count = p.select("a").size
+            count in 1..20 && p.text().contains("Yönetmen", true)
+        }
+        return container?.select("a")
+            ?.map { cleanTitle(it.text()) }
+            ?.filterNotNull()
+            ?.filter { it.length < 100 }
+            ?.distinct()
+            ?.map(::Actor)
+            .orEmpty()
     }
 
-    private fun plot(text: String): String? {
-        val section = Regex("GENEL BAKIŞ\\s+(.*?)(?=HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1) ?: return null
-        return section.replace(Regex("^Türü\\s*:\\s*.*?(?=\\S)", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim().takeIf { it.length > 20 }
+    private fun plot(doc: org.jsoup.nodes.Document, text: String): String? {
+        val section = Regex(
+            "GENEL BAKIŞ\\s+(.*?)(?=BU FİLM ÖZETİ|HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|ÜLKE\\s)",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
+        ).find(text)?.groupValues?.getOrNull(1)
+            ?: return null
+
+        val cleaned = section
+            .replace(Regex("^Türü\\s*:\\s*.*?(?=ÇEVİRİ\\s*:)", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("^ÇEVİRİ\\s*:\\s*.*?(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü])", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        return cleaned.takeIf { it.length >= 20 }
     }
 
     override suspend fun load(url: String): LoadResponse? {
         val doc = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()).document }.getOrNull() ?: return null
-        val text = body(doc); val title = titleOf(doc) ?: return null
-        val poster = fix(doc.selectFirst("meta[property='og:image'],meta[name='twitter:image']")?.attr("content")) ?: doc.selectFirst("article,.movie-detail,.film-detail")?.poster()
-        val year = Regex("YAPIM YILI\\s+(\\d{4})", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Regex("\\b(19|20)\\d{2}\\b").find(text)?.value?.toIntOrNull()
+        val text = body(doc)
+        val title = detailTitle(doc, url) ?: return null
+        val poster = fix(doc.selectFirst("meta[property='og:image'],meta[name='twitter:image']")?.attr("content"))
+            ?: doc.selectFirst("article,.movie-detail,.film-detail")?.poster()
+        val year = Regex("YAPIM YILI\\s+(\\d{4})", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
+            ?: Regex("\\b(19|20)\\d{2}\\b").find(title)?.value?.toIntOrNull()
         val imdb = Regex("IMDB\\s+PUANI\\s+([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)
         val duration = Regex("SÜRE\\s+(\\d+)\\s*dk", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        val tag = genres(doc, text); val cast = actors(doc); val rec = results(doc); val p = plot(text)
+        val tag = genres(doc, text)
+        val cast = actors(doc)
+        val rec = results(doc)
+        val p = plot(doc, text)
+
         if (url.contains("/dizi/", true) || doc.selectFirst(".episodes,.episode-list,.seasons") != null) {
-            val eps = doc.select("a[href*='/dizi/'],a[href*='sezon'],a[href*='bolum'],.episode a,.episodes a,.episode-list a").mapNotNull { a ->
-                val u = fix(a.attr("href")) ?: return@mapNotNull null; val t = "${a.text()} ${a.attr("title")}"
-                val ss = Regex("(?:s|sezon[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                val ee = Regex("(?:e|bölüm[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
-                if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee }
-            }.distinctBy { it.data }
-            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) { posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = duration; addActors(cast); recommendations = rec }
+            val eps = doc.select("a[href*='/dizi/'],a[href*='sezon'],a[href*='bolum'],.episode a,.episodes a,.episode-list a")
+                .mapNotNull { a ->
+                    val u = fix(a.attr("href")) ?: return@mapNotNull null
+                    val t = "${a.text()} ${a.attr("title")}"
+                    val ss = Regex("(?:s|sezon[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    val ee = Regex("(?:e|bölüm[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee }
+                }.distinctBy { it.data }
+            return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) {
+                posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = duration
+                addActors(cast); recommendations = rec
+            }
         }
-        return newMovieLoadResponse(title, url, TvType.Movie, url) { posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = duration; addActors(cast); recommendations = rec }
+
+        return newMovieLoadResponse(title, url, TvType.Movie, url) {
+            posterUrl = poster; this.year = year; plot = p; tags = tag; score = Score.from10(imdb); this.duration = duration
+            addActors(cast); recommendations = rec
+        }
     }
 
     private fun player(value: String?, base: String): String? {
         val u = fix(value, base) ?: return null
-        if (u.contains("youtube", true) || u.contains("schema.org", true) || u.contains("imdb.com", true) || u.contains("google.com/search", true) || u.contains("yandex", true) || u.contains("dmca.com", true) || u.contains("wp-content", true) || u.contains("wp-includes", true)) return null
+        if (u.contains("youtube", true) || u.contains("schema.org", true) || u.contains("imdb.com", true) ||
+            u.contains("google.com/search", true) || u.contains("yandex", true) || u.contains("dmca.com", true) ||
+            u.contains("wp-content", true) || u.contains("wp-includes", true)) return null
         if (u.contains("player.hintfilmizle.com", true)) return u
         if (u.contains("kinescopecdn.net", true) || u.contains("kinescope.io", true)) return u
         if (u.contains("playmate.to", true)) return u
@@ -206,128 +282,52 @@ class HintFilmIzle : MainAPI() {
         val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray(Charsets.UTF_8)
         val plain = ByteArray(encrypted.size) { i -> (encrypted[i].toInt() xor key[i % key.size].toInt()).toByte() }
         val decoded = runCatching { String(plain, Charsets.UTF_8) }.getOrNull() ?: return null
-        return Regex("https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?", RegexOption.IGNORE_CASE).find(decoded)?.value?.replace("\\/", "/")?.replace("\\u0026", "&")
+        return Regex("https?://[^\\\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\\\"'\\s<>]+/index\\.m3u8(?:\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
+            .find(decoded)?.value?.replace("\\/", "/")?.replace("\\u0026", "&")
     }
 
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         Regex("/embed/([A-Za-z0-9_-]+)").find(kine)?.groupValues?.getOrNull(1) ?: return false
-        val m3u = Regex("https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
+        val m3u = Regex("https?://[^\\\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\\\"'\\s<>]+/index\\.m3u8(?:\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
         var stream: String? = null
 
         val script = """
             (function() {
               try {
                 var blocked = /(?:
-                  \/api\/v1\/ad-tags|
-                  \/vast(?:[/?]|$)|
-                  \/ads?(?:[/?._-]|$)|
-                  doubleclick|
-                  googlesyndication|
-                  googleadservices|
-                  googletagmanager|
-                  google-analytics|
-                  analytics\.google\.com|
-                  www\.google-analytics\.com|
-                  mc\.yandex\.ru|
-                  metrika\.yandex\.ru|
-                  yandex\.ru\/metrika
+                  \/api\/v1\/ad-tags|\/vast(?:[/?]|$)|\/ads?(?:[/?._-]|$)|doubleclick|googlesyndication|googleadservices|googletagmanager|google-analytics|analytics\.google\.com|www\.google-analytics\.com|mc\.yandex\.ru|metrika\.yandex\.ru|yandex\.ru\/metrika
                 )/i;
-
-                function isBlocked(u) {
-                  try { return blocked.test(String(u || '')); } catch(e) { return false; }
-                }
-
+                function isBlocked(u) { try { return blocked.test(String(u || '')); } catch(e) { return false; } }
                 var originalFetch = window.fetch;
                 window.fetch = function(input, init) {
-                  var u = '';
-                  try { u = typeof input === 'string' ? input : (input && input.url) || ''; } catch(e) {}
-                  if (isBlocked(u)) {
-                    console.log('[CS-AD-BLOCK] fetch ' + u);
-                    return Promise.reject(new TypeError('blocked tracking request'));
-                  }
+                  var u = ''; try { u = typeof input === 'string' ? input : (input && input.url) || ''; } catch(e) {}
+                  if (isBlocked(u)) { console.log('[CS-AD-BLOCK] fetch ' + u); return Promise.reject(new TypeError('blocked tracking request')); }
                   return originalFetch.apply(this, arguments);
                 };
-
-                var xo = XMLHttpRequest.prototype.open;
-                var xs = XMLHttpRequest.prototype.send;
-                XMLHttpRequest.prototype.open = function(method, url) {
-                  this.__csUrl = String(url || '');
-                  if (isBlocked(this.__csUrl)) this.__csBlocked = true;
-                  return xo.apply(this, arguments);
-                };
-                XMLHttpRequest.prototype.send = function() {
-                  if (this.__csBlocked) {
-                    console.log('[CS-AD-BLOCK] xhr ' + this.__csUrl);
-                    try { this.abort(); } catch(e) {}
-                    return;
-                  }
-                  return xs.apply(this, arguments);
-                };
-
+                var xo = XMLHttpRequest.prototype.open; var xs = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.open = function(method, url) { this.__csUrl = String(url || ''); if (isBlocked(this.__csUrl)) this.__csBlocked = true; return xo.apply(this, arguments); };
+                XMLHttpRequest.prototype.send = function() { if (this.__csBlocked) { console.log('[CS-AD-BLOCK] xhr ' + this.__csUrl); try { this.abort(); } catch(e) {} return; } return xs.apply(this, arguments); };
                 var originalBeacon = navigator.sendBeacon;
-                if (originalBeacon) {
-                  navigator.sendBeacon = function(url, data) {
-                    if (isBlocked(url)) {
-                      console.log('[CS-AD-BLOCK] beacon ' + url);
-                      return true;
-                    }
-                    return originalBeacon.apply(this, arguments);
-                  };
-                }
-
+                if (originalBeacon) navigator.sendBeacon = function(url, data) { if (isBlocked(url)) { console.log('[CS-AD-BLOCK] beacon ' + url); return true; } return originalBeacon.apply(this, arguments); };
                 function clickSkip(root) {
-                  var all = [];
-                  try { all = root.querySelectorAll('button,a,[role="button"],div,span'); } catch(e) { return; }
-                  for (var i=0; i<all.length; i++) {
-                    var el = all[i];
-                    var t = String(el.innerText || el.textContent || '').trim().toLowerCase();
-                    if (!t || t.length > 40) continue;
-                    if (/^(atla|skip|skip ad|skip ads|reklamı atla|reklamı geç|reklamı kapat|geç)$/.test(t)) {
-                      try { el.click(); } catch(e) {}
-                      try { el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window})); } catch(e) {}
-                      console.log('[CS-AUTO-SKIP] ' + t);
-                    }
+                  var all = []; try { all = root.querySelectorAll('button,a,[role="button"],div,span'); } catch(e) { return; }
+                  for (var i=0; i<all.length; i++) { var el = all[i]; var t = String(el.innerText || el.textContent || '').trim().toLowerCase(); if (!t || t.length > 40) continue;
+                    if (/^(atla|skip|skip ad|skip ads|reklamı atla|reklamı geç|reklamı kapat|geç)$/.test(t)) { try { el.click(); } catch(e) {} try { el.dispatchEvent(new MouseEvent('click',{bubbles:true,cancelable:true,view:window})); } catch(e) {} console.log('[CS-AUTO-SKIP] ' + t); }
                   }
                 }
-
-                function removeOverlay(root) {
-                  try {
-                    root.querySelectorAll('.belink,.belink.active,[class*="belink"],[id*="belink"]').forEach(function(e) {
-                      e.style.setProperty('display','none','important');
-                      e.style.setProperty('pointer-events','none','important');
-                    });
-                  } catch(e) {}
-                }
-
+                function removeOverlay(root) { try { root.querySelectorAll('.belink,.belink.active,[class*="belink"],[id*="belink"]').forEach(function(e) { e.style.setProperty('display','none','important'); e.style.setProperty('pointer-events','none','important'); }); } catch(e) {} }
                 function scan() {
-                  removeOverlay(document);
-                  clickSkip(document);
-                  document.querySelectorAll('iframe').forEach(function(f) {
-                    try { if (f.contentDocument) { removeOverlay(f.contentDocument); clickSkip(f.contentDocument); } } catch(e) {}
-                  });
-                  try {
-                    performance.getEntriesByType('resource').forEach(function(e) {
-                      var u=e.name||'';
-                      if (/\.kinescopecdn\.net\/hls\/.+\/index\.m3u8/i.test(u)) window.__csManifest=u;
-                    });
-                  } catch(e) {}
+                  removeOverlay(document); clickSkip(document);
+                  document.querySelectorAll('iframe').forEach(function(f) { try { if (f.contentDocument) { removeOverlay(f.contentDocument); clickSkip(f.contentDocument); } } catch(e) {} });
+                  try { performance.getEntriesByType('resource').forEach(function(e) { var u=e.name||''; if (/\.kinescopecdn\.net\/hls\/.+\/index\.m3u8/i.test(u)) window.__csManifest=u; }); } catch(e) {}
                 }
                 new MutationObserver(scan).observe(document.documentElement || document, {subtree:true,childList:true});
-                setInterval(scan, 150);
-                scan();
-                return true;
+                setInterval(scan, 150); scan(); return true;
               } catch(e) { console.log('[CS-AD-BLOCK-INIT] '+e); return false; }
             })()
         """.trimIndent()
 
-        // IMPORTANT: WebViewResolver destroys the WebView when interceptUrl matches.
-        // Therefore only the actual Kinescope HLS manifest belongs here. Ad/tracking
-        // endpoints are filtered by the injected JS above and are never allowed to
-        // terminate the resolver before the manifest is discovered.
-        val intercept = Regex(
-            "\\.kinescopecdn\\.net/hls/.+/index\\.m3u8(?:\\?.*)?$",
-            RegexOption.IGNORE_CASE
-        )
+        val intercept = Regex("\\.kinescopecdn\\.net/hls/.+/index\\.m3u8(?:\\?.*)?$", RegexOption.IGNORE_CASE)
         val resolver = WebViewResolver(
             interceptUrl = intercept,
             additionalUrls = emptyList(),
@@ -347,9 +347,7 @@ class HintFilmIzle : MainAPI() {
                 stream = u
                 Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + u)
                 true
-            } else {
-                false
-            }
+            } else false
         }
 
         val final = stream ?: return false
@@ -385,6 +383,6 @@ class HintFilmIzle : MainAPI() {
             val pub = e.attr("data-publisher-id").trim(); val id = e.attr("data-id").trim()
             if (pub.isNotBlank() && id.isNotBlank()) add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")
         }
-        doc.select("script").forEach { s -> Regex("https?://[^\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(s.data()).forEach { add(it.value) } }
+        doc.select("script").forEach { s -> Regex("https?://[^\\\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(s.data()).forEach { add(it.value) } }
     }
 }
