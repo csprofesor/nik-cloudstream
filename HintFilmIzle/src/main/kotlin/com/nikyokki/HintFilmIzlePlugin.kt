@@ -126,8 +126,8 @@ class HintFilmIzle : MainAPI() {
         var doc = response.document; var r = results(doc, slug)
         if (slug != null && r.isEmpty()) {
             val fallbackUrl = if (page <= 1) "$mainUrl/film?order=DESC&orderby=date" else "$mainUrl/film/page/$page/?order=DESC&orderby=date"
-            val fallbackResponse = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()
-            if (fallbackResponse != null) { doc = fallbackResponse.document; r = results(doc, slug) }
+            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull() ?: response
+            doc = response.document; r = results(doc, slug)
         }
         return newHomePageResponse(request.name, r, hasNext = r.isNotEmpty())
     }
