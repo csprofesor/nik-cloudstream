@@ -23,16 +23,11 @@ jobs:
           if old not in s:
               raise SystemExit("target regex not found")
           p.write_text(s.replace(old, new, 1))
-      - name: Commit source fix
+      - name: Commit source fix and cleanup
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
-          git commit -m "Fix HintFilmIzle Kinescope API endpoints"
+          git rm .hintfilmizle-trigger .github/workflows/_hintfilmizle_fix.yml 2>/dev/null || true
+          git commit -m "Fix HintFilmIzle Kinescope API endpoints" || true
           git push
-      - name: Remove temporary workflow
-        if: always()
-        run: |
-          git rm .github/workflows/_hintfilmizle_fix.yml || true
-          git commit -m "Remove temporary HintFilmIzle fix workflow" || true
-          git push || true
