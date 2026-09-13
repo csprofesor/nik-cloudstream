@@ -57,6 +57,10 @@ jobs:
         working-directory: src
         run: python3 .github/hintfilmizle_signed_fix.py
 
+      - name: HintFilmIzle Kinescope HTML Probu
+        working-directory: src
+        run: python3 .github/hintfilmizle_native_probe.py
+
       - name: HintFilmIzle Derleme Kontrolü
         working-directory: src
         run: ./gradlew :HintFilmIzle:make --stacktrace
