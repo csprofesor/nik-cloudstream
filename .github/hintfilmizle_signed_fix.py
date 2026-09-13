@@ -78,7 +78,9 @@ new_kinescope="""    private fun kinescopeHash(value: String): String {
             append("&a=0")
         }
 
-        val endpointPaths = listOf("/api/v1/embed-movie/$id", "/api/v1/embed-serial/$id")
+        // fetchPlaylist() in the supplied Kinescope embed.js identifies these exact API resource names:
+        // /api/v1/embed-kp/{id} for KP/IMDB and /api/v1/embed-serials/{id} for serials.
+        val endpointPaths = listOf("/api/v1/embed-kp/$id", "/api/v1/embed-serials/$id")
         for (endpointPath in endpointPaths) {
             val signedUrl = "https://$host$endpointPath$commonQuery"
             Log.d("HintFilmIzle", "KINESCOPE_SIGNED_TARGET=$target")
