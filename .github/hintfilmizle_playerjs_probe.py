@@ -12,7 +12,7 @@ if needle not in s:
     raise SystemExit("signed response anchor not found")
 
 insert = r'''        // The embed document is only a shell. Fetch the known Kinescope player assets
-        // directly, then also inspect any script URLs exposed by the shell.
+        // directly, then inspect the minified fetchPlaylist implementation.
         runCatching {
             val targetOrigin = "https://${URI(target).host}"
             val shell = app.get(target, referer = parent, headers = headers() + mapOf(
@@ -63,13 +63,33 @@ insert = r'''        // The embed document is only a shell. Fetch the known Kine
                         .toList()
                     hits.forEach { Log.d("HintFilmIzle", "KINESCOPE_SCRIPT_HIT=$it") }
 
-                    // Also log the small windows around media-related tokens. This is
-                    // useful when the current minified player constructs URLs indirectly.
-                    val tokenRegex = Regex("(?i)(playlist|manifest|m3u8|media|stream|api/v1|master\\.m3u8)")
-                    tokenRegex.findAll(js).take(80).forEach { match ->
-                        val from = (match.range.first - 180).coerceAtLeast(0)
-                        val to = (match.range.last + 280).coerceAtMost(js.length)
-                        Log.d("HintFilmIzle", "KINESCOPE_SCRIPT_CONTEXT=${js.substring(from, to)}")
+                    // The player is heavily minified/obfuscated. Extract the exact
+                    // fetchPlaylist body and its string literals in manageable chunks.
+                    val fetchStart = Regex("function\\s+fetchPlaylist\\s*\\(").find(js)?.range?.first
+                    if (fetchStart != null) {
+                        val tail = js.substring(fetchStart)
+                        val bodyEnd = Regex("function\\s+[A-Za-z_$][A-Za-z0-9_$]*\\s*\\(").find(tail, 1)?.range?.first
+                        val fetchSource = tail.substring(0, (bodyEnd ?: minOf(tail.length, 30000)).coerceAtMost(30000))
+                        Log.d("HintFilmIzle", "KINESCOPE_FETCHPLAYLIST_LEN=${fetchSource.length}")
+                        fetchSource.chunked(1400).take(24).forEachIndexed { index, chunk ->
+                            Log.d("HintFilmIzle", "KINESCOPE_FETCHPLAYLIST[$index]=$chunk")
+                        }
+                        Regex("['\"]([^'\"]{1,300})['\"]")
+                            .findAll(fetchSource)
+                            .map { it.groupValues[1] }
+                            .filter {
+                                it.contains("api", true) || it.contains("playlist", true) ||
+                                it.contains("m3u8", true) || it.contains("media", true) ||
+                                it.contains("embed", true) || it.contains("stream", true) ||
+                                it.contains("http", true) || it.contains("domain", true) ||
+                                it.contains("iframe", true) || it.contains("sig", true) ||
+                                it.contains("nonce", true) || it.contains("meta", true)
+                            }
+                            .distinct()
+                            .take(200)
+                            .forEach { Log.d("HintFilmIzle", "KINESCOPE_FETCH_STRING=$it") }
+                    } else {
+                        Log.d("HintFilmIzle", "KINESCOPE_FETCHPLAYLIST_NOT_FOUND")
                     }
                 }.onFailure {
                     Log.e("HintFilmIzle", "KINESCOPE_SCRIPT_FAILED=$scriptUrl", it)
