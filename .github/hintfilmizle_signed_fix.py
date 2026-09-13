@@ -10,7 +10,7 @@ if 'import java.security.SecureRandom' not in s:
     s=s.replace('import java.net.URLEncoder\n','import java.net.URLEncoder\nimport java.security.SecureRandom\n',1)
 start=s.index('    private suspend fun kinescope(')
 end=s.index('\n    override suspend fun loadLinks',start)
-new_kinescope="""    private fun kinescopeHash(value: String): String {
+new_kinescope='''    private fun kinescopeHash(value: String): String {
         var hash = 0
         for (ch in value) hash = ((hash shl 5) - hash) + ch.code
         val out = StringBuilder(hash.toLong().let { kotlin.math.abs(it) }.toString(16).padStart(8, '0'))
@@ -142,6 +142,6 @@ new_kinescope="""    private fun kinescopeHash(value: String): String {
         Log.e("HintFilmIzle", "KINESCOPE_SIGNED_FAILED", it)
         false
     }
-"""
+'''
 s=s[:start]+new_kinescope+s[end:]
 path.write_text(s,encoding="utf-8")
