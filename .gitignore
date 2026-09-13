@@ -10,4 +10,6 @@
 .cxx
 local.properties
 .vscode
+__pycache__/
+*.pyc
 # Build trigger after workflow fix
