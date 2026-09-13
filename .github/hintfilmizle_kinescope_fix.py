@@ -16,9 +16,7 @@ for i, line in enumerate(lines):
         new = "window.__csManifest=u;if(!window.__csManifestSent){window.__csManifestSent=true;window.location.href=u;}"
         lines[i] = line.replace(old, new, 1)
 
-# Hook Kinescope's own fetch/XHR pipeline. The player creates its signed playlist
-# request internally, so observing the resulting response is more reliable than
-# guessing the signature algorithm. Only HLS manifests are surfaced to CloudStream.
+# Capture HLS manifests produced by the player's normal network requests while retaining ad blocking.
 marker = "                scanResources();"
 if marker in lines:
     idx = lines.index(marker)
@@ -81,8 +79,7 @@ if marker in lines:
         "                    }",
         "                  } catch (_) {}",
         "                })();",
-        "
-        " + marker,
+        marker,
     ]
     lines[idx:idx + 1] = hook
 
