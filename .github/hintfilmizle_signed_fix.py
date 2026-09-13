@@ -81,8 +81,7 @@ new_kinescope="""    private fun kinescopeHash(value: String): String {
             ?: return@runCatching false
         Log.d("HintFilmIzle", "KINESCOPE_SIGNED_CODE=${response.code}")
         Log.d("HintFilmIzle", "KINESCOPE_SIGNED_LEN=${response.text.length}")
-        val encoded = Regex("\\\"p\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(response.text)?.groupValues?.getOrNull(1)
-            ?: return@runCatching false
+        val encoded = runCatching { JSONObject(response.text).optString("p", "") }.getOrNull().orEmpty().ifBlank { return@runCatching false }
         val decoded = runCatching {
             val raw = Base64.decode(encoded.reversed(), Base64.DEFAULT)
             val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray(Charsets.UTF_8)
