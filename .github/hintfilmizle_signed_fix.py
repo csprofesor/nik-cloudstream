@@ -64,13 +64,10 @@ new_kinescope="""    private fun kinescopeHash(value: String): String {
         val host = "river-3-329.kinescopecdn.net"
         val parentDomain = runCatching { URI(parent).host?.removePrefix("www.") }.getOrNull() ?: "hintfilmizle.com"
 
-        // The working Chromium trace shows that /api/v1/embed/{id} is not usable
-        // without the short-lived parent meta token. Try to obtain that token from
-        // the actual HintFilmIzle page before signing the API request.
         val metaToken = runCatching {
             val page = app.get(parent, referer = "$mainUrl/", headers = headers())
             val text = page.text
-            Regex("(?:meta_token|metaToken|\\\"meta\\\"|\\bmeta\\b)\\s*[:=]\\s*[\\\"']([^\\\"']{80,500})[\\\"']", RegexOption.IGNORE_CASE)
+            Regex("""(?:meta_token|metaToken|"meta"|\bmeta\b)\s*[:=]\s*["']([^"']{80,500})["']""", RegexOption.IGNORE_CASE)
                 .find(text)?.groupValues?.getOrNull(1)
                 ?.takeIf { it.contains('.') && it.length > 100 }
         }.getOrNull()
