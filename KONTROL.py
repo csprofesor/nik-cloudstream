@@ -54,7 +54,7 @@ class MainUrlUpdater:
             icerik = file.read()
             if eski_url not in icerik:
                 return False
-            yeni_icerik = icerik.replace(eski_url, yeni_url, 1)
+            yeni_icerik = icerik.replace(eski_url, yeni_url)
             if yeni_icerik == icerik:
                 return False
             file.seek(0)

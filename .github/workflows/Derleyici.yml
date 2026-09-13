@@ -94,6 +94,7 @@ jobs:
               if not isinstance(data, list):
                   data = []
               built = {p.stem: p for p in root.glob('*.cs3')}
+              data = [item for item in data if isinstance(item, dict)]
               data = [item for item in data if item.get('internalName') in built]
               for item in data:
                   target = built.get(item.get('internalName', ''))
