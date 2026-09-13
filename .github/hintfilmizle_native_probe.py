@@ -1,10 +1,12 @@
 from pathlib import Path
 path = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
 s = path.read_text(encoding="utf-8-sig")
-marker = '''        val response = runCatching {'''
+markers = [
+    '''        val response = runCatching {''',
+    '''        val response = runCatching {'''.replace("        ", "    "),
+]
+marker = next((m for m in markers if m in s), None)
 insert = '''        // Probe the real CDN embed HTML natively before falling back to the signed API.
-        // Kinescope may expose the already-authorized HLS URL in player options even when
-        // /api/v1/embed returns only its status envelope.
         runCatching {
             val htmlResponse = app.get(target, referer = parent, headers = headers() + mapOf(
                 "Referer" to parent,
@@ -35,7 +37,7 @@ insert = '''        // Probe the real CDN embed HTML natively before falling bac
         }
 
 '''
-if marker not in s:
+if marker is None:
     raise SystemExit("signed response marker not found")
 s = s.replace(marker, insert + marker, 1)
 path.write_text(s, encoding="utf-8")
