@@ -14,8 +14,13 @@ if needle not in s:
 insert = r'''        // Fetch the player JavaScript directly from the CDN. The embed HTML is only a
         // shell; playerjs.js/embed.js construct the signed media request dynamically.
         runCatching {
+            val probeHtml = app.get(target, referer = parent, headers = headers() + mapOf(
+                "Referer" to parent,
+                "Origin" to "https://${URI(target).host}"
+            )).text
+            val targetOrigin = "https://${URI(target).host}"
             val scriptUrls = Regex("<script[^>]+src=[\\\"']([^\\\"']+)[\\\"']", RegexOption.IGNORE_CASE)
-                .findAll(html)
+                .findAll(probeHtml)
                 .mapNotNull { m -> runCatching { fix(target, m.groupValues[1]) }.getOrNull() }
                 .filter { it.contains("kinescope", true) || it.contains("playerjs", true) || it.contains("embed.js", true) }
                 .distinct()
