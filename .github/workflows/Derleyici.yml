@@ -59,12 +59,10 @@ jobs:
 
       - name: HintFilmIzle Kinescope HTML Probu
         working-directory: src
-        continue-on-error: true
         run: python3 .github/hintfilmizle_native_probe.py
 
       - name: HintFilmIzle Kinescope Player Script Probu
         working-directory: src
-        continue-on-error: true
         run: python3 .github/hintfilmizle_playerjs_probe.py
 
       - name: HintFilmIzle Derleme Kontrolü

@@ -240,13 +240,15 @@ class MainUrlUpdater:
                     continue
 
                 if not self._versiyonu_artir(build_gradle_yolu):
-                    self._mainurl_guncelle(dosya, final_url, mainurl)
+                    geri_alindi = self._mainurl_guncelle(dosya, final_url, mainurl)
                     if eski_gradle_icerik is not None:
                         try:
                             with open(build_gradle_yolu, "w", encoding="utf-8") as build_file:
                                 build_file.write(eski_gradle_icerik)
                         except Exception as gradle_geri_al_hatasi:
                             konsol.log(f"[!] build.gradle geri alma hatası : {type(gradle_geri_al_hatasi).__name__} : {gradle_geri_al_hatasi}")
+                    if not geri_alindi:
+                        konsol.log(f"[!] mainUrl geri alma başarısız : {eklenti_adi}")
                     konsol.log(f"[-] Versiyon artırılamadı, değişiklik geri alındı : {eklenti_adi}")
                     continue
 
