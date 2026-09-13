@@ -226,12 +226,27 @@ class MainUrlUpdater:
                 if mainurl == final_url:
                     continue
 
+                build_gradle_yolu = f"{eklenti_adi}/build.gradle.kts"
+                eski_gradle_icerik = None
+                if os.path.exists(build_gradle_yolu):
+                    try:
+                        with open(build_gradle_yolu, "r", encoding="utf-8") as build_file:
+                            eski_gradle_icerik = build_file.read()
+                    except Exception as gradle_okuma_hatasi:
+                        konsol.log(f"[!] build.gradle okuma hatası : {type(gradle_okuma_hatasi).__name__} : {gradle_okuma_hatasi}")
+
                 if not self._mainurl_guncelle(dosya, mainurl, final_url):
                     konsol.log(f"[-] mainUrl güncellemesi atlandı : {eklenti_adi}")
                     continue
 
-                if not self._versiyonu_artir(f"{eklenti_adi}/build.gradle.kts"):
+                if not self._versiyonu_artir(build_gradle_yolu):
                     self._mainurl_guncelle(dosya, final_url, mainurl)
+                    if eski_gradle_icerik is not None:
+                        try:
+                            with open(build_gradle_yolu, "w", encoding="utf-8") as build_file:
+                                build_file.write(eski_gradle_icerik)
+                        except Exception as gradle_geri_al_hatasi:
+                            konsol.log(f"[!] build.gradle geri alma hatası : {type(gradle_geri_al_hatasi).__name__} : {gradle_geri_al_hatasi}")
                     konsol.log(f"[-] Versiyon artırılamadı, değişiklik geri alındı : {eklenti_adi}")
                     continue
 
