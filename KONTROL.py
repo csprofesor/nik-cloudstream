@@ -234,6 +234,8 @@ class MainUrlUpdater:
                             eski_gradle_icerik = build_file.read()
                     except Exception as gradle_okuma_hatasi:
                         konsol.log(f"[!] build.gradle okuma hatası : {type(gradle_okuma_hatasi).__name__} : {gradle_okuma_hatasi}")
+                        konsol.log(f"[-] Güvenli geri alma sağlanamadı, eklenti atlandı : {eklenti_adi}")
+                        continue
 
                 if not self._mainurl_guncelle(dosya, mainurl, final_url):
                     konsol.log(f"[-] mainUrl güncellemesi atlandı : {eklenti_adi}")
