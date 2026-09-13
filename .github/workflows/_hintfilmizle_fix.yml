@@ -1,0 +1,38 @@
+name: HintFilmIzle targeted fix
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch Kinescope API matcher
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
+          s = p.read_text()
+          old = r'''    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\\\"'\\\\s<>]*kinescopecdn\\.net)(?:/[^\\\"'\\\\s<>]+)*/api/v1/embed/[^\\\"'\\\\s<>]+", RegexOption.IGNORE_CASE)'''
+          new = r'''    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\\\"'\\\\s<>]*kinescopecdn\\.net)(?:/[^\\\"'\\\\s<>]+)*/api/v1/embed(?:-kp|-serials)?/[^\\\"'\\\\s<>]+", RegexOption.IGNORE_CASE)'''
+          if old not in s:
+              raise SystemExit("target regex not found")
+          p.write_text(s.replace(old, new, 1))
+      - name: Commit source fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt
+          git commit -m "Fix HintFilmIzle Kinescope API endpoints"
+          git push
+      - name: Remove temporary workflow
+        if: always()
+        run: |
+          git rm .github/workflows/_hintfilmizle_fix.yml || true
+          git commit -m "Remove temporary HintFilmIzle fix workflow" || true
+          git push || true
