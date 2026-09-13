@@ -42,12 +42,25 @@ class MainUrlUpdater:
         return None
 
     def _mainurl_guncelle(self, kt_dosya_yolu, eski_url, yeni_url):
+        if not eski_url or not yeni_url:
+            return False
+        eski_url = eski_url.strip()
+        yeni_url = yeni_url.strip()
+        if not eski_url or not yeni_url or eski_url == yeni_url:
+            return False
+        if not yeni_url.startswith(("http://", "https://")):
+            return False
         with open(kt_dosya_yolu, "r+", encoding="utf-8") as file:
             icerik = file.read()
-            yeni_icerik = icerik.replace(eski_url, yeni_url)
+            if eski_url not in icerik:
+                return False
+            yeni_icerik = icerik.replace(eski_url, yeni_url, 1)
+            if yeni_icerik == icerik:
+                return False
             file.seek(0)
             file.write(yeni_icerik)
             file.truncate()
+        return True
 
     def _versiyonu_artir(self, build_gradle_yolu):
         if not os.path.exists(build_gradle_yolu):
@@ -167,41 +180,62 @@ class MainUrlUpdater:
 
     def guncelle(self):
         for dosya, mainurl in self.mainurl_listesi.items():
-            if not mainurl:
-                continue
-            eklenti_adi = dosya.split("/")[0]
-            print("\n")
-            konsol.log(f"[~] Kontrol Ediliyor : {eklenti_adi}")
-
-            if eklenti_adi == "RecTV":
-                try:
-                    final_url = self._rectv_ver()
-                    konsol.log(f"[+] Kontrol Edildi   : {mainurl}")
-                except Exception as hata:
-                    konsol.log(f"[!] Kontrol Edilemedi : {mainurl}")
-                    konsol.log(f"[!] {type(hata).__name__} : {hata}")
+            try:
+                if not mainurl:
                     continue
-            else:
-                try:
-                    istek = self.oturum.get(mainurl, allow_redirects=True, timeout=20)
-                    if istek.status_code >= 400:
-                        raise RuntimeError(f"HTTP {istek.status_code}")
-                    konsol.log(f"[+] Kontrol Edildi   : {mainurl}")
-                    final_url = istek.url[:-1] if istek.url.endswith("/") else istek.url
-                except Exception as hata:
-                    konsol.log(f"[!] Mevcut domain çalışmıyor : {mainurl}")
-                    konsol.log(f"[!] {type(hata).__name__} : {hata}")
-                    final_url = self._yeni_domain_bul(eklenti_adi, mainurl)
-                    if not final_url:
-                        konsol.log(f"[-] Yeni domain bulunamadı : {eklenti_adi}")
+                eklenti_adi = dosya.split("/")[0]
+                print("\n")
+                konsol.log(f"[~] Kontrol Ediliyor : {eklenti_adi}")
+
+                if eklenti_adi == "RecTV":
+                    try:
+                        final_url = self._rectv_ver()
+                        konsol.log(f"[+] Kontrol Edildi   : {mainurl}")
+                    except Exception as hata:
+                        konsol.log(f"[!] Kontrol Edilemedi : {mainurl}")
+                        konsol.log(f"[!] {type(hata).__name__} : {hata}")
                         continue
+                else:
+                    try:
+                        istek = self.oturum.get(mainurl, allow_redirects=True, timeout=20)
+                        if istek.status_code >= 400:
+                            raise RuntimeError(f"HTTP {istek.status_code}")
+                        konsol.log(f"[+] Kontrol Edildi   : {mainurl}")
+                        final_url = istek.url[:-1] if istek.url.endswith("/") else istek.url
+                    except Exception as hata:
+                        konsol.log(f"[!] Mevcut domain çalışmıyor : {mainurl}")
+                        konsol.log(f"[!] {type(hata).__name__} : {hata}")
+                        try:
+                            final_url = self._yeni_domain_bul(eklenti_adi, mainurl)
+                        except Exception as bulma_hatasi:
+                            konsol.log(f"[!] Domain arama hatası : {type(bulma_hatasi).__name__} : {bulma_hatasi}")
+                            final_url = None
+                        if not final_url:
+                            konsol.log(f"[-] Yeni domain bulunamadı : {eklenti_adi}")
+                            continue
 
-            if mainurl == final_url:
+                if not isinstance(final_url, str):
+                    konsol.log(f"[-] Geçersiz yeni URL (string değil) : {eklenti_adi}")
+                    continue
+
+                final_url = final_url.strip()
+                if not final_url.startswith(("http://", "https://")):
+                    konsol.log(f"[-] Geçersiz yeni URL : {eklenti_adi} -> {final_url}")
+                    continue
+
+                if mainurl == final_url:
+                    continue
+
+                if not self._mainurl_guncelle(dosya, mainurl, final_url):
+                    konsol.log(f"[-] mainUrl güncellemesi atlandı : {eklenti_adi}")
+                    continue
+
+                if self._versiyonu_artir(f"{eklenti_adi}/build.gradle.kts"):
+                    konsol.log(f"[»] {mainurl} -> {final_url}")
+            except Exception as genel_hata:
+                konsol.log(f"[!] Beklenmeyen hata : {dosya}")
+                konsol.log(f"[!] {type(genel_hata).__name__} : {genel_hata}")
                 continue
-
-            self._mainurl_guncelle(dosya, mainurl, final_url)
-            if self._versiyonu_artir(f"{eklenti_adi}/build.gradle.kts"):
-                konsol.log(f"[»] {mainurl} -> {final_url}")
 
 
 if __name__ == "__main__":
