@@ -230,8 +230,12 @@ class MainUrlUpdater:
                     konsol.log(f"[-] mainUrl güncellemesi atlandı : {eklenti_adi}")
                     continue
 
-                if self._versiyonu_artir(f"{eklenti_adi}/build.gradle.kts"):
-                    konsol.log(f"[»] {mainurl} -> {final_url}")
+                if not self._versiyonu_artir(f"{eklenti_adi}/build.gradle.kts"):
+                    self._mainurl_guncelle(dosya, final_url, mainurl)
+                    konsol.log(f"[-] Versiyon artırılamadı, değişiklik geri alındı : {eklenti_adi}")
+                    continue
+
+                konsol.log(f"[»] {mainurl} -> {final_url}")
             except Exception as genel_hata:
                 konsol.log(f"[!] Beklenmeyen hata : {dosya}")
                 konsol.log(f"[!] {type(genel_hata).__name__} : {genel_hata}")
