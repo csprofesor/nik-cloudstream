@@ -177,7 +177,7 @@ class HintFilmIzle : MainAPI() {
         "https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/(?:[^\"'\\s<>]+/)*hls/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
         RegexOption.IGNORE_CASE
     )
-    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\"'\\s<>]*kinescopecdn\\.net)(?:/[^\"'\\s<>]+)*/api/v1/embed/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\"'\\s<>]*kinescopecdn\\.net)(?:/[^\"'\\s<>]+)*/api/v1/embed(?:-kp|-serials)?/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
 
     private fun normalizeKinescopeValue(value: String?): String? = value
         ?.replace("\\/", "/")
