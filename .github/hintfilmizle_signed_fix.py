@@ -27,7 +27,7 @@ new_kinescope="""    private fun kinescopeHash(value: String): String {
 
     private fun kinescopeSignature(material: String): String {
         val secret = "RTAJTmjFegZfxynQ95EwdoqYrQ2T5ZJE"
-        val padded = secret.padEnd(64, '\\u0000').take(64)
+        val padded = secret.padEnd(64, Char(0)).take(64)
         val first = buildString(padded.length) { padded.forEach { append((it.code xor 54).toChar()) } }
         val second = buildString(padded.length) { padded.forEach { append((it.code xor 92).toChar()) } }
         return kinescopeHash(second + kinescopeHash(first + material))
@@ -59,29 +59,44 @@ new_kinescope="""    private fun kinescopeHash(value: String): String {
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1)
             ?: return@runCatching false
-        val parsed = runCatching { URI(kine) }.getOrNull() ?: return@runCatching false
-        val host = parsed.host ?: return@runCatching false
+
+        // HintFilmIzle's player domain is only a front-end redirect. Android cannot
+        // resolve it, while the real Kinescope iframe lives on this CDN host.
+        val target = "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
+        val host = "river-3-329.kinescopecdn.net"
         val parentDomain = runCatching { URI(parent).host?.removePrefix("www.") }.getOrNull() ?: "hintfilmizle.com"
         val timestamp = System.currentTimeMillis() / 1000L
         val nonce = kinescopeNonce()
-        val material = listOf(parentDomain, kine, timestamp.toString(), nonce, "").joinToString("|")
+        val material = listOf(parentDomain, target, timestamp.toString(), nonce, "").joinToString("|")
         val signature = kinescopeSignature(material)
         val signedUrl = buildString {
             append("https://").append(host).append("/api/v1/embed/").append(id)
             append("?domain=").append(URLEncoder.encode(parentDomain, "UTF-8"))
-            append("&iframe_url=").append(URLEncoder.encode(kine, "UTF-8"))
+            append("&iframe_url=").append(URLEncoder.encode(target, "UTF-8"))
             append("&sig=").append(URLEncoder.encode(signature, "UTF-8"))
             append("&ts=").append(timestamp)
             append("&nonce=").append(URLEncoder.encode(nonce, "UTF-8"))
             append("&meta=")
             append("&a=0")
         }
-        Log.d("HintFilmIzle", "KINESCOPE_SIGNED_URL=$signedUrl")
-        val response = runCatching { app.get(signedUrl, referer = kine, headers = headers() + mapOf("Referer" to kine, "Origin" to "https://$parentDomain")) }.getOrNull()
-            ?: return@runCatching false
+        Log.d("HintFilmIzle", "KINESCOPE_SIGNED_TARGET=$target")
+        Log.d("HintFilmIzle", "KINESCOPE_SIGNED_URL=${signedUrl.substringBefore("&sig=")}...sig=<redacted>")
+
+        val response = runCatching {
+            app.get(
+                signedUrl,
+                referer = target,
+                headers = headers() + mapOf(
+                    "Referer" to target,
+                    "Origin" to "https://$parentDomain"
+                )
+            )
+        }.getOrNull() ?: return@runCatching false
+
         Log.d("HintFilmIzle", "KINESCOPE_SIGNED_CODE=${response.code}")
         Log.d("HintFilmIzle", "KINESCOPE_SIGNED_LEN=${response.text.length}")
-        val encoded = runCatching { JSONObject(response.text).optString("p", "") }.getOrNull().orEmpty().ifBlank { return@runCatching false }
+        val encoded = runCatching { JSONObject(response.text).optString("p", "") }.getOrNull().orEmpty()
+            .ifBlank { return@runCatching false }
         val decoded = runCatching {
             val raw = Base64.decode(encoded.reversed(), Base64.DEFAULT)
             val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray(Charsets.UTF_8)
@@ -94,8 +109,8 @@ new_kinescope="""    private fun kinescopeHash(value: String): String {
         val manifest = findKinescopeUrl(json, "https://$host/") ?: return@runCatching false
         Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=$manifest")
         callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = manifest, type = ExtractorLinkType.M3U8) {
-            referer = kine
-            this.headers = mapOf("Referer" to kine, "Origin" to "https://$parentDomain", "User-Agent" to ua)
+            referer = target
+            this.headers = mapOf("Referer" to target, "Origin" to "https://$parentDomain", "User-Agent" to ua)
             quality = getQualityFromName(manifest)
         })
         true
