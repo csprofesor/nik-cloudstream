@@ -16,10 +16,9 @@ for i, line in enumerate(lines):
         new = "window.__csManifest=u;if(!window.__csManifestSent){window.__csManifestSent=true;window.location.href=u;}"
         lines[i] = line.replace(old, new, 1)
 
-# The player must be allowed to complete its own signed API handshake.
-# Capture /api/v1/embed* as an additional request instead of making it the
-# terminating intercept. The first real HLS manifest remains the terminator.
 s = "\n".join(lines) + "\n"
+
+# Let the player complete its signed API handshake; only a real HLS manifest terminates WebView.
 s = s.replace(
     'interceptUrl = Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),',
     'interceptUrl = kinescopeManifestRegex,'
@@ -33,7 +32,7 @@ s = s.replace(
     'timeout = 25_000L,'
 )
 
-# Capture HLS manifests produced by the player's normal network requests while retaining ad blocking.
+# Capture manifests produced by fetch/XHR while preserving the existing ad blocking.
 marker = "                scanResources();"
 lines = s.splitlines()
 if marker in lines:
@@ -102,55 +101,11 @@ if marker in lines:
     lines[idx:idx + 1] = hook
     s = "\n".join(lines) + "\n"
 
-# Prefer the signed HLS URL already embedded in Kinescope's HTML/player configuration.
-# This avoids relying on Android WebView to execute the current Kinescope handshake.
-marker = '        val script = """'
-html_block = '''        if (stream == null) {
-            runCatching {
-                val html = app.get(
-                    target,
-                    referer = parent,
-                    headers = mapOf(
-                        "User-Agent" to ua,
-                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                    )
-                ).text
-                val normalizedHtml = html
-                    .replace("\\\\/", "/")
-                    .replace("\\\\u0026", "&")
-                    .replace("&amp;", "&")
-                val manifest = Regex(
-                    "https?://[^\\\"'\\s<>]+\\\\.m3u8(?:\\\\?[^\\\"'\\s<>]*)?",
-                    RegexOption.IGNORE_CASE
-                ).find(normalizedHtml)?.value
-                    ?: Regex(
-                        "https?://[^\\\"'\\s<>]+(?:/hls/|/new-manifest/)[^\\\"'\\s<>]+",
-                        RegexOption.IGNORE_CASE
-                    ).find(normalizedHtml)?.value?.takeIf { it.contains(".m3u8", true) }
-                if (!manifest.isNullOrBlank()) {
-                    stream = fix(manifest, target) ?: manifest
-                    streamHeaders = mapOf(
-                        "Referer" to parent,
-                        "User-Agent" to ua,
-                        "Accept" to "*/*",
-                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                    )
-                    Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST=${redactUrlForLog(stream ?: manifest)}")
-                } else {
-                    Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST_FAILED")
-                }
-            }.onFailure {
-                Log.e("HintFilmIzle", "KINESCOPE_HTML_FETCH_FAILED", it)
-            }
-        }
+# Do not inject a second Kotlin Regex block here: the previous version emitted single backslashes
+# into ordinary Kotlin strings (e.g. \s and \"), which Kotlin rejects as unsupported escapes.
+# The WebView/fetch/XHR path above remains the fallback for the signed Kinescope manifest.
 
-'''
-if marker in s and 'KINESCOPE_HTML_MANIFEST=' not in s:
-    s = s.replace(marker, html_block + marker, 1)
-
-# Never synthesize a Kinescope CDN URL from a stale publisher/host. The site's
-# player proxy is the source of truth and can resolve its current publisher.
+# Never synthesize a Kinescope CDN URL from a stale publisher/host.
 s = s.replace(
     'add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")',
     'add("https://player.hintfilmizle.com/embed/$id?design=3&lang=tr")'
@@ -164,4 +119,4 @@ s = s.replace(
 )
 
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle Kinescope: prefer signed HLS manifest from embed HTML; WebView remains fallback and ad blocking is preserved")
+print("HintFilmIzle Kinescope: fixed Kotlin escaping; WebView signed-manifest capture and ad blocking preserved")
