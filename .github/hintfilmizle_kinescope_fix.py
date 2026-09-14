@@ -26,11 +26,11 @@ s = s.replace(
 )
 s = s.replace(
     'additionalUrls = emptyList(),',
-    'additionalUrls = listOf(kinescopeApiRegex),',
+    'additionalUrls = listOf(kinescopeApiRegex),'
 )
 s = s.replace(
     'timeout = 60_000L,',
-    'timeout = 25_000L,',
+    'timeout = 25_000L,'
 )
 
 # Capture HLS manifests produced by the player's normal network requests while retaining ad blocking.
@@ -148,6 +148,13 @@ html_block = '''        if (stream == null) {
 '''
 if marker in s and 'KINESCOPE_HTML_MANIFEST=' not in s:
     s = s.replace(marker, html_block + marker, 1)
+
+# Never synthesize a Kinescope CDN URL from a stale publisher/host. The site's
+# player proxy is the source of truth and can resolve its current publisher.
+s = s.replace(
+    'add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")',
+    'add("https://player.hintfilmizle.com/embed/$id?design=3&lang=tr")'
+)
 
 # Make the nullable fallback assignment valid even when the secondary build patch is skipped.
 s = s.replace(
