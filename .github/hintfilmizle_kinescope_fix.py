@@ -16,8 +16,26 @@ for i, line in enumerate(lines):
         new = "window.__csManifest=u;if(!window.__csManifestSent){window.__csManifestSent=true;window.location.href=u;}"
         lines[i] = line.replace(old, new, 1)
 
+# The player must be allowed to complete its own signed API handshake.
+# Capture /api/v1/embed* as an additional request instead of making it the
+# terminating intercept. The first real HLS manifest remains the terminator.
+s = "\n".join(lines) + "\n"
+s = s.replace(
+    'interceptUrl = Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),',
+    'interceptUrl = kinescopeManifestRegex,'
+)
+s = s.replace(
+    'additionalUrls = emptyList(),',
+    'additionalUrls = listOf(kinescopeApiRegex),',
+)
+s = s.replace(
+    'timeout = 60_000L,',
+    'timeout = 25_000L,',
+)
+
 # Capture HLS manifests produced by the player's normal network requests while retaining ad blocking.
 marker = "                scanResources();"
+lines = s.splitlines()
 if marker in lines:
     idx = lines.index(marker)
     hook = [
@@ -82,8 +100,7 @@ if marker in lines:
         marker,
     ]
     lines[idx:idx + 1] = hook
-
-s = "\n".join(lines) + "\n"
+    s = "\n".join(lines) + "\n"
 
 # Make the nullable fallback assignment valid even when the secondary build patch is skipped.
 s = s.replace(
@@ -93,4 +110,4 @@ s = s.replace(
 )
 
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle Kinescope network interception + fetch/XHR manifest capture + ad blocking patch applied")
+print("HintFilmIzle Kinescope API capture: API requests are observed, not terminating; real HLS manifest remains the resolver terminator")
