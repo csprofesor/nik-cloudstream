@@ -49,13 +49,9 @@ jobs:
       - name: Android SDK Ayarla
         uses: android-actions/setup-android@v3.2.2
 
-      - name: HintFilmIzle Kaynak Düzeltmeleri
+      - name: HintFilmIzle Kinescope + Reklam Engelleme
         working-directory: src
         run: python3 .github/hintfilmizle_kinescope_fix.py
-
-      - name: HintFilmIzle İmzalı Kinescope Düzeltmesi
-        working-directory: src
-        run: python3 .github/hintfilmizle_signed_fix.py
 
       - name: HintFilmIzle Derleme Kontrolü
         working-directory: src
