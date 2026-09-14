@@ -102,6 +102,53 @@ if marker in lines:
     lines[idx:idx + 1] = hook
     s = "\n".join(lines) + "\n"
 
+# Prefer the signed HLS URL already embedded in Kinescope's HTML/player configuration.
+# This avoids relying on Android WebView to execute the current Kinescope handshake.
+marker = '        val script = """'
+html_block = '''        if (stream == null) {
+            runCatching {
+                val html = app.get(
+                    target,
+                    referer = parent,
+                    headers = mapOf(
+                        "User-Agent" to ua,
+                        "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )
+                ).text
+                val normalizedHtml = html
+                    .replace("\\\\/", "/")
+                    .replace("\\\\u0026", "&")
+                    .replace("&amp;", "&")
+                val manifest = Regex(
+                    "https?://[^\\\"'\\s<>]+\\\\.m3u8(?:\\\\?[^\\\"'\\s<>]*)?",
+                    RegexOption.IGNORE_CASE
+                ).find(normalizedHtml)?.value
+                    ?: Regex(
+                        "https?://[^\\\"'\\s<>]+(?:/hls/|/new-manifest/)[^\\\"'\\s<>]+",
+                        RegexOption.IGNORE_CASE
+                    ).find(normalizedHtml)?.value?.takeIf { it.contains(".m3u8", true) }
+                if (!manifest.isNullOrBlank()) {
+                    stream = fix(manifest, target) ?: manifest
+                    streamHeaders = mapOf(
+                        "Referer" to parent,
+                        "User-Agent" to ua,
+                        "Accept" to "*/*",
+                        "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                    )
+                    Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST=${redactUrlForLog(stream ?: manifest)}")
+                } else {
+                    Log.d("HintFilmIzle", "KINESCOPE_HTML_MANIFEST_FAILED")
+                }
+            }.onFailure {
+                Log.e("HintFilmIzle", "KINESCOPE_HTML_FETCH_FAILED", it)
+            }
+        }
+
+'''
+if marker in s and 'KINESCOPE_HTML_MANIFEST=' not in s:
+    s = s.replace(marker, html_block + marker, 1)
+
 # Make the nullable fallback assignment valid even when the secondary build patch is skipped.
 s = s.replace(
     '''            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n            if (response != null) { doc = response.document; r = results(doc, slug) }''',
@@ -110,4 +157,4 @@ s = s.replace(
 )
 
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle Kinescope API capture: API requests are observed, not terminating; real HLS manifest remains the resolver terminator")
+print("HintFilmIzle Kinescope: prefer signed HLS manifest from embed HTML; WebView remains fallback and ad blocking is preserved")
