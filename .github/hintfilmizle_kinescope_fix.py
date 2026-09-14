@@ -3,71 +3,82 @@ from pathlib import Path
 path = Path("HintFilmIzle/src/main/kotlin/com/nikyokki/HintFilmIzlePlugin.kt")
 s = path.read_text(encoding="utf-8-sig")
 
-# Keep the real Kinescope CDN embed URL and let its own embed.js/playerjs.js
-# perform the signed handshake. The resolver watches both the API request and HLS.
+# Watch every HTTP(S) request from the legacy player. The previous narrow regex
+# showed only embed.js/playerjs.js and never exposed the actual media handshake.
 s = s.replace(
-    'val resolver = WebViewResolver(interceptUrl=intercept,additionalUrls=emptyList(),userAgent=ua,useOkhttp=false,timeout=25_000L,script=script)',
-    'val resolver = WebViewResolver(interceptUrl=Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),additionalUrls=emptyList(),userAgent=ua,useOkhttp=false,timeout=60_000L,script=script)'
+    'interceptUrl = Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),',
+    'interceptUrl = Regex("https?://.*", RegexOption.IGNORE_CASE),',
+    1,
 )
 
-# The previous patch narrowed the intercept to HLS only. Restore API interception.
-s = s.replace(
-    'interceptUrl = kinescopeManifestRegex,',
-    'interceptUrl = Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),'
-)
-s = s.replace('additionalUrls = listOf(kinescopeApiRegex),', 'additionalUrls = emptyList(),')
-s = s.replace('timeout = 25_000L,', 'timeout = 60_000L,')
+# Keep the resolver alive long enough for the legacy player to perform its
+# delayed handshake, while still terminating immediately on a real manifest.
+s = s.replace('timeout = 60_000L,', 'timeout = 90_000L,', 1)
 
-# Capture the signed /api/v1/embed/... URL from Chromium's resource timing.
-# Kinescope may issue this request from code that does not use fetch/XHR hooks.
-marker = '''                function scanResources() {'''
-if marker in s and 'function captureKinescopeApi()' not in s:
-    inject = '''                function captureKinescopeApi() {
+# Add direct XHR/fetch instrumentation. Some old Kinescope player builds issue
+# their signed request through code paths that are awkward for WebViewResolver
+# to surface. We record the exact URL and navigate to it after the request is
+# observed, which makes the request itself the resolver target.
+marker = '''                function cleanAds(root) {'''
+if marker in s and 'function hookKinescopeNetwork()' not in s:
+    inject = '''                function hookKinescopeNetwork() {
                   try {
-                    var es=performance.getEntriesByType('resource')||[];
-                    for(var i=es.length-1;i>=0;i--){
-                      var u=String(es[i].name||'');
-                      if(/\\/api\\/v1\\/embed(?:-kp|-serials)?\\//i.test(u)){
-                        window.__csApiUrl=u;
-                        if(!window.__csApiSent){
-                          window.__csApiSent=true;
-                          window.location.href=u;
+                    function capture(u) {
+                      try {
+                        u=String(u||'');
+                        if(!/^https?:\\/\\//i.test(u)) return;
+                        if(/\\/api\\/v1\\/embed(?:-kp|-serials)?\\//i.test(u)) {
+                          window.__csApiUrl=u;
+                          if(!window.__csApiSent){
+                            window.__csApiSent=true;
+                            setTimeout(function(){try{window.location.href=u;}catch(_){ }},0);
+                          }
                         }
-                        return;
-                      }
+                      } catch (_) {}
+                    }
+                    if(!window.__csFetchHooked && window.fetch){
+                      window.__csFetchHooked=true;
+                      var origFetch=window.fetch;
+                      window.fetch=function(input,init){
+                        try { capture(typeof input==='string'?input:(input&&input.url)); } catch(_) {}
+                        return origFetch.apply(this,arguments);
+                      };
+                    }
+                    if(!window.__csXhrHooked && window.XMLHttpRequest){
+                      window.__csXhrHooked=true;
+                      var xo=XMLHttpRequest.prototype.open;
+                      XMLHttpRequest.prototype.open=function(method,url){
+                        try { capture(url); } catch(_) {}
+                        return xo.apply(this,arguments);
+                      };
                     }
                   } catch (_) {}
                 }
 '''
     s = s.replace(marker, inject + marker, 1)
     s = s.replace(
-        '                    cleanAds(document); startPlayer();\n                    var es=performance.getEntriesByType',
-        '                    cleanAds(document); startPlayer(); captureKinescopeApi();\n                    var es=performance.getEntriesByType',
-        1
+        '                    cleanAds(document); startPlayer();',
+        '                    hookKinescopeNetwork(); cleanAds(document); startPlayer();',
+        1,
     )
     s = s.replace(
-        "                scanResources();\n                [100,300,700,1500,3000,5000,10000].forEach(function(ms){setTimeout(scanResources,ms);});",
-        "                scanResources(); captureKinescopeApi();\n                [100,300,700,1500,3000,5000,10000,20000].forEach(function(ms){setTimeout(function(){scanResources();captureKinescopeApi();},ms);});",
-        1
+        '                scanResources();\n                [100,300,700,1500,3000,5000,10000,20000].forEach(function(ms){setTimeout(function(){scanResources();captureKinescopeApi();},ms);});',
+        '                hookKinescopeNetwork(); scanResources();\n                [100,300,700,1500,3000,5000,10000,20000,40000].forEach(function(ms){setTimeout(function(){hookKinescopeNetwork();scanResources();captureKinescopeApi();},ms);});',
+        1,
     )
     s = s.replace(
-        "                var scanTimer=setInterval(function(){if(window.__csHintManifest){clearInterval(scanTimer);return;}scanResources();},1000);",
-        "                var scanTimer=setInterval(function(){if(window.__csHintManifest || window.__csApiUrl){clearInterval(scanTimer);return;}scanResources();captureKinescopeApi();},1000);",
-        1
+        'var scanTimer=setInterval(function(){if(window.__csHintManifest || window.__csApiUrl){clearInterval(scanTimer);return;}scanResources();captureKinescopeApi();}',
+        'var scanTimer=setInterval(function(){if(window.__csHintManifest || window.__csApiUrl){clearInterval(scanTimer);return;}hookKinescopeNetwork();scanResources();captureKinescopeApi();}',
+        1,
     )
 
-# Keep the publisher id supplied by HintFilmIzle; do not replace it with a guessed CDN publisher.
+# Log every Kinescope request exposed by the broad resolver. Only API and HLS
+# requests are consumed; everything else continues loading normally.
 s = s.replace(
-    'add("https://player.hintfilmizle.com/embed/$id?design=3&lang=tr")',
-    'add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")'
-)
-
-# Keep fallback compilation safe.
-s = s.replace(
-    '''            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n            if (response != null) { doc = response.document; r = results(doc, slug) }''',
-    '''            val fallbackResponse = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()\n            if (fallbackResponse != null) { doc = fallbackResponse.document; r = results(doc, slug) }''',
+    'val u=req.url.toString()\n            if(kinescopeApiRegex.containsMatchIn(u))',
+    'val u=req.url.toString()\n            if(u.contains("kinescope", true)) Log.d("HintFilmIzle","KINESCOPE_REQUEST=${redactUrlForLog(u)}")\n            if(kinescopeApiRegex.containsMatchIn(u))',
     1,
 )
 
 path.write_text(s, encoding="utf-8")
-print("HintFilmIzle Kinescope: restore legacy CDN flow and capture signed API URL")
+print("HintFilmIzle Kinescope: broad network capture + XHR/fetch hooks")
