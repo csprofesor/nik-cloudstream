@@ -33,12 +33,24 @@ class DiziPalOriginal : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(request.data).document
         val items = if (request.data.contains("/bolumler")) {
-            document.select("a[href*='/bolum/'], a.episode-list-item, .episode-list-item")
+            document.select("div.episodes-list-grid > a.episode-list-item, a[href*='/bolum/'], .episode-list-item")
                 .mapNotNull { it.toEpisodeSearch() }
                 .distinctBy { it.url }
         } else {
-            document.select("a[href*='/dizi/'], a[href*='/film/']")
-                .mapNotNull { it.toSearch() }
+            // Önce gerçek kartları seçiyoruz; sonra kartın içindeki dizi/film linkini buluyoruz.
+            // Böylece platform sayfalarında kart yapısı değişse bile poster ve başlık kaybolmuyor.
+            document.select(
+                "ul.content-grid > li, " +
+                "article.type2 ul li, " +
+                "li:has(a[href*='/dizi/']), " +
+                "li:has(a[href*='/film/']), " +
+                "article:has(a[href*='/dizi/']), " +
+                "article:has(a[href*='/film/'])"
+            ).mapNotNull { it.toSearch() }
+                .plus(
+                    document.select("a[href*='/dizi/'], a[href*='/film/']")
+                        .mapNotNull { it.toSearch() }
+                )
                 .distinctBy { it.url }
         }
         return newHomePageResponse(request.name, items, false)
@@ -46,7 +58,7 @@ class DiziPalOriginal : MainAPI() {
 
     private fun Element.posterUrl(): String? {
         val img = selectFirst("img") ?: return null
-        val raw = listOf("data-src", "data-lazy-src", "data-original", "src")
+        val raw = listOf("data-src", "data-lazy-src", "data-original", "data-image", "src")
             .asSequence()
             .map { img.attr(it).trim() }
             .firstOrNull { it.isNotEmpty() && !it.startsWith("data:image") }
@@ -67,10 +79,17 @@ class DiziPalOriginal : MainAPI() {
             ?.text()?.trim()?.takeIf { it.isNotEmpty() }
             ?: attr("title").trim().takeIf { it.isNotEmpty() }
             ?: selectFirst("img")?.attr("alt")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: selectFirst("a[title]")?.attr("title")?.trim()?.takeIf { it.isNotEmpty() }
+    }
+
+    private fun Element.cardHref(): String? {
+        val own = attr("href").trim()
+        if (own.contains("/dizi/") || own.contains("/film/")) return own
+        return selectFirst("a[href*='/dizi/'], a[href*='/film/']")?.attr("href")?.trim()
     }
 
     private fun Element.toSearch(): SearchResponse? {
-        val href = fixUrlNull(attr("href")) ?: return null
+        val href = fixUrlNull(cardHref()) ?: return null
         val title = cardTitle() ?: return null
         val poster = posterUrl()
         val score = imdbScore()
@@ -89,7 +108,7 @@ class DiziPalOriginal : MainAPI() {
     }
 
     private fun Element.toEpisodeSearch(): SearchResponse? {
-        val href = fixUrlNull(attr("href")) ?: return null
+        val href = fixUrlNull(attr("href").ifBlank { selectFirst("a[href*='/bolum/']")?.attr("href") }) ?: return null
         val rawTitle = selectFirst(".ep-title, .episode-title, h3, h4, .title")?.text()?.trim()
             ?: text().trim().takeIf { it.isNotEmpty() }
             ?: return null
@@ -111,7 +130,7 @@ class DiziPalOriginal : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/diziler?kelime=${URLEncoder.encode(query, "UTF-8")}&durum=&tur=&type=&siralama="
         return app.get(url).document
-            .select("a[href*='/dizi/'], a[href*='/film/']")
+            .select("ul.content-grid > li, article.type2 ul li, li:has(a[href*='/dizi/']), li:has(a[href*='/film/']), a[href*='/dizi/'], a[href*='/film/']")
             .mapNotNull { it.toSearch() }
             .distinctBy { it.url }
     }
