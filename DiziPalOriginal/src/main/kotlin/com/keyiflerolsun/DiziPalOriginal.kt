@@ -37,16 +37,17 @@ class DiziPalOriginal : MainAPI() {
                 .mapNotNull { it.toEpisodeSearch() }
                 .distinctBy { it.url }
         } else {
-            // Önce gerçek kartları seçiyoruz; sonra kartın içindeki dizi/film linkini buluyoruz.
-            // Böylece platform sayfalarında kart yapısı değişse bile poster ve başlık kaybolmuyor.
-            document.select(
+            // Platform sayfalarında kartların yapısı değişebildiği için yalnızca tek bir
+            // CSS yapısına güvenmiyoruz. Kart, li/article veya kart sınıflarını tarıyoruz.
+            // Ardından gerçek /dizi/ veya /film/ linkini kartın içinden buluyoruz.
+            val cards = document.select(
                 "ul.content-grid > li, " +
                 "article.type2 ul li, " +
-                "li:has(a[href*='/dizi/']), " +
-                "li:has(a[href*='/film/']), " +
-                "article:has(a[href*='/dizi/']), " +
-                "article:has(a[href*='/film/'])"
-            ).mapNotNull { it.toSearch() }
+                "li, article, " +
+                ".card, [class*='card-'], [class*='-card']"
+            )
+
+            cards.mapNotNull { it.toSearch() }
                 .plus(
                     document.select("a[href*='/dizi/'], a[href*='/film/']")
                         .mapNotNull { it.toSearch() }
@@ -58,7 +59,7 @@ class DiziPalOriginal : MainAPI() {
 
     private fun Element.posterUrl(): String? {
         val img = selectFirst("img") ?: return null
-        val raw = listOf("data-src", "data-lazy-src", "data-original", "data-image", "src")
+        val raw = listOf("data-src", "data-lazy-src", "data-original", "data-image", "data-lazy", "src")
             .asSequence()
             .map { img.attr(it).trim() }
             .firstOrNull { it.isNotEmpty() && !it.startsWith("data:image") }
@@ -75,11 +76,31 @@ class DiziPalOriginal : MainAPI() {
     }
 
     private fun Element.cardTitle(): String? {
-        return selectFirst("div.card-info h3, .card-info h3, h3, h2, h4, .title, .card-title, .movie-title, .series-title")
-            ?.text()?.trim()?.takeIf { it.isNotEmpty() }
-            ?: attr("title").trim().takeIf { it.isNotEmpty() }
-            ?: selectFirst("img")?.attr("alt")?.trim()?.takeIf { it.isNotEmpty() }
+        val title = selectFirst(
+            "div.card-info h3, .card-info h3, .card-info h2, .card-info h4, " +
+            ".card-content h3, .card-content h2, .card-body h3, .card-body h2, " +
+            ".content-title, .card-title, .movie-title, .series-title, " +
+            "h3, h2, h4, h5, .title"
+        )?.text()?.trim()
+        if (!title.isNullOrEmpty()) return title
+
+        val ownTitle = attr("title").trim().takeIf { it.isNotEmpty() }
             ?: selectFirst("a[title]")?.attr("title")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: selectFirst("img[alt]")?.attr("alt")?.trim()?.takeIf { it.isNotEmpty() }
+        if (!ownTitle.isNullOrEmpty()) return ownTitle
+
+        // Bazı platform kartlarında başlık kartın kardeş/üst elemanında bulunuyor.
+        var parent = parent()
+        repeat(2) {
+            if (parent != null) {
+                val pTitle = parent.selectFirst(
+                    "div.card-info h3, .card-info h3, .card-title, .movie-title, .series-title, h3, h2, h4, .title"
+                )?.text()?.trim()
+                if (!pTitle.isNullOrEmpty()) return pTitle
+                parent = parent?.parent()
+            }
+        }
+        return null
     }
 
     private fun Element.cardHref(): String? {
@@ -90,6 +111,7 @@ class DiziPalOriginal : MainAPI() {
 
     private fun Element.toSearch(): SearchResponse? {
         val href = fixUrlNull(cardHref()) ?: return null
+        if (!href.contains("/dizi/") && !href.contains("/film/")) return null
         val title = cardTitle() ?: return null
         val poster = posterUrl()
         val score = imdbScore()
@@ -130,7 +152,7 @@ class DiziPalOriginal : MainAPI() {
     override suspend fun search(query: String): List<SearchResponse> {
         val url = "$mainUrl/diziler?kelime=${URLEncoder.encode(query, "UTF-8")}&durum=&tur=&type=&siralama="
         return app.get(url).document
-            .select("ul.content-grid > li, article.type2 ul li, li:has(a[href*='/dizi/']), li:has(a[href*='/film/']), a[href*='/dizi/'], a[href*='/film/']")
+            .select("ul.content-grid > li, article.type2 ul li, li, article, .card, [class*='card-'], [class*='-card'], a[href*='/dizi/'], a[href*='/film/']")
             .mapNotNull { it.toSearch() }
             .distinctBy { it.url }
     }
