@@ -109,6 +109,7 @@ jobs:
             git commit -m "Yeni tüm eklenti derlemeleri: $GITHUB_SHA"
             for deneme in 1 2 3; do
               git fetch origin builds
+              git reset --hard HEAD
               if ! git rebase origin/builds; then
                 echo "::error::origin/builds üzerine rebase başarısız oldu. Uzak dalda çakışan güncellemeler var; üzerine yazmamak için durduruluyor."
                 git rebase --abort || true
@@ -147,8 +148,10 @@ jobs:
             echo "repo.json değişmedi, atlanıyor."
           else
             git commit -m "Update repository manifest cache-buster"
+            git reset --hard HEAD
             for deneme in 1 2 3; do
               git fetch origin master
+              git reset --hard HEAD
               if ! git rebase origin/master; then
                 echo "::error::origin/master üzerine rebase başarısız oldu. Uzak dalda çakışan güncellemeler var; üzerine yazmamak için durduruluyor."
                 git rebase --abort || true
