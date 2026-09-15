@@ -85,7 +85,6 @@ jobs:
                       digest = hashlib.sha256(target.read_bytes()).hexdigest()
                       item['fileSize'] = target.stat().st_size
                       item['fileHash'] = f'sha256-{digest}'
-                      # The cache-buster is the digest of the exact generated file.
                       item['url'] = f'https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{target.name}?v={digest}'
               manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           PY
@@ -130,6 +129,8 @@ jobs:
         working-directory: src
         run: |
           set -euo pipefail
+          git fetch origin master
+          git reset --hard origin/master
           python3 - <<'PY'
           from pathlib import Path
           import json, os
@@ -143,27 +144,31 @@ jobs:
           PY
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          git add repo.json
-          if git diff --cached --quiet; then
-            echo "repo.json değişmedi, atlanıyor."
-          else
+          for deneme in 1 2 3; do
+            git add repo.json
+            if git diff --cached --quiet; then
+              echo "repo.json değişmedi, atlanıyor."
+              exit 0
+            fi
             git commit -m "Update repository manifest cache-buster"
-            git reset --hard HEAD
-            for deneme in 1 2 3; do
-              git fetch origin master
-              git reset --hard HEAD
-              if ! git rebase origin/master; then
-                echo "::error::origin/master üzerine rebase başarısız oldu. Uzak dalda çakışan güncellemeler var; üzerine yazmamak için durduruluyor."
-                git rebase --abort || true
-                exit 1
-              fi
-              if git push origin HEAD:master; then
-                break
-              fi
-              if [ "$deneme" -eq 3 ]; then
-                echo "::error::master push, uzak dal sürekli güncellendiği için 3 denemede tamamlanamadı."
-                exit 1
-              fi
-              echo "master push reddedildi (non-fast-forward), yeniden deneniyor ($deneme/3)..."
-            done
-          fi
+            if git push origin HEAD:master; then
+              exit 0
+            fi
+            git reset --hard origin/master
+            git fetch origin master
+            git reset --hard origin/master
+            echo "master push reddedildi, güncel master üzerinden yeniden hazırlanıyor ($deneme/3)..."
+            python3 - <<'PY'
+            from pathlib import Path
+            import json, os
+            path = Path('repo.json')
+            data = json.loads(path.read_text(encoding='utf-8'))
+            urls = data.get('pluginLists', [])
+            if urls:
+                base = urls[0].split('?')[0]
+                urls[0] = f'{base}?v={os.environ["GITHUB_SHA"]}'
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+            PY
+          done
+          echo "::error::master manifest push, uzak dal sürekli güncellendiği için 3 denemede tamamlanamadı."
+          exit 1
