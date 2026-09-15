@@ -3,7 +3,7 @@
   "description": "gsrepo Türkçe CloudStream eklenti havuzu",
   "manifestVersion": 1,
   "pluginLists": [
-    "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/plugins.json?v=d90271e2885c5e92857239640f20d032bda471f2",
+    "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/plugins.json?v=33f5ad2443a68f126cca366e2ccaa883c94d5170",
     "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/anizm.json?v=20260826-1"
   ],
   "buildTrigger": "kinescope-xhr-fetch-2026-09-15"
