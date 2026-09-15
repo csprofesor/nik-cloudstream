@@ -132,5 +132,20 @@ jobs:
             echo "repo.json değişmedi, atlanıyor."
           else
             git commit -m "Update repository manifest cache-buster"
-            git push origin HEAD:master
+            for deneme in 1 2 3; do
+              git fetch origin master
+              if ! git rebase origin/master; then
+                echo "origin/master ile rebase çakıştı, push iptal ediliyor."
+                git rebase --abort || true
+                exit 1
+              fi
+              if git push origin HEAD:master; then
+                break
+              fi
+              if [ "$deneme" -eq 3 ]; then
+                echo "origin/master güncellenmeye devam ettiği için push başarısız oldu."
+                exit 1
+              fi
+              echo "Push non-fast-forward oldu, yeniden deneniyor ($deneme/3)..."
+            done
           fi
