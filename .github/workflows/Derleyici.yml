@@ -1,29 +1,62 @@
-name: Derleyici
+name: CloudStream Derleyici
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: false
 
 on:
-  push:
-    branches: [ master ]
   workflow_dispatch:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - "**/*.md"
+      - "**/*.jpg"
+      - "**/*.png"
 
 jobs:
-  build:
+  CloudStreamDerleyici:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: "'src' Depo Kontrolü"
+        uses: actions/checkout@v4.2.2
+        with:
+          path: src
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ github.token }}
 
-      - name: Java Kur
-        uses: actions/setup-java@v4
+      - name: "'build' Depo Kontrolü"
+        uses: actions/checkout@v4.2.2
+        with:
+          ref: builds
+          path: builds
+          fetch-depth: 0
+          persist-credentials: true
+          token: ${{ github.token }}
+
+      - name: Cache Temizle
+        run: |
+          rm -rf ~/.gradle/caches
+          rm -rf ~/.m2/repository
+
+      - name: JDK 17 Ayarla
+        uses: actions/setup-java@v4.6.0
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: 17
+
+      - name: HintFilmIzle Kinescope + Reklam Engelleme
+        working-directory: src
+        run: python3 .github/hintfilmizle_kinescope_fix.py
+
+      - name: HintFilmIzle Derleme Kontrolü
+        working-directory: src
+        run: ./gradlew :HintFilmIzle:make --stacktrace
 
       - name: Tüm Eklentileri Derle
         working-directory: src
         run: ./gradlew make --stacktrace
-
-      - name: DiziPalOriginal'i kendi kaynak kodundan derle
-        working-directory: src
-        run: ./gradlew :DiziPalOriginal:make --stacktrace
 
       - name: "'build' Derlemelerini Yükle"
         run: |
@@ -31,11 +64,6 @@ jobs:
           cd "$GITHUB_WORKSPACE/builds"
           find . -maxdepth 1 -name "*.cs3" -type f -delete
           find "$GITHUB_WORKSPACE/src" -mindepth 2 -path "*/build/*.cs3" -type f -exec cp {} "$GITHUB_WORKSPACE/builds/" \;
-
-          # DiziPalOriginal artık harici Kraptor derlemesiyle ezilmiyor.
-          # Kendi kaynak kodundan üretilen .cs3 dosyası kullanılır.
-          test -f "$GITHUB_WORKSPACE/builds/DiziPalOriginal.cs3"
-
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, json
@@ -48,29 +76,55 @@ jobs:
                   data = []
               if not isinstance(data, list):
                   data = []
-
-              plugin = {
-                  "status": 1,
-                  "version": 1,
-                  "name": "DiziPalOrijinal",
-                  "internalName": "DiziPalOrijinal",
-                  "authors": ["csprofesor"],
-                  "description": "DiziPal Orijinal.",
-                  "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
-                  "language": "tr",
-                  "tvTypes": ["TvSeries", "Movie"],
-                  "iconUrl": "https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=https://dizipal932.com&size=128",
-                  "apiVersion": 1
-              }
-              data = [item for item in data if isinstance(item, dict) and item.get('internalName') != 'DiziPalOrijinal']
-              data.append(plugin)
-
+              built = {p.stem: p for p in root.glob('*.cs3')}
+              data = [item for item in data if isinstance(item, dict)]
+              data = [item for item in data if item.get('internalName') in built]
               for item in data:
-                  if isinstance(item, dict) and item.get('internalName') == 'DiziPalOrijinal':
-                      p = root / 'DiziPalOriginal.cs3'
-                      if p.exists():
-                          item['hash'] = hashlib.sha256(p.read_bytes()).hexdigest()
-                          item['file'] = 'DiziPalOriginal.cs3'
-
+                  target = built.get(item.get('internalName', ''))
+                  if target:
+                      digest = hashlib.sha256(target.read_bytes()).hexdigest()
+                      item['fileSize'] = target.stat().st_size
+                      item['fileHash'] = f'sha256-{digest}'
+                      item['url'] = f'https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/{target.name}?v={digest}'
               manifest.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           PY
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+          dosyalar=()
+          while IFS= read -r dosya; do
+            dosyalar+=("$dosya")
+          done < <(find . -maxdepth 1 -name "*.cs3" -type f -print | sort)
+          if [ -f plugins.json ]; then
+            dosyalar+=("plugins.json")
+          fi
+          if [ "${#dosyalar[@]}" -eq 0 ]; then
+            echo "Yüklenecek dosya yok, atlanıyor."
+            exit 0
+          fi
+          git add -- "${dosyalar[@]}"
+          if git diff --cached --quiet; then
+            echo "Yüklenecek değişiklik yok, atlanıyor."
+          else
+            git commit -m "Yeni tüm eklenti derlemeleri: $GITHUB_SHA"
+            for deneme in 1 2 3; do
+              git fetch origin builds
+              git reset --hard HEAD
+              if ! git rebase origin/builds; then
+                echo "::error::origin/builds üzerine rebase başarısız oldu. Uzak dalda çakışan güncellemeler var; üzerine yazmamak için durduruluyor."
+                git rebase --abort || true
+                exit 1
+              fi
+              if git push origin HEAD:builds; then
+                break
+              fi
+              if [ "$deneme" -eq 3 ]; then
+                echo "::error::builds push, uzak dal sürekli güncellendiği için 3 denemede tamamlanamadı."
+                exit 1
+              fi
+              echo "builds push reddedildi (non-fast-forward), yeniden deneniyor ($deneme/3)..."
+            done
+          fi
+
+      - name: "Repo manifest cache-buster güncelle"
+        run: |
+          echo "Repo manifest cache-buster adımı atlandı; plugins.json içindeki SHA256 URL'leri zaten benzersiz cache-buster sağlıyor."
