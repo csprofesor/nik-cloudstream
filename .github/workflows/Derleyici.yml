@@ -107,7 +107,22 @@ jobs:
             echo "Yüklenecek değişiklik yok, atlanıyor."
           else
             git commit -m "Yeni tüm eklenti derlemeleri: $GITHUB_SHA"
-            git push origin HEAD:builds --force
+            for deneme in 1 2 3; do
+              git fetch origin builds
+              if ! git rebase origin/builds; then
+                echo "::error::origin/builds üzerine rebase başarısız oldu. Uzak dalda çakışan güncellemeler var; üzerine yazmamak için durduruluyor."
+                git rebase --abort || true
+                exit 1
+              fi
+              if git push origin HEAD:builds; then
+                break
+              fi
+              if [ "$deneme" -eq 3 ]; then
+                echo "::error::builds push, uzak dal sürekli güncellendiği için 3 denemede tamamlanamadı."
+                exit 1
+              fi
+              echo "builds push reddedildi (non-fast-forward), yeniden deneniyor ($deneme/3)..."
+            done
           fi
 
       - name: "Repo manifest cache-buster güncelle"
@@ -132,5 +147,20 @@ jobs:
             echo "repo.json değişmedi, atlanıyor."
           else
             git commit -m "Update repository manifest cache-buster"
-            git push origin HEAD:master
+            for deneme in 1 2 3; do
+              git fetch origin master
+              if ! git rebase origin/master; then
+                echo "::error::origin/master üzerine rebase başarısız oldu. Uzak dalda çakışan güncellemeler var; üzerine yazmamak için durduruluyor."
+                git rebase --abort || true
+                exit 1
+              fi
+              if git push origin HEAD:master; then
+                break
+              fi
+              if [ "$deneme" -eq 3 ]; then
+                echo "::error::master push, uzak dal sürekli güncellendiği için 3 denemede tamamlanamadı."
+                exit 1
+              fi
+              echo "master push reddedildi (non-fast-forward), yeniden deneniyor ($deneme/3)..."
+            done
           fi
