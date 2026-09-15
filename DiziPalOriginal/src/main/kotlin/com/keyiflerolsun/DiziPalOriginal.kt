@@ -37,9 +37,6 @@ class DiziPalOriginal : MainAPI() {
                 .mapNotNull { it.toEpisodeSearch() }
                 .distinctBy { it.url }
         } else {
-            // Platform sayfalarında kartların yapısı değişebildiği için yalnızca tek bir
-            // CSS yapısına güvenmiyoruz. Kart, li/article veya kart sınıflarını tarıyoruz.
-            // Ardından gerçek /dizi/ veya /film/ linkini kartın içinden buluyoruz.
             val cards = document.select(
                 "ul.content-grid > li, " +
                 "article.type2 ul li, " +
@@ -89,9 +86,8 @@ class DiziPalOriginal : MainAPI() {
             ?: selectFirst("img[alt]")?.attr("alt")?.trim()?.takeIf { it.isNotEmpty() }
         if (!ownTitle.isNullOrEmpty()) return ownTitle
 
-        // Bazı platform kartlarında başlık kartın kardeş/üst elemanında bulunuyor.
         var parent = parent()
-        repeat(2) {
+        repeat(3) {
             if (parent != null) {
                 val pTitle = parent.selectFirst(
                     "div.card-info h3, .card-info h3, .card-title, .movie-title, .series-title, h3, h2, h4, .title"
@@ -104,28 +100,55 @@ class DiziPalOriginal : MainAPI() {
     }
 
     private fun Element.cardHref(): String? {
+        val candidates = mutableListOf<String>()
+
         val own = attr("href").trim()
-        if (own.contains("/dizi/") || own.contains("/film/")) return own
-        return selectFirst("a[href*='/dizi/'], a[href*='/film/']")?.attr("href")?.trim()
+        if (own.isNotEmpty()) candidates += own
+
+        select("a[href]").forEach { a ->
+            val href = a.attr("href").trim()
+            if (href.isNotEmpty()) candidates += href
+        }
+
+        // Kartın kendisi linkin içinde olabilir. Bu durumda link, kartın
+        // descendant'ı değil ancestor'ıdır; önceki parser bu yapıyı kaçırıyordu.
+        var parent = parent()
+        repeat(3) {
+            if (parent != null) {
+                val href = parent.attr("href").trim()
+                if (href.isNotEmpty()) candidates += href
+                parent = parent?.parent()
+            }
+        }
+
+        return candidates
+            .asSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .firstOrNull { href ->
+                val normalized = href.lowercase()
+                normalized.contains("/dizi/") || normalized.contains("/film/")
+            }
     }
 
     private fun Element.toSearch(): SearchResponse? {
         val href = fixUrlNull(cardHref()) ?: return null
-        if (!href.contains("/dizi/") && !href.contains("/film/")) return null
         val title = cardTitle() ?: return null
         val poster = posterUrl()
         val score = imdbScore()
 
-        return if (href.contains("/film/")) {
+        return if (href.lowercase().contains("/film/")) {
             newMovieSearchResponse(title, href, TvType.Movie) {
                 posterUrl = poster
                 this.score = score
             }
-        } else {
+        } else if (href.lowercase().contains("/dizi/")) {
             newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 posterUrl = poster
                 this.score = score
             }
+        } else {
+            null
         }
     }
 
