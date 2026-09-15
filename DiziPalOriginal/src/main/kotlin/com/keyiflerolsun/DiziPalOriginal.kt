@@ -37,9 +37,8 @@ class DiziPalOriginal : MainAPI() {
                 .mapNotNull { it.toEpisodeSearch() }
                 .distinctBy { it.url }
         } else {
-            document.select(
-                "a[href*='/series/'], a[href*='/movies/']"
-            ).mapNotNull { it.toSearch() }.distinctBy { it.url }
+            document.select("a[href*='/series/'], a[href*='/movies/']")
+                .mapNotNull { it.toSearch() }.distinctBy { it.url }
         }
         return newHomePageResponse(request.name, items, false)
     }
@@ -125,12 +124,12 @@ class DiziPalOriginal : MainAPI() {
         if (!href.contains("/bolum/")) return null
         val title = selectFirst("h2, h3, h4, .title")?.text()?.trim()
             ?.takeIf { it.isNotEmpty() }
-            ?: selectFirst("img[alt]")?.attr("alt")?.trim()
-            ?: text().substringBefore(Regex("\\d+\\.\\s*[Ss]ezon")).trim().takeIf { it.isNotEmpty() }
+            ?: selectFirst("img[alt]")?.attr("alt")?.trim()?.takeIf { it.isNotEmpty() }
+            ?: text().trim().takeIf { it.isNotEmpty() }
             ?: return null
         val poster = posterUrl()
         val score = imdbScore()
-        val seriesUrl = href.replace(Regex("/bolum/"), "/series/")
+        val seriesUrl = href.replace("/bolum/", "/series/")
             .replace(Regex("-\\d+x\\d+$"), "")
         return newTvSeriesSearchResponse(title, seriesUrl, TvType.TvSeries) {
             posterUrl = poster
@@ -151,9 +150,8 @@ class DiziPalOriginal : MainAPI() {
     private fun Document.pagePoster(): String? =
         fixUrlNull(selectFirst("meta[property='og:image']")?.attr("content"))
 
-    private fun Document.pageYear(): Int? {
-        return Regex("\\b(19|20)\\d{2}\\b").find(text())?.value?.toIntOrNull()
-    }
+    private fun Document.pageYear(): Int? =
+        Regex("\\b(19|20)\\d{2}\\b").find(text())?.value?.toIntOrNull()
 
     private fun Document.pageScore(): Score? {
         val text = text().replace(',', '.')
@@ -252,7 +250,7 @@ class DiziPalOriginal : MainAPI() {
 
         val padded = token + "=".repeat((4 - token.length % 4) % 4)
         val decoded = try { String(Base64.decode(padded, Base64.DEFAULT)) } catch (_: Exception) { return false }
-        val embedRaw = Regex("""\"v\"\s*:\s*\"([^\"]+)\"""").find(decoded)?.groupValues?.getOrNull(1)?.replace("\\/", "/") ?: return false
+        val embedRaw = Regex("\\\"v\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").find(decoded)?.groupValues?.getOrNull(1)?.replace("\\/", "/") ?: return false
         val embedUrl = fixUrl(embedRaw)
 
         if (embedUrl.contains("imagestoo")) {
