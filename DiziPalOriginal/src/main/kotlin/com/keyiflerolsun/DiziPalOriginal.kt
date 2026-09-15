@@ -8,7 +8,7 @@ import org.jsoup.nodes.Document
 import java.net.URLEncoder
 
 class DiziPalOriginal : MainAPI() {
-    override var mainUrl = "https://dizipal1430.com"
+    override var mainUrl = "https://dizipal1581.com"
     override var name = "DiziPalOriginal"
     override val hasMainPage = true
     override var lang = "tr"
@@ -97,7 +97,6 @@ class DiziPalOriginal : MainAPI() {
         val combined = listOf(rawTitle, info).filter { it.isNotBlank() }.joinToString(" ")
         val poster = posterUrl()
         val score = imdbScore()
-        val seasonEpisode = Regex("(?i)(\\d+)\\.\\s*Sezon\\s*(\\d+)\\.\\s*Bölüm").find(combined)
         val title = combined.replace(Regex("\\s+"), " ").trim()
         val seriesUrl = href
             .replace(Regex("-\\d+-sezon-\\d+-bolum.*$"), "")
@@ -238,44 +237,10 @@ class DiziPalOriginal : MainAPI() {
 
         if (embedUrl.contains("imagestoo")) {
             val videoId = embedUrl.trimEnd('/').substringAfterLast("/")
-            val api = app.post(
-                "https://imagestoo.com/player/index.php?data=$videoId&do=getVideo",
-                referer = embedUrl,
-                headers = mapOf("User-Agent" to ua, "X-Requested-With" to "XMLHttpRequest", "Accept" to "*/*")
-            )
-            val cookie = api.cookies["fireplayer_player"]?.let { "fireplayer_player=$it" } ?: ""
-            val source = Regex("""\"securedLink\"\s*:\s*\"([^\"]+)\"""").find(api.text)?.groupValues?.getOrNull(1)
-            if (source != null) {
-                callback(newExtractorLink(this.name, "Dizipal (Imagestoo)", fixUrl(source.replace("\\/", "/")), ExtractorLinkType.M3U8) {
-                    referer = embedUrl
-                    headers = mapOf("Cookie" to cookie)
-                    quality = Qualities.Unknown.value
-                })
-                return true
-            }
-        }
-
-        val sourceHtml = app.get(embedUrl, referer = data, headers = mapOf("User-Agent" to ua)).text
-        val match = Regex("""sources\s*:\s*\[\s*\{\s*file\s*:\s*[\"']([^\"']+\.m3u8.*?)[\"']""").find(sourceHtml)
-            ?: Regex("""v\s*:\s*[\"']([^\"']+\.html.*?)[\"']""").find(sourceHtml)
-        val extracted = match?.groupValues?.getOrNull(1) ?: return false
-        val finalUrl = if (extracted.contains(".html")) {
-            val id = Regex("""embed-([^.]+)\.html""").find(extracted)?.groupValues?.getOrNull(1) ?: return false
-            "https://s2.superadjacentsoddenly.xyz/hls2/01/00007/${id}_,n,h,.urlset/master.m3u8"
-        } else extracted
-
-        callback(newExtractorLink(this.name, "Dizipal (Ana Sunucu)", finalUrl, ExtractorLinkType.M3U8) {
-            referer = embedUrl
-            quality = Qualities.Unknown.value
-        })
-
-        Regex("""tracks\s*:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(sourceHtml)?.groupValues?.getOrNull(1)?.let { tracks ->
-            Regex("""\{(.*?)\}""", RegexOption.DOT_MATCHES_ALL).findAll(tracks).forEach { item ->
-                val text = item.groupValues[1]
-                val file = Regex("""file\s*:\s*[\"']([^\"']+)[\"']""").find(text)?.groupValues?.getOrNull(1)
-                val label = Regex("""label\s*:\s*[\"']([^\"']+)[\"']""").find(text)?.groupValues?.getOrNull(1) ?: "Unknown"
-                if (file != null && (file.endsWith(".vtt") || file.endsWith(".srt"))) subtitleCallback(SubtitleFile(label, fixUrl(file)))
-            }
+            val streamUrl = "https://imagestoo.com/video/$videoId"
+            loadExtractor(streamUrl, data, subtitleCallback, callback)
+        } else {
+            loadExtractor(embedUrl, data, subtitleCallback, callback)
         }
         return true
     }
