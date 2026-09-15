@@ -306,7 +306,7 @@
     "fileHash": "sha256-409cfac960765dcde1b73df00addac02060268afcc7566bf6cc8f3c9579c87ff"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=86c3f22e3f11e7fa5a45e8e316075fa08f02196e4c961b712a1ebb148d9b84a1",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=0c64a71a01da633f202dcbeffc56074634525100256ec37144e25e4821c9fdfb",
     "status": 1,
     "version": 86,
     "name": "DiziPalOriginal",
@@ -315,7 +315,7 @@
       "csprofesor"
     ],
     "description": "en yeni dizileri güvenli ve hızlı şekilde sunar.",
-    "fileSize": 22277,
+    "fileSize": 13862,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -324,7 +324,7 @@
     ],
     "iconUrl": "https://chessplyimages.cfd/uploads/site/favicon-32x32.png",
     "apiVersion": 1,
-    "fileHash": "sha256-86c3f22e3f11e7fa5a45e8e316075fa08f02196e4c961b712a1ebb148d9b84a1"
+    "fileHash": "sha256-0c64a71a01da633f202dcbeffc56074634525100256ec37144e25e4821c9fdfb"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziYou.cs3?v=5259d2d3443e93a0639c0407fc91c20f71cbad757408acaf31b4faf5ee8bab5b",
