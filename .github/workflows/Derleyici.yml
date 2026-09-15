@@ -129,35 +129,15 @@ jobs:
         working-directory: src
         run: |
           set -euo pipefail
-          git fetch origin master
-          git reset --hard origin/master
-          python3 - <<'PY'
-          from pathlib import Path
-          import json, os
-          path = Path('repo.json')
-          data = json.loads(path.read_text(encoding='utf-8'))
-          urls = data.get('pluginLists', [])
-          if urls:
-              base = urls[0].split('?')[0]
-              urls[0] = f'{base}?v={os.environ["GITHUB_SHA"]}'
-          path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-          PY
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
-          for deneme in 1 2 3; do
-            git add repo.json
-            if git diff --cached --quiet; then
-              echo "repo.json değişmedi, atlanıyor."
-              exit 0
-            fi
-            git commit -m "Update repository manifest cache-buster"
-            if git push origin HEAD:master; then
-              exit 0
-            fi
-            git reset --hard origin/master
+
+          for deneme in 1 2 3 4 5; do
+            echo "Güncel master alınacak ($deneme/5)..."
             git fetch origin master
             git reset --hard origin/master
-            echo "master push reddedildi, güncel master üzerinden yeniden hazırlanıyor ($deneme/3)..."
+            git clean -fd
+
             python3 - <<'PY'
             from pathlib import Path
             import json, os
@@ -169,6 +149,22 @@ jobs:
                 urls[0] = f'{base}?v={os.environ["GITHUB_SHA"]}'
             path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
             PY
+
+            git add repo.json
+            if git diff --cached --quiet; then
+              echo "repo.json değişmedi, atlanıyor."
+              exit 0
+            fi
+
+            git commit -m "Update repository manifest cache-buster"
+            if git push origin HEAD:master; then
+              echo "repo.json başarıyla master dalına gönderildi."
+              exit 0
+            fi
+
+            echo "master push reddedildi; uzak master yeniden okunacak ($deneme/5)."
+            git reset --hard origin/master || true
           done
-          echo "::error::master manifest push, uzak dal sürekli güncellendiği için 3 denemede tamamlanamadı."
+
+          echo "::error::master manifest push, uzak dal sürekli güncellendiği için 5 denemede tamamlanamadı."
           exit 1
