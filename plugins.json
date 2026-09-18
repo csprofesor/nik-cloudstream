@@ -427,7 +427,7 @@
     "fileHash": "sha256-3150a6212f052ad843a8b9e67d65c82b35078f502bb9f5032b1af808d87b862e"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FullHDFilm.cs3?v=83de6f5e436bc671aef7925683ffa870a8f8264513d032e23e64b2d0d59515a4",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FullHDFilm.cs3?v=0e1c29d67a71d9d8d346a6ee08661594facdc123b90e1174e8e928d052bf4148",
     "status": 1,
     "version": 36,
     "name": "FullHDFilm",
@@ -436,7 +436,7 @@
       "csprofesor"
     ],
     "description": "Fullhdfilm ile en yeni vizyon filmler Full HD ve kesintisiz film sizlerle. Özgün film arşivimizle en üstün kaliteli film izle keyfini sunuyoruz.",
-    "fileSize": 28171,
+    "fileSize": 28167,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -445,7 +445,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilm.us&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-83de6f5e436bc671aef7925683ffa870a8f8264513d032e23e64b2d0d59515a4"
+    "fileHash": "sha256-0e1c29d67a71d9d8d346a6ee08661594facdc123b90e1174e8e928d052bf4148"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FullHDFilmizlesene.cs3?v=8f2cff5f9fc87f38d415b65c30c7ad3b7c9a5d26f03d8e73b072ff520b499253",
