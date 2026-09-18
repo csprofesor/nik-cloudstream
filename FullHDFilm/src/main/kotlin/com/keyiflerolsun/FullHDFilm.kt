@@ -6,6 +6,9 @@ import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import okhttp3.Interceptor
+import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.util.regex.Pattern
@@ -17,6 +20,24 @@ class FullHDFilm : MainAPI() {
     override var lang                 = "tr"
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
+
+    // ! CloudFlare v2
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request  = chain.request()
+            val response = chain.proceed(request)
+            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
+
+            if (doc.html().contains("Just a moment")) {
+                return cloudflareKiller.intercept(chain)
+            }
+
+            return response
+        }
+    }
 
     override val mainPage = mainPageOf(
         "${mainUrl}/tur/turkce-altyazili-film-izle"       to "Altyazılı Filmler",
@@ -48,7 +69,7 @@ class FullHDFilm : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page == 1) request.data else "${request.data}/page/${page}"
-        val document = app.get(url).document
+        val document = app.get(url, interceptor = interceptor).document
         val movieBoxes = document.select("div.movie-poster")
         val home = movieBoxes.mapNotNull { it.toSearchResult() }
 
@@ -64,7 +85,7 @@ class FullHDFilm : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/?s=${query}").document
+        val document = app.get("${mainUrl}/?s=${query}", interceptor = interceptor).document
 
         return document.select("div.movie-poster").mapNotNull { it.toSearchResult() }
     }
@@ -72,7 +93,7 @@ class FullHDFilm : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, interceptor = interceptor).document
     
         val title       = document.selectFirst("h1")?.text() ?: return null
         val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src"))
@@ -169,7 +190,7 @@ class FullHDFilm : MainAPI() {
             "Referer" to mainUrl
         )
 
-        val mainDoc = app.get(data, headers=headers).document
+        val mainDoc = app.get(data, headers = headers, interceptor = interceptor).document
         
         // Dublaj/Altyazı alternatiflerini bul
         val pageLinks = mutableListOf<Pair<String, String>>()
@@ -198,7 +219,7 @@ class FullHDFilm : MainAPI() {
             val sourceName = if (name.isBlank() || name == "Ana Sunucu") "Vidpapi" else "Vidpapi - $name"
             
             try {
-                val response = app.get(pageUrl, headers=headers)
+                val response = app.get(pageUrl, headers = headers, interceptor = interceptor)
                 val sourceCode = response.text
 
                 // Ana sayfadan altyazı URL’sini çek
@@ -215,7 +236,7 @@ class FullHDFilm : MainAPI() {
                 // Altyazı bulunduysa ekle
                 if (subtitleUrl != null) {
                     try {
-                        val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true)
+                        val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects = true, interceptor = interceptor)
                         if (subtitleResponse.isSuccessful) {
                             @Suppress("DEPRECATION")
                             subtitleCallback(com.lagradost.cloudstream3.SubtitleFile("Türkçe", subtitleUrl))
@@ -228,10 +249,10 @@ class FullHDFilm : MainAPI() {
 
                 if (iframeSrc.contains("vidpapi.xyz")) {
                     val videoId = iframeSrc.split("/").lastOrNull() ?: continue
-                    val iframeResponse = app.get(iframeSrc, headers=mapOf(
+                    val iframeResponse = app.get(iframeSrc, headers = mapOf(
                         "User-Agent" to headers["User-Agent"]!!,
                         "Referer" to mainUrl
-                    ))
+                    ), interceptor = interceptor)
                     
                     val fpCookie = iframeResponse.cookies["fireplayer_player"] ?: ""
                     Log.d("FHDF", "Vidpapi cookie: $fpCookie")

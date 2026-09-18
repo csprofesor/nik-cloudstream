@@ -14,14 +14,36 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import okhttp3.Interceptor
+import okhttp3.Response
+import org.jsoup.Jsoup
 
 class FullHDFilmizlesene : MainAPI() {
-    override var mainUrl              = "https://www.fullhdfilmizlesene.now"
+    override var mainUrl              = "https://www.fullhdfilmizlesene.de"
     override var name                 = "FullHDFilmizlesene"
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie)
+
+    // ! CloudFlare v2
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request  = chain.request()
+            val response = chain.proceed(request)
+            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
+
+            if (doc.html().contains("Just a moment")) {
+                return cloudflareKiller.intercept(chain)
+            }
+
+            return response
+        }
+    }
 
     override val mainPage = mainPageOf(
         "${mainUrl}/en-cok-izlenen-filmler-izle-hd/"            to "En Çok izlenen Filmler",
@@ -53,7 +75,7 @@ class FullHDFilmizlesene : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}${page}").document
+        val document = app.get("${request.data}${page}", interceptor = interceptor).document
         val home     = document.select("li.film").mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
@@ -68,7 +90,7 @@ class FullHDFilmizlesene : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/arama/${query}").document
+        val document = app.get("${mainUrl}/arama/${query}", interceptor = interceptor).document
 
         return document.select("li.film").mapNotNull { it.toSearchResult() }
     }
@@ -76,7 +98,7 @@ class FullHDFilmizlesene : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, interceptor = interceptor).document
 
         val title           = document.selectFirst("div[class=izle-titles]")?.text()?.trim() ?: return null
         val poster          = fixUrlNull(document.selectFirst("div img")?.attr("data-src"))
@@ -172,7 +194,7 @@ class FullHDFilmizlesene : MainAPI() {
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("FHD", "data » $data")
-        val document    = app.get(data).document
+        val document    = app.get(data, interceptor = interceptor).document
         val videoLinks = getVideoLinks(document)
         Log.d("FHD", "videoLinks » $videoLinks")
         if (videoLinks.isEmpty()) return false
