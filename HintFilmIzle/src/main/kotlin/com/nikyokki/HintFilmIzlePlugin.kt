@@ -326,42 +326,171 @@ class HintFilmIzle : MainAPI() {
 
         val id = Regex("/embed/([A-Za-z0-9_-]+)|v=([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.let { it.groupValues[1].ifBlank { it.groupValues[2] } } ?: run {
             Regex("kinescope\\.(?:io|net)/(?:embed/)?([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.groupValues?.get(1)
+        } ?: return false
+
+        val target = if (embedUrl.contains("kinescopecdn.net", true) || embedUrl.contains("kinescope.io", true)) embedUrl else
+            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
+
+        val manifestRegex = kinescopeManifestRegex
+        var stream: String? = null
+        var streamHeaders: Map<String, String> = emptyMap()
+
+        val script = """
+            (function() {
+              try {
+                if (window.__csHintKineV14) return true;
+                window.__csHintKineV14 = true;
+                var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
+                function cleanAds() {
+                  try {
+                    document.querySelectorAll('.belink, .belink.active, [class*="belink"], [id*="belink"], .ad-overlay').forEach(function(e) {
+                      e.style.setProperty('display', 'none', 'important');
+                      e.style.setProperty('visibility', 'hidden', 'important');
+                    });
+                  } catch (_) {}
+                }
+                cleanAds();
+                new MutationObserver(cleanAds).observe(document.documentElement, {subtree:true, childList:true, attributes:true});
+                function isManifest(u) {
+                  try {
+                    if (typeof u !== 'string') return null;
+                    var m = u.match(/https?:\/\/[^\s"']*(?:kinescopecdn\.net|kinescope\.io)[^\s"']*\.m3u8(?:[^\s"']*)?/i);
+                    return m ? m[0] : null;
+                  } catch (_) { return null; }
+                }
+                function captureManifestText(value) {
+                  try {
+                    if (typeof value !== 'string') return;
+                    var m = isManifest(value);
+                    if (!m || window.__csHintManifest === m) return;
+                    window.__csHintManifest = m;
+                    try {
+                      var v = document.createElement('video');
+                      v.muted = true;
+                      v.setAttribute('muted','');
+                      v.setAttribute('playsinline','');
+                      v.preload = 'metadata';
+                      v.src = m;
+                      document.documentElement.appendChild(v);
+                      v.load();
+                    } catch (_) {}
+                  } catch (_) {}
+                }
+                try {
+                  var nativeOpen = XMLHttpRequest.prototype.open;
+                  var nativeSend = XMLHttpRequest.prototype.send;
+                  XMLHttpRequest.prototype.open = function(method, url) {
+                    try { this.__csHintUrl = String(url || ''); } catch (_) { this.__csHintUrl = ''; }
+                    return nativeOpen.apply(this, arguments);
+                  };
+                  XMLHttpRequest.prototype.send = function() {
+                    try {
+                      this.addEventListener('load', function() {
+                        try {
+                          captureManifestText(String(this.responseURL || this.__csHintUrl || ''));
+                          captureManifestText(String(this.responseText || ''));
+                        } catch (_) {}
+                      });
+                    } catch (_) {}
+                    return nativeSend.apply(this, arguments);
+                  };
+                } catch (_) {}
+                try {
+                  var nativeFetch = window.fetch;
+                  window.fetch = function() {
+                    return nativeFetch.apply(this, arguments).then(function(response) {
+                      try {
+                        captureManifestText(String(response.url || ''));
+                        response.clone().text().then(function(text) {
+                          captureManifestText(String(text || ''));
+                        }).catch(function() {});
+                      } catch (_) {}
+                      return response;
+                    });
+                  };
+                } catch (_) {}
+                function startPlayer() {
+                  try {
+                    cleanAds();
+                    document.querySelectorAll('video').forEach(function(v) {
+                      try {
+                        v.muted = true; v.play();
+                      } catch (_) {}
+                    });
+                    var buttons = document.querySelectorAll('button[aria-label*="Play" i], [role="button"][aria-label*="Play" i], .kinescope-player button, .ks-play-button');
+                    for(var i=0; i<buttons.length; i++) try { buttons[i].click(); } catch(_) {}
+                  } catch (_) {}
+                }
+                startPlayer();
+                setInterval(startPlayer, 1000);
+                setTimeout(function scanResources(){
+                  try {
+                    var es = performance.getEntriesByType('resource') || [];
+                    for(var i=0; i<es.length; i++) {
+                      captureManifestText(String(es[i].name || ''));
+                    }
+                  } catch (_) {}
+                }, 100);
+                return true;
+              } catch(_) { return false; }
+            })()
+        """.trimIndent()
+
+        val resolver = WebViewResolver(
+            interceptUrl = Regex("m3u8", RegexOption.IGNORE_CASE),
+            additionalUrls = emptyList(),
+            userAgent = ua,
+            useOkhttp = false,
+            timeout = 45_000L,
+            script = script
+        )
+
+        resolver.resolveUsingWebView(
+            target,
+            referer = parent,
+            headers = mapOf(
+                "Referer" to parent,
+                "Origin" to mainUrl,
+                "User-Agent" to ua,
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ) { req ->
+            val u = req.url.toString()
+            if (manifestRegex.containsMatchIn(u)) {
+                stream = u
+                streamHeaders = req.headers.toMap()
+                Log.d("HintFilmIzle", "KINESCOPE_MANIFEST=" + u)
+                true
+            } else false
         }
 
-        val urls = buildList {
-            if (id != null) {
-                add("https://kinescope.io/embed/$id")
-                add("https://kinescope.io/$id")
-                add("https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr")
-            }
-            add(embedUrl)
-            add(kine)
-        }.distinct()
-
-        for (u in urls) {
-            val resp = runCatching {
-                app.get(u, referer = parent, headers = mapOf(
-                    "Referer" to parent,
-                    "Origin" to "https://kinescope.io",
-                    "User-Agent" to ua,
-                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-                ), interceptor = interceptor).text
+        if (stream == null) {
+            val directHtml = runCatching {
+                app.get(target, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua), interceptor = interceptor).text
             }.getOrNull()
-
-            if (!resp.isNullOrBlank()) {
-                decodeKinescopeManifestResponse(resp)?.let { direct ->
-                    callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
-                        referer = u
-                        headers = mapOf("Referer" to u, "Origin" to "https://kinescope.io", "User-Agent" to ua)
-                        quality = getQualityFromName(direct)
-                    })
-                    return@runCatching true
+            if (!directHtml.isNullOrBlank()) {
+                decodeKinescopeManifestResponse(directHtml)?.let {
+                    stream = it
+                    streamHeaders = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
                 }
             }
         }
 
-        false
-    }.getOrElse { Log.e("HintFilmIzle","KINESCOPE_FAILED",it); false }
+        val final = stream ?: return false
+        val finalHeaders = linkedMapOf(
+            "Referer" to (streamHeaders["Referer"] ?: target),
+            "User-Agent" to (streamHeaders["User-Agent"] ?: ua),
+            "Accept" to (streamHeaders["Accept"] ?: "*/*")
+        )
+        streamHeaders["Origin"]?.takeIf { it.isNotBlank() }?.let { finalHeaders["Origin"] = it }
+
+        callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = final, type = ExtractorLinkType.M3U8) {
+            referer = finalHeaders["Referer"] ?: target
+            headers = finalHeaders
+            quality = getQualityFromName(final)
+        })
+        true
+    }.getOrElse { Log.e("HintFilmIzle", "KINESCOPE_FAILED", it); false }
 
     override suspend fun loadLinks(data:String,isCasting:Boolean,subtitleCallback:(SubtitleFile)->Unit,callback:(ExtractorLink)->Unit):Boolean {
         val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers(),interceptor=interceptor).document}.getOrNull()?:return false
