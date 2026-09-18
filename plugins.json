@@ -144,7 +144,7 @@
     "fileHash": "sha256-03f8f6c63b88f23b62a434397562777594398e592da90d17be3f011432086294"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=be1237452ea47a5888e12aba40b78ccd4c1e561817c533bdd94b4861d8f5ea01",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=fc892c34723386a708fbbc22a2e449a1bd22eb480924bf5e9aeb6f670c1ab181",
     "status": 1,
     "version": 1,
     "name": "DDizi",
@@ -153,7 +153,7 @@
       "csprofesor"
     ],
     "description": "Ddizi, dizi izle, dizi seyret, ddizi.im - Güncel ve eski dizileri en iyi görüntü kalitesiyle bulabileceğiniz dizi izleme sitesi.",
-    "fileSize": 26801,
+    "fileSize": 28711,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -161,7 +161,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=ddizi.im&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-be1237452ea47a5888e12aba40b78ccd4c1e561817c533bdd94b4861d8f5ea01"
+    "fileHash": "sha256-fc892c34723386a708fbbc22a2e449a1bd22eb480924bf5e9aeb6f670c1ab181"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziBox.cs3?v=8ab5957d93c8fd9545179085605a9398d96d10209606aab5808e9efbcadb774f",
@@ -550,7 +550,7 @@
     "fileHash": "sha256-1e42cb2ba862c2324ee5084f3f5399880d9a57e2d8db41d0f5089fa148c8467c"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=5cab76c4fe77c6d2f56b502bba9576770f295592a58dd905d4ddb235bcb820da",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=80d655782b890338a5fb6529fc7a5921c88ebbd2079c240a1d666bf7447a5095",
     "status": 1,
     "version": 564,
     "name": "HintFilmİzle",
@@ -559,7 +559,7 @@
       "csprofesor"
     ],
     "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-    "fileSize": 38951,
+    "fileSize": 36107,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -568,7 +568,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-5cab76c4fe77c6d2f56b502bba9576770f295592a58dd905d4ddb235bcb820da"
+    "fileHash": "sha256-80d655782b890338a5fb6529fc7a5921c88ebbd2079c240a1d666bf7447a5095"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3?v=006c7b68f7deb24c5356c753429c20607896f78009a8edbf27a46bd6ff0651fb",
@@ -1141,7 +1141,7 @@
     "fileHash": "sha256-442ad87bc486e3a7e61b75a2dff4b137fd691050c3c7847dcfc9bf59ff182d9f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/YabanciDizi.cs3?v=aa2e240f3299f591252811d63a44983ccfac134748ec15f3ec3504391a500e0c",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/YabanciDizi.cs3?v=ff37203f3d0646e1f524b9359f3f07af047dbacc9b2a7cdba5381413e6f97494",
     "status": 1,
     "version": 8,
     "name": "YabanciDizi",
@@ -1150,7 +1150,7 @@
       "csprofesor"
     ],
     "description": "Son çıkan yabancı dizi ve filmleri yabancidizi' de izle. En yeni yabancı film ve diziler, türkçe altyazılı yada dublaj olarak 1080p kalitesinde hd izle.",
-    "fileSize": 47358,
+    "fileSize": 49809,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -1158,6 +1158,6 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=yabancidizi.tv&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-aa2e240f3299f591252811d63a44983ccfac134748ec15f3ec3504391a500e0c"
+    "fileHash": "sha256-ff37203f3d0646e1f524b9359f3f07af047dbacc9b2a7cdba5381413e6f97494"
   }
 ]
