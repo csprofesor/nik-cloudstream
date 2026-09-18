@@ -305,10 +305,11 @@ class HintFilmIzle : MainAPI() {
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return false
         val parsedKine = runCatching { URI(kine) }.getOrNull()
-        // Do not replace player.hintfilmizle.com with a hardcoded Kinescope
-        // publisher. The publisher is site-side and can change; the proxy URL
-        // must be allowed to resolve its current Kinescope embed itself.
-        val target = if (parsedKine?.host.equals("player.hintfilmizle.com", true)) kine else kine
+        val target = if (parsedKine?.host.equals("player.hintfilmizle.com", true)) {
+            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr"
+        } else {
+            kine
+        }
         val targetHost = runCatching { URI(target).host }.getOrNull()
         val targetOrigin = targetHost?.let { "https://$it" } ?: mainUrl
 
