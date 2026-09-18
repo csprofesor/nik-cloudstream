@@ -217,6 +217,7 @@ class YabanciDizi : MainAPI() {
         }
     }
 
+    @Suppress("PrereleaseApi", "UnstableApiUsage", "DEPRECATION")
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -285,18 +286,23 @@ class YabanciDizi : MainAPI() {
                     ).document
                     val subFrame = vdm.selectFirst("iframe")?.attr("src") ?: ""
                     Log.d("YBD", "Vidmoly subFrame -> $subFrame")
+                    val extractedLinks = mutableListOf<ExtractorLink>()
                     loadExtractor(subFrame, "${mainUrl}/", subtitleCallback) { link ->
+                        extractedLinks.add(link)
+                    }
+                    extractedLinks.forEach { link ->
                         callback.invoke(
-                            ExtractorLink(
-                                source        = "$dilAd - ${link.name}",
-                                name          = "$dilAd - ${link.name}",
-                                url           = link.url,
-                                referer       = link.referer,
-                                quality       = link.quality,
-                                headers       = link.headers,
-                                extractorData = link.extractorData,
-                                type          = link.type
-                            )
+                            newExtractorLink(
+                                source = "$dilAd - ${link.name}",
+                                name = "$dilAd - ${link.name}",
+                                url = link.url,
+                                type = link.type
+                            ) {
+                                this.referer = link.referer
+                                this.quality = link.quality
+                                this.headers = link.headers
+                                this.extractorData = link.extractorData
+                            }
                         )
                     }
                 } else if (name.contains("Okru")) {
@@ -308,18 +314,23 @@ class YabanciDizi : MainAPI() {
                     ).document
                     val subFrame = okr.selectFirst("iframe")?.attr("src") ?: ""
                     Log.d("YBD", "Okru subFrame -> $subFrame")
+                    val extractedLinks = mutableListOf<ExtractorLink>()
                     loadExtractor(subFrame, "${mainUrl}/", subtitleCallback) { link ->
+                        extractedLinks.add(link)
+                    }
+                    extractedLinks.forEach { link ->
                         callback.invoke(
-                            ExtractorLink(
-                                source        = "$dilAd - ${link.name}",
-                                name          = "$dilAd - ${link.name}",
-                                url           = link.url,
-                                referer       = link.referer,
-                                quality       = link.quality,
-                                headers       = link.headers,
-                                extractorData = link.extractorData,
-                                type          = link.type
-                            )
+                            newExtractorLink(
+                                source = "$dilAd - ${link.name}",
+                                name = "$dilAd - ${link.name}",
+                                url = link.url,
+                                type = link.type
+                            ) {
+                                this.referer = link.referer
+                                this.quality = link.quality
+                                this.headers = link.headers
+                                this.extractorData = link.extractorData
+                            }
                         )
                     }
                 }
