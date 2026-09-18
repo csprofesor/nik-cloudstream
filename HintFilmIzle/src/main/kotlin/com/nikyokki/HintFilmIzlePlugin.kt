@@ -307,10 +307,7 @@ class HintFilmIzle : MainAPI() {
         val target = if (kine.contains("river-3-329.kinescopecdn.net", true)) kine else
             "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
 
-        val manifestRegex = Regex(
-            "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?",
-            RegexOption.IGNORE_CASE
-        )
+        val manifestRegex = kinescopeManifestRegex
         var stream: String? = null
         var streamHeaders: Map<String, String> = emptyMap()
 
@@ -337,7 +334,7 @@ class HintFilmIzle : MainAPI() {
                   try {
                     if (value == null) return null;
                     if (typeof value === 'string') {
-                      var m = value.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                      var m = value.match(/https?:\\/\\/[^\\s\"']*(?:kinescopecdn\\.net|kinescope\\.io)\\/[^\\s\"']*\\.m3u8(?:\\?[^\\s\"']*)?/i);
                       return m ? m[0] : null;
                     }
                     if (typeof value !== 'object') return null;
