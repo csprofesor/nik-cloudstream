@@ -520,6 +520,9 @@ class HintFilmIzle : MainAPI() {
                 val pub = pubMatch?.groupValues?.get(1) ?: "677113747"
                 if (!id.isNullOrBlank()) {
                     add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")
+                    add("https://kinescope.io/$id")
+                    add("https://embed.kinescope.io/$id")
+                    add("https://player.hintfilmizle.com/embed/$id")
                 }
             }
         }
