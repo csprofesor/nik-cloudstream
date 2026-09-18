@@ -104,16 +104,13 @@ class DiziPalOriginal : MainAPI() {
     }
 
     private fun Element.toSearchResponse(): SearchResponse? {
-        val aTag = if (tagName() == "a") this else selectFirst("a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], a[href*='/bolum/'], a[href]") ?: return null
-        val href = fixUrlNull(aTag.href()) ?: return null
+        val href = fixUrlNull(href()) ?: return null
         if (href.isBlank()) return null
 
         val title = (attr("title").takeIf { it.isNotBlank() }
-            ?: aTag.attr("title").takeIf { it.isNotBlank() }
             ?: selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
-            ?: aTag.selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
             ?: selectFirst("h2,h3,h4,h5,.title,.card-title,span")?.text()?.trim()
-            ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return null
+            ?: text().trim()).takeIf { it.isNotBlank() } ?: return null
 
         val posterUrl = extractPoster()
 
@@ -150,7 +147,7 @@ class DiziPalOriginal : MainAPI() {
             url, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
 
-        val selector = "div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article, div.relative"
+        val selector = "a[href*='/bolum/'], a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']"
         val items = document.select(selector).mapNotNull { it.toSearchResponse() }.distinctBy { it.url }
         return newHomePageResponse(request.name, items, items.isNotEmpty())
     }
@@ -164,7 +161,7 @@ class DiziPalOriginal : MainAPI() {
             headers = getHeaders(mainUrl)
         )
             .document
-            .select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article, div.relative")
+            .select("a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']")
             .mapNotNull { it.toSearchResponse() }
             .distinctBy { it.url }
     }
@@ -332,7 +329,7 @@ class DiziPalOriginal : MainAPI() {
     private fun getHeaders(baseUrl: String): Map<String, String> {
         return mapOf(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*|q=0.8",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
             "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
             "Referer" to baseUrl
         )
