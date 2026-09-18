@@ -416,15 +416,16 @@ class DDiziProvider : MainAPI() {
                                 
                                 // ExtractorLink oluştur
                                 callback.invoke(
-                                    ExtractorLink(
+                                    newExtractorLink(
                                         source = name,
                                         name = "$name - $quality",
                                         url = fileUrl,
-                                        referer = ogVideo,
-                                        quality = getQualityFromName(quality),
-                                        headers = videoHeaders,
                                         type = if (fileType == "hls") ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                                    )
+                                    ) {
+                                        this.referer = ogVideo
+                                        this.quality = getQualityFromName(quality)
+                                        this.headers = videoHeaders
+                                    }
                                 )
                                 // Eğer dosya türü hls ise, M3u8Helper ile işle
                                 if (fileType == "hls") {
@@ -464,16 +465,17 @@ class DDiziProvider : MainAPI() {
                                                     }
                                                     
                                                     callback.invoke(
-                                    ExtractorLink(
-                                        source = name,
-                                        name = "$name - $quality",
-                                        url = fileUrl,
-                                        referer = ogVideo,
-                                        quality = getQualityFromName(quality),
-                                        headers = videoHeaders,
-                                        type = if (fileType == "hls") ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                                    )
-                                )
+                                                        newExtractorLink(
+                                                            source = name,
+                                                            name = "$name - $m3u8Quality",
+                                                            url = m3u8Url,
+                                                            type = ExtractorLinkType.M3U8
+                                                        ) {
+                                                            this.referer = ogVideo
+                                                            this.quality = getQualityFromName(m3u8Quality)
+                                                            this.headers = videoHeaders
+                                                        }
+                                                    )
                                                 }
                                             } catch (e2: Exception) {
                                                 Log.d("DDizi:", "Error parsing master.txt: ${e2.message}")
