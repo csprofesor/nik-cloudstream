@@ -5,6 +5,9 @@ package com.nikyokki
 
 import android.util.Base64
 import android.util.Log
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import okhttp3.Interceptor
+import okhttp3.Response
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -47,6 +50,28 @@ class HintFilmIzle : MainAPI() {
     override val hasQuickSearch = false
     override val hasChromecastSupport = true
     override val supportedTypes = setOf(TvType.Movie, TvType.TvSeries)
+
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller) : Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request    = chain.request()
+            val response   = chain.proceed(request)
+            val bodySample = response.peekBody(1024 * 1024).string()
+            if (
+                bodySample.contains("Güvenlik taramasından geçiriliyorsunuz")
+                || bodySample.contains("cf-browser-verification")
+                || bodySample.contains("Checking your browser")
+                || bodySample.contains("just a moment", ignoreCase = true)
+                || response.code in listOf(403, 503, 429)
+            ) {
+                response.close()
+                return cloudflareKiller.intercept(chain)
+            }
+            return response
+        }
+    }
 
     private val ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
     private fun headers() = mapOf("User-Agent" to ua, "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")
@@ -127,11 +152,11 @@ class HintFilmIzle : MainAPI() {
         val base = request.data.substringBefore("?").trimEnd('/'); val q = request.data.substringAfter("?", "").takeIf { it.isNotBlank() }
         val url = if (page <= 1) request.data else base + "/page/$page/" + if (q != null) "?$q" else ""
         val slug = categorySlug(request.data)
-        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()) }.getOrNull() ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
+        var response = runCatching { app.get(url, referer = "$mainUrl/", headers = headers(), interceptor = interceptor) }.getOrNull() ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
         var doc = response.document; var r = results(doc, slug)
         if (slug != null && r.isEmpty()) {
             val fallbackUrl = if (page <= 1) "$mainUrl/film?order=DESC&orderby=date" else "$mainUrl/film/page/$page/?order=DESC&orderby=date"
-            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull() ?: response
+            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers(), interceptor = interceptor) }.getOrNull() ?: response
             doc = response.document; r = results(doc, slug)
         }
         return newHomePageResponse(request.name, r, hasNext = r.isNotEmpty())
@@ -139,7 +164,7 @@ class HintFilmIzle : MainAPI() {
 
     override suspend fun search(query: String): List<SearchResponse> {
         val q = URLEncoder.encode(query.trim(), "UTF-8")
-        listOf("$mainUrl/film?search=$q", "$mainUrl/film?s=$q", "$mainUrl/?s=$q", "$mainUrl/?search=$q", "$mainUrl/arama?q=$q").forEach { url -> val r = runCatching { results(app.get(url, referer = "$mainUrl/", headers = headers()).document) }.getOrDefault(emptyList()); if (r.isNotEmpty()) return r }
+        listOf("$mainUrl/film?search=$q", "$mainUrl/film?s=$q", "$mainUrl/?s=$q", "$mainUrl/?search=$q", "$mainUrl/arama?q=$q").forEach { url -> val r = runCatching { results(app.get(url, referer = "$mainUrl/", headers = headers(), interceptor = interceptor).document) }.getOrDefault(emptyList()); if (r.isNotEmpty()) return r }
         return emptyList()
     }
     override suspend fun quickSearch(query: String) = search(query)
@@ -151,7 +176,7 @@ class HintFilmIzle : MainAPI() {
     private fun plot(doc: Document, text: String): String? { val section = Regex("GENEL BAKIŞ\\s+(.*?)(?=BU FİLM ÖZETİ|HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|ÜLKE\\s)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1) ?: return null; val cleaned = section.replace(Regex("^Türü\\s*:\\s*.*?(?=ÇEVİRİ\\s*:)", RegexOption.IGNORE_CASE), "").replace(Regex("^ÇEVİRİ\\s*:\\s*.*?(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü])", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim(); return cleaned.takeIf { it.length >= 20 } }
 
     override suspend fun load(url: String): LoadResponse? {
-        val doc = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()).document }.getOrNull() ?: return null
+        val doc = runCatching { app.get(url, referer = "$mainUrl/", headers = headers(), interceptor = interceptor).document }.getOrNull() ?: return null
         val text = body(doc); val title = detailTitle(doc, url) ?: return null
         val poster = fix(doc.selectFirst("meta[property='og:image'],meta[name='twitter:image']")?.attr("content")) ?: doc.selectFirst("article,.movie-detail,.film-detail")?.poster()
         val year = Regex("YAPIM YILI\\s+(\\d{4})", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Regex("\\b(19|20)\\d{2}\\b").find(title)?.value?.toIntOrNull()
@@ -366,7 +391,7 @@ class HintFilmIzle : MainAPI() {
                 requestHeaders["Origin"]=apiRequestHeaders["Origin"]?:targetOrigin
                 requestHeaders["User-Agent"]=apiRequestHeaders["User-Agent"]?:ua
                 apiRequestHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{requestHeaders["Cookie"]=it}
-                val response=app.get(url,referer=apiRequestHeaders["Referer"]?:target,headers=requestHeaders)
+                val response=app.get(url,referer=apiRequestHeaders["Referer"]?:target,headers=requestHeaders,interceptor=interceptor)
                 decodeKinescopeManifestResponse(response.text).also{if(it==null)Log.d("HintFilmIzle","KINESCOPE_API_DECODE_FAILED")}
             }.onFailure{Log.e("HintFilmIzle","KINESCOPE_API_RESOLVE_FAILED",it)}.getOrNull() }
             if(!apiManifest.isNullOrBlank()){stream=apiManifest;streamHeaders=buildMap{put("Referer",apiRequestHeaders["Referer"]?:target);put("Origin",apiRequestHeaders["Origin"]?:targetOrigin);put("User-Agent",apiRequestHeaders["User-Agent"]?:ua);put("Accept-Language",apiRequestHeaders["Accept-Language"]?:"tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");apiRequestHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{put("Cookie",it)}};Log.d("HintFilmIzle","KINESCOPE_API_MANIFEST=${redactUrlForLog(apiManifest)}")}
@@ -382,7 +407,7 @@ class HintFilmIzle : MainAPI() {
     }.getOrElse { Log.e("HintFilmIzle","KINESCOPE_FAILED",it); false }
 
     override suspend fun loadLinks(data:String,isCasting:Boolean,subtitleCallback:(SubtitleFile)->Unit,callback:(ExtractorLink)->Unit):Boolean {
-        val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers()).document}.getOrNull()?:return false
+        val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers(),interceptor=interceptor).document}.getOrNull()?:return false
         val players=linkedSetOf<String>();fun add(value:String?){player(value,data)?.let{players.add(it)}}
         documentFrames(doc,data,::add);var found=false
         for(p in players){
@@ -398,6 +423,18 @@ class HintFilmIzle : MainAPI() {
     private fun documentFrames(doc: Document, base:String, add:(String?)->Unit){
         doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach{e->listOf(e.attr("data-frame"),e.attr("src"),e.attr("data-src"),e.attr("data-url"),e.attr("data-iframe")).forEach(add)}
         doc.select("[data-publisher-id][data-id]").forEach{e->val pub=e.attr("data-publisher-id").trim();val id=e.attr("data-id").trim();if(pub.isNotBlank()&&id.isNotBlank())add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")}
-        doc.select("script").forEach{s->Regex("https?://[^\\\"'\\s<>]+",RegexOption.IGNORE_CASE).findAll(s.data()).forEach{add(it.value)}}
+        doc.select("script").forEach{s->
+            Regex("https?://[^\\\"'\\s<>]+",RegexOption.IGNORE_CASE).findAll(s.data()).forEach{add(it.value)}
+            val scriptData = s.data()
+            if (scriptData.contains("var cfg =") && scriptData.contains("playerId")) {
+                val idMatch = Regex(""""playerId"\s*:\s*"([^"]+)"""").find(scriptData)
+                val pubMatch = Regex("""setAttribute\('data-publisher-id',\s*'([^']+)'\)""").find(scriptData)
+                val id = idMatch?.groupValues?.get(1)
+                val pub = pubMatch?.groupValues?.get(1) ?: "677113747"
+                if (!id.isNullOrBlank()) {
+                    add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")
+                }
+            }
+        }
     }
 }
