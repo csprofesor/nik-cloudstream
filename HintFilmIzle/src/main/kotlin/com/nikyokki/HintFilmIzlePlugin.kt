@@ -452,6 +452,18 @@ class HintFilmIzle : MainAPI() {
             }else false
         }
 
+        if (stream == null) {
+            val directHtml = runCatching {
+                app.get(target, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua), interceptor = interceptor).text
+            }.getOrNull()
+            if (!directHtml.isNullOrBlank()) {
+                decodeKinescopeManifestResponse(directHtml)?.let {
+                    stream = it
+                    streamHeaders = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
+                }
+            }
+        }
+
         val final=stream ?: return false
         val finalHeaders=linkedMapOf(
             "Referer" to (streamHeaders["Referer"] ?: target),
