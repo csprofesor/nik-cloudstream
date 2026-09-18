@@ -1,6 +1,6 @@
 [
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AnimeciX.cs3?v=55ff17585f4f1936264876b6dd1aea0cb8ff02c03acbfd2fa20e221c86c1e1ac",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AnimeciX.cs3?v=63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f",
     "status": 1,
     "version": 21,
     "name": "AnimeciX",
@@ -9,7 +9,7 @@
       "csprofesor"
     ],
     "description": "AnimeciX, animeleri keşfedebileceğiniz ve animeler hakkında her şeyi öğrenebileceğiniz bir paylaşım platformudur.",
-    "fileSize": 26566,
+    "fileSize": 26561,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -17,7 +17,7 @@
     ],
     "iconUrl": "https://animecix.tv/favicon.ico",
     "apiVersion": 1,
-    "fileHash": "sha256-55ff17585f4f1936264876b6dd1aea0cb8ff02c03acbfd2fa20e221c86c1e1ac"
+    "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=4771dec4a1dcb0182bcc75273483c933a897307ae552bd841acdf21bb9ab9aa1",
@@ -285,7 +285,7 @@
     "fileHash": "sha256-6f0d38ac6872a9b51d6d558f560289474459d69b8f346c218e29f1d8a63070d9"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3?v=409cfac960765dcde1b73df00addac02060268afcc7566bf6cc8f3c9579c87ff",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3?v=98977d54625606fbf0806511000ecc260e9c7be15f72ba03847063d1e48e46bd",
     "status": 1,
     "version": 106,
     "name": "DiziPal",
@@ -294,7 +294,7 @@
       "csprofesor"
     ],
     "description": "en yeni dizileri güvenli ve hızlı şekilde sunar.",
-    "fileSize": 29478,
+    "fileSize": 29476,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -303,7 +303,7 @@
     ],
     "iconUrl": "https://dizipal1563.com/assets/favicon/favicon-32x32.png?v=3",
     "apiVersion": 1,
-    "fileHash": "sha256-409cfac960765dcde1b73df00addac02060268afcc7566bf6cc8f3c9579c87ff"
+    "fileHash": "sha256-98977d54625606fbf0806511000ecc260e9c7be15f72ba03847063d1e48e46bd"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPalOriginal.cs3?v=0c64a71a01da633f202dcbeffc56074634525100256ec37144e25e4821c9fdfb",
@@ -550,7 +550,7 @@
     "fileHash": "sha256-1e42cb2ba862c2324ee5084f3f5399880d9a57e2d8db41d0f5089fa148c8467c"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=fa810e2b3253fec09aac15a1e528afa3bcfe5ac3d9e524b8c27c9edd8c1ad774",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=21d193f07cf44eeb36e079a691a77b94b2f9c17cae9c638be3c82eb8a17b2957",
     "status": 1,
     "version": 564,
     "name": "HintFilmİzle",
@@ -559,7 +559,7 @@
       "csprofesor"
     ],
     "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-    "fileSize": 37429,
+    "fileSize": 37226,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -568,7 +568,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-fa810e2b3253fec09aac15a1e528afa3bcfe5ac3d9e524b8c27c9edd8c1ad774"
+    "fileHash": "sha256-21d193f07cf44eeb36e079a691a77b94b2f9c17cae9c638be3c82eb8a17b2957"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3?v=006c7b68f7deb24c5356c753429c20607896f78009a8edbf27a46bd6ff0651fb",
