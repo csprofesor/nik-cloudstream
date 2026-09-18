@@ -3,6 +3,8 @@ package com.keyiflerolsun
 import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.*
+import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
+import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 import com.lagradost.cloudstream3.network.CloudflareKiller
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import okhttp3.Interceptor
@@ -48,29 +50,40 @@ class DiziPalOriginal : MainAPI() {
     override val mainPage = mainPageOf(
         "$mainUrl/bolumler" to "Son Bölümler",
         "$mainUrl/diziler" to "Yeni Diziler",
-        "$mainUrl/filmler" to "Yeni Filmler"
+        "$mainUrl/filmler" to "Yeni Filmler",
+        "$mainUrl/kanal/netflix" to "Netflix",
+        "$mainUrl/kanal/exxen" to "Exxen",
+        "$mainUrl/kanal/max" to "Max",
+        "$mainUrl/kanal/disney" to "Disney+",
+        "$mainUrl/kanal/amazon" to "Amazon Prime",
+        "$mainUrl/kanal/tod" to "TOD (beIN)",
+        "$mainUrl/kanal/tabii" to "Tabii",
+        "$mainUrl/kanal/hulu" to "Hulu"
     )
 
     private fun Element.href(): String? = attr("href").trim().takeIf { it.isNotEmpty() }
         ?: selectFirst("a[href]")?.attr("href")?.trim()?.takeIf { it.isNotEmpty() }
 
-    private fun Element.poster(): String? = selectFirst("img")?.let { img ->
-        listOf("data-src", "data-lazy-src", "data-original", "src")
-            .firstNotNullOfOrNull { key -> img.attr(key).trim().takeIf { it.isNotEmpty() && !it.startsWith("data:image") } }
-    }?.let(::fixUrlNull)
-
     private fun Element.toSearchResponse(): SearchResponse? {
-        val href = fixUrlNull(href()) ?: return null
+        val aTag = if (tagName() == "a") this else selectFirst("a[href*='/series/'], a[href*='/movies/'], a[href]") ?: return null
+        val href = fixUrlNull(aTag.href()) ?: return null
+        val imgEl = selectFirst("img") ?: aTag.selectFirst("img")
         val title = (attr("title").takeIf { it.isNotBlank() }
-            ?: selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
-            ?: selectFirst("h2,h3,h4,.title,.card-title")?.text()?.trim()) ?: return null
+            ?: aTag.attr("title").takeIf { it.isNotBlank() }
+            ?: imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
+            ?: selectFirst("h2,h3,h4,.title,.card-title,span")?.text()?.trim()
+            ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return null
+
+        val posterUrl = listOf("data-src", "data-lazy-src", "data-original", "src")
+            .firstNotNullOfOrNull { key -> imgEl?.attr(key)?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("data:image") } }
+            ?.let(::fixUrlNull)
 
         return when {
             href.contains("/movies/", true) -> newMovieSearchResponse(title, href, TvType.Movie) {
-                posterUrl = poster()
+                this.posterUrl = posterUrl
             }
             href.contains("/series/", true) -> newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                posterUrl = poster()
+                this.posterUrl = posterUrl
             }
             else -> null
         }
@@ -90,7 +103,7 @@ class DiziPalOriginal : MainAPI() {
         val selector = if (request.data.contains("/bolumler")) {
             "a[href*='/bolum/']"
         } else {
-            "a[href*='/series/'], a[href*='/movies/']"
+            "div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/movies/'], .card, article"
         }
         val items = document.select(selector).mapNotNull { it.toSearchResponse() }.distinctBy { it.url }
         return newHomePageResponse(request.name, items, items.isNotEmpty())
@@ -105,7 +118,7 @@ class DiziPalOriginal : MainAPI() {
             headers = getHeaders(mainUrl)
         )
             .document
-            .select("a[href*='/series/'], a[href*='/movies/']")
+            .select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/movies/'], .card, article")
             .mapNotNull { it.toSearchResponse() }
             .distinctBy { it.url }
     }
@@ -121,25 +134,56 @@ class DiziPalOriginal : MainAPI() {
             ?: document.selectFirst("meta[property='og:title']")?.attr("content")?.substringBefore(" izle")?.trim()
             ?: return null
         val poster = fixUrlNull(document.selectFirst("meta[property='og:image']")?.attr("content"))
+            ?: fixUrlNull(document.selectFirst("div.page-top img[alt]")?.attr("src"))
+
+        val year = document.selectXpath("//div[text()='Yıl']//following-sibling::div").text().trim().toIntOrNull()
+            ?: document.selectFirst(".year, [itemprop='releaseDate']")?.text()?.trim()?.toIntOrNull()
+        val description = document.selectFirst("div.summary p, [itemprop='description'], .description")?.text()?.trim()
+        val tags = document.selectXpath("//div[text()='Kategoriler']//following-sibling::div").text().trim().split(" ").map { it.trim() }.filter { it.isNotEmpty() }
+            .ifEmpty { document.select("a[href*='/tur/']").map { it.text() } }
+        val duration = Regex("(\\d+)").find(document.selectXpath("//div[text()='Süre']//following-sibling::div").text())?.value?.toIntOrNull()
+        val rating = document.selectFirst("span.imdb, .imdb-point, div:contains(IMDb), [itemprop='ratingValue']")?.text()?.trim()
+        val actors = document.select("a[href*='/oyuncu/'], .cast a, .actors a").map { Actor(it.text()) }
+        val trailer = document.selectFirst("iframe[src*='youtube'], video, .trailer iframe")?.attr("src")
 
         if (url.contains("/movies/", true)) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
-                posterUrl = poster
+                this.posterUrl = poster
+                this.year      = year
+                this.plot      = description
+                this.tags      = tags
+                this.duration  = duration
+                if (rating != null) {
+                    this.score = Score.from10(rating)
+                }
+                addActors(actors)
+                addTrailer(trailer)
             }
         }
 
-        val episodes = document.select("a[href*='/bolum/']").mapNotNull { a ->
-            val href = fixUrlNull(a.attr("href")) ?: return@mapNotNull null
+        val episodes = document.select("a[href*='/bolum/'], div.relative.w-full.flex.items-start.gap-4").mapNotNull { element ->
+            val linkElement = if (element.tagName() == "a") element else element.selectFirst("a[href*='/bolum/']") ?: return@mapNotNull null
+            val href = fixUrlNull(linkElement.attr("href")) ?: return@mapNotNull null
             val match = Regex("-(\\d+)x(\\d+)$").find(href) ?: return@mapNotNull null
+            val epName = linkElement.selectFirst("h2")?.text()?.trim() ?: linkElement.text().trim().ifEmpty { "${match.groupValues[1]}. Sezon ${match.groupValues[2]}. Bölüm" }
             newEpisode(href) {
-                name = a.text().trim().ifEmpty { "${match.groupValues[1]}. Sezon ${match.groupValues[2]}. Bölüm" }
+                name = epName
                 season = match.groupValues[1].toIntOrNull()
                 episode = match.groupValues[2].toIntOrNull()
             }
         }.distinctBy { it.data }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, episodes) {
-            posterUrl = poster
+            this.posterUrl = poster
+            this.year      = year
+            this.plot      = description
+            this.tags      = tags
+            this.duration  = duration
+            if (rating != null) {
+                this.score = Score.from10(rating)
+            }
+            addActors(actors)
+            addTrailer(trailer)
         }
     }
 
