@@ -328,169 +328,22 @@ class HintFilmIzle : MainAPI() {
             Regex("kinescope\\.(?:io|net)/(?:embed/)?([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.groupValues?.get(1)
         }
 
-        if (id != null) {
-            val extUrl = "https://kinescope.io/$id"
-            if (loadExtractor(extUrl, parent, subtitleCallback, callback)) return@runCatching true
-            val cdnExtUrl = "https://river-3-329.kinescopecdn.net/677113747/embed/$id"
-            if (loadExtractor(cdnExtUrl, parent, subtitleCallback, callback)) return@runCatching true
-        }
-
-        val target = if (embedUrl.contains("kinescopecdn.net", true) || embedUrl.contains("kinescope.io", true)) embedUrl else
-            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
-
-        val manifestRegex = kinescopeManifestRegex
-        var stream: String? = null
-        var streamHeaders: Map<String, String> = emptyMap()
-
-        val script = """
-            (function() {
-              try {
-                if (window.__csHintKineV12) return true;
-                window.__csHintKineV12 = true;
-                var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
-                function cleanAds() {
-                  try {
-                    document.querySelectorAll('.belink, .belink.active, [class*="belink"], [id*="belink"], .ad-overlay').forEach(function(e) {
-                      e.style.setProperty('display', 'none', 'important');
-                      e.style.setProperty('visibility', 'hidden', 'important');
-                    });
-                  } catch (_) {}
-                }
-                cleanAds();
-                new MutationObserver(cleanAds).observe(document.documentElement, {subtree:true, childList:true, attributes:true});
-                function findManifest(value, seen) {
-                  try {
-                    if (value == null) return null;
-                    if (typeof value === 'string') {
-                      var m = value.match(/https?:\/\/[^\s"']*(?:kinescopecdn\.net|kinescope\.io)[^\s"']*\.m3u8(?:[^\s"']*)?/i);
-                      return m ? m[0] : null;
-                    }
-                    if (typeof value !== 'object') return null;
-                    seen = seen || [];
-                    if (seen.indexOf(value) >= 0) return null;
-                    seen.push(value);
-                    if (Array.isArray(value)) {
-                      for (var i=0;i<value.length;i++) { var a=findManifest(value[i],seen); if(a)return a; }
-                    } else {
-                      for (var k in value) { try { var b=findManifest(value[k],seen); if(b)return b; } catch(_){} }
-                    }
-                  } catch (_) {}
-                  return null;
-                }
-                function forceVideo(url) {
-                  try {
-                    if (!url || window.__csHintManifest === url) return;
-                    window.__csHintManifest = url;
-                    var v = document.createElement('video');
-                    v.muted = true;
-                    v.src = url;
-                    document.documentElement.appendChild(v);
-                    v.load();
-                  } catch (_) {}
-                }
-                function inspectResponse(text) {
-                  try {
-                    var direct=findManifest(text,[]);
-                    if(direct){forceVideo(direct);return;}
-                    var obj=JSON.parse(text);
-                    if(!obj || typeof obj.p!=='string') return;
-                    var binary=atob(obj.p.split('').reverse().join(''));
-                    var out=new Uint8Array(binary.length);
-                    for(var i=0;i<binary.length;i++) out[i]=binary.charCodeAt(i)^KEY.charCodeAt(i%KEY.length);
-                    var decoded=new TextDecoder('utf-8').decode(out);
-                    var found=findManifest(JSON.parse(decoded),[]);
-                    if(found) forceVideo(found);
-                  }catch(_){}
-                }
-                var of=window.fetch;
-                if(of){
-                  window.fetch=function(){
-                    var args=arguments;
-                    return of.apply(this,args).then(function(r){
-                      try{r.clone().text().then(inspectResponse).catch(function(){});}catch(_){}
-                      return r;
-                    });
-                  };
-                }
-                var oo=XMLHttpRequest.prototype.open;
-                var os=XMLHttpRequest.prototype.send;
-                XMLHttpRequest.prototype.open=function(method,url){this.__csHintUrl=String(url||'');return oo.apply(this,arguments);};
-                XMLHttpRequest.prototype.send=function(){
-                  try{this.addEventListener('load',function(){inspectResponse(this.responseText||'');});}catch(_){}
-                  return os.apply(this,arguments);
-                };
-                function scanResources(){
-                  try{
-                    var es=performance.getEntriesByType('resource')||[];
-                    for(var i=0;i<es.length;i++){
-                      var u=String(es[i].name||'');
-                      if(/kinescope[^\s"']*\.m3u8|\.m3u8/i.test(u)) forceVideo(u);
-                    }
-                  }catch(_){}
-                }
-                setTimeout(scanResources,100);
-                setTimeout(scanResources,500);
-                setInterval(scanResources,1000);
-                return true;
-              }catch(_){return false;}
-            })()
-        """.trimIndent()
-
-        val resolver = WebViewResolver(
-            interceptUrl = Regex("m3u8", RegexOption.IGNORE_CASE),
-            additionalUrls = emptyList(),
-            userAgent = ua,
-            useOkhttp = false,
-            timeout = 15_000L,
-            script = script
-        )
-
-        resolver.resolveUsingWebView(
-            target,
-            referer = parent,
-            headers = mapOf(
-                "Referer" to parent,
-                "Origin" to mainUrl,
-                "User-Agent" to ua,
-                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-            )
-        ) { req ->
-            val u=req.url.toString()
-            if(manifestRegex.containsMatchIn(u)){
-                stream=u
-                streamHeaders=req.headers.toMap()
-                Log.d("HintFilmIzle","KINESCOPE_MANIFEST="+u)
-                true
-            }else false
-        }
-
-        if (stream == null) {
-            val directHtml = runCatching {
-                app.get(target, referer = parent, headers = mapOf("Referer" to parent, "Origin" to mainUrl, "User-Agent" to ua), interceptor = interceptor).text
-            }.getOrNull()
-            if (!directHtml.isNullOrBlank()) {
-                decodeKinescopeManifestResponse(directHtml)?.let {
-                    stream = it
-                    streamHeaders = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
-                }
+        val urls = buildList {
+            if (id != null) {
+                add("https://kinescope.io/embed/$id")
+                add("https://kinescope.io/$id")
+                add("https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr")
             }
+            add(embedUrl)
+            add(kine)
+        }.distinct()
+
+        for (u in urls) {
+            if (loadExtractor(u, parent, subtitleCallback, callback)) return@runCatching true
+            if (loadExtractor(u, "$mainUrl/", subtitleCallback, callback)) return@runCatching true
         }
 
-        val final=stream ?: return false
-        val finalHeaders=linkedMapOf(
-            "Referer" to (streamHeaders["Referer"] ?: target),
-            "User-Agent" to (streamHeaders["User-Agent"] ?: ua),
-            "Accept" to (streamHeaders["Accept"] ?: "*/*")
-        )
-        streamHeaders["Origin"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Origin"]=it}
-        streamHeaders["Accept-Language"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Accept-Language"]=it}
-
-        callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){
-            referer=finalHeaders["Referer"] ?: target
-            headers=finalHeaders
-            quality=getQualityFromName(final)
-        })
-        true
+        false
     }.getOrElse { Log.e("HintFilmIzle","KINESCOPE_FAILED",it); false }
 
     override suspend fun loadLinks(data:String,isCasting:Boolean,subtitleCallback:(SubtitleFile)->Unit,callback:(ExtractorLink)->Unit):Boolean {
