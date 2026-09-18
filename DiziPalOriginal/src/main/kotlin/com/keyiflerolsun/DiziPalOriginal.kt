@@ -65,7 +65,7 @@ class DiziPalOriginal : MainAPI() {
         ?: selectFirst("a[href]")?.attr("href")?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun Element.toSearchResponse(): SearchResponse? {
-        val aTag = if (tagName() == "a") this else selectFirst("a[href*='/series/'], a[href*='/movies/'], a[href]") ?: return null
+        val aTag = if (tagName() == "a") this else selectFirst("a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], a[href]") ?: return null
         val href = fixUrlNull(aTag.href()) ?: return null
         val imgEl = selectFirst("img") ?: aTag.selectFirst("img")
         val title = (attr("title").takeIf { it.isNotBlank() }
@@ -79,13 +79,12 @@ class DiziPalOriginal : MainAPI() {
             ?.let(::fixUrlNull)
 
         return when {
-            href.contains("/movies/", true) -> newMovieSearchResponse(title, href, TvType.Movie) {
+            href.contains("/movies/", true) || href.contains("/film/", true) || href.contains("/movie/", true) -> newMovieSearchResponse(title, href, TvType.Movie) {
                 this.posterUrl = posterUrl
             }
-            href.contains("/series/", true) -> newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+            else -> newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = posterUrl
             }
-            else -> null
         }
     }
 
@@ -100,12 +99,59 @@ class DiziPalOriginal : MainAPI() {
             url, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
 
-        val selector = if (request.data.contains("/bolumler")) {
-            "a[href*='/bolum/']"
-        } else {
-            "div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/movies/'], .card, article"
-        }
-        val items = document.select(selector).mapNotNull { it.toSearchResponse() }.distinctBy { it.url }
+        val items = when {
+            request.data.contains("/bolumler") -> {
+                document.select("div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], .card, article").mapNotNull { el ->
+                    val aTag = if (el.tagName() == "a") el else el.selectFirst("a[href*='/bolum/']") ?: el.selectFirst("a[href]") ?: return@mapNotNull null
+                    val href = fixUrlNull(aTag.href()) ?: return@mapNotNull null
+                    val imgEl = el.selectFirst("img") ?: aTag.selectFirst("img")
+                    val name = imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
+                        ?: el.selectFirst("h2,h3,h4,.title,.card-title,span")?.text()?.trim()
+                        ?: aTag.text().trim()
+                    if (name.isBlank()) return@mapNotNull null
+
+                    val episode = el.selectFirst("div.episode, .episode-text, span.text-sm")?.text()?.trim()
+                        ?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: ""
+                    val title = if (episode.isNotEmpty()) "$name $episode" else name
+
+                    val posterUrl = listOf("data-src", "data-lazy-src", "data-original", "src")
+                        .firstNotNullOfOrNull { key -> imgEl?.attr(key)?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("data:image") } }
+                        ?.let(::fixUrlNull)
+
+                    val seriesHref = href.substringBefore("/bolum/").let { base ->
+                        if (base == href) href.replace(Regex("/\\d+x\\d+$"), "").substringBeforeLast("-") else base
+                    }
+
+                    newTvSeriesSearchResponse(title, seriesHref, TvType.TvSeries) {
+                        this.posterUrl = posterUrl
+                    }
+                }
+            }
+            request.data.contains("/filmler") -> {
+                document.select("div.bg-\\[\\#22232a\\] , a[href*='/movies/'], a[href*='/film/'], a[href*='/movie/'], .card, article").mapNotNull { el ->
+                    val aTag = if (el.tagName() == "a") el else el.selectFirst("a[href*='/movies/'], a[href*='/film/'], a[href*='/movie/'], a[href]") ?: return@mapNotNull null
+                    val href = fixUrlNull(aTag.href()) ?: return@mapNotNull null
+                    val imgEl = el.selectFirst("img") ?: aTag.selectFirst("img")
+                    val title = (el.attr("title").takeIf { it.isNotBlank() }
+                        ?: aTag.attr("title").takeIf { it.isNotBlank() }
+                        ?: imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
+                        ?: el.selectFirst("h2,h3,h4,.title,.card-title,span")?.text()?.trim()
+                        ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return@mapNotNull null
+
+                    val posterUrl = listOf("data-src", "data-lazy-src", "data-original", "src")
+                        .firstNotNullOfOrNull { key -> imgEl?.attr(key)?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("data:image") } }
+                        ?.let(::fixUrlNull)
+
+                    newMovieSearchResponse(title, href, TvType.Movie) {
+                        this.posterUrl = posterUrl
+                    }
+                }
+            }
+            else -> {
+                document.select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article").mapNotNull { it.toSearchResponse() }
+            }
+        }.distinctBy { it.url }
+
         return newHomePageResponse(request.name, items, items.isNotEmpty())
     }
 
@@ -118,7 +164,7 @@ class DiziPalOriginal : MainAPI() {
             headers = getHeaders(mainUrl)
         )
             .document
-            .select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/movies/'], .card, article")
+            .select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article")
             .mapNotNull { it.toSearchResponse() }
             .distinctBy { it.url }
     }
@@ -146,7 +192,7 @@ class DiziPalOriginal : MainAPI() {
         val actors = document.select("a[href*='/oyuncu/'], .cast a, .actors a").map { Actor(it.text()) }
         val trailer = document.selectFirst("iframe[src*='youtube'], video, .trailer iframe")?.attr("src")
 
-        if (url.contains("/movies/", true)) {
+        if (url.contains("/movies/", true) || url.contains("/film/", true)) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl = poster
                 this.year      = year
