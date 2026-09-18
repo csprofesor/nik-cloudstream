@@ -8,5 +8,6 @@ import android.content.Context
 class DiziPalOriginalPlugin: Plugin() {
     override fun load(context: Context) {
         registerMainAPI(DiziPalOriginal())
+        registerExtractorAPI(DizipalOriginalPlayer())
     }
 }
