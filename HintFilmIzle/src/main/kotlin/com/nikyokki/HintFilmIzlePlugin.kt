@@ -364,9 +364,10 @@ class HintFilmIzle : MainAPI() {
         for (target in targets) {
             Log.d("HintFilmIzle", "TRYING_KINE_TARGET=$target")
             val resp = runCatching {
-                app.get(target, referer = kine, headers = mapOf(
-                    "Referer" to kine,
-                    "Origin" to "https://kinescope.io",
+                app.get(target, referer = "$mainUrl/", headers = mapOf(
+                    "Referer" to "$mainUrl/",
+                    "Origin" to mainUrl,
+                    "X-Requested-With" to "XMLHttpRequest",
                     "User-Agent" to ua,
                     "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
                 ), interceptor = interceptor).text
@@ -378,7 +379,7 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "FOUND_PLAYER_OPTIONS=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
-                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
+                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
                         quality = getQualityFromName(direct)
                     })
                     return@runCatching true
@@ -387,7 +388,16 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "FOUND_MANIFEST_REGEX=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
-                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
+                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
+                        quality = getQualityFromName(direct)
+                    })
+                    return@runCatching true
+                }
+                findManifestInJson(resp)?.let { direct ->
+                    Log.d("HintFilmIzle", "FOUND_MANIFEST_IN_JSON=$direct")
+                    callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
+                        referer = target
+                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
                         quality = getQualityFromName(direct)
                     })
                     return@runCatching true
@@ -396,7 +406,7 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "FOUND_DECODED_MANIFEST=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
-                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
+                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
                         quality = getQualityFromName(direct)
                     })
                     return@runCatching true
