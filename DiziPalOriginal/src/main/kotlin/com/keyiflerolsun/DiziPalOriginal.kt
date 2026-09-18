@@ -64,26 +64,77 @@ class DiziPalOriginal : MainAPI() {
     private fun Element.href(): String? = attr("href").trim().takeIf { it.isNotEmpty() }
         ?: selectFirst("a[href]")?.attr("href")?.trim()?.takeIf { it.isNotEmpty() }
 
+    private fun Element.extractPoster(): String? {
+        val img = selectFirst("img") ?: selectFirst("[style*='background-image']")
+
+        if (img != null && img.tagName() == "img") {
+            for (attr in listOf("data-src", "data-lazy-src", "data-original", "data-poster", "data-image")) {
+                val valStr = img.attr(attr).trim()
+                if (valStr.isNotEmpty() && !valStr.startsWith("data:image")) {
+                    return fixUrlNull(valStr)
+                }
+            }
+
+            val srcset = img.attr("srcset").trim()
+            if (srcset.isNotEmpty()) {
+                val firstUrl = srcset.split(",").firstOrNull()?.trim()?.split(" ")?.firstOrNull()
+                if (!firstUrl.isNullOrEmpty() && !firstUrl.startsWith("data:image")) {
+                    return fixUrlNull(firstUrl)
+                }
+            }
+
+            val src = img.attr("src").trim()
+            if (src.isNotEmpty() && !src.startsWith("data:image") && !src.contains("placeholder", true)) {
+                return fixUrlNull(src)
+            }
+        }
+
+        for (el in listOf(this, img).filterNotNull()) {
+            val style = el.attr("style")
+            val match = Regex("url\\(['\"]?([^'\")]+)['\"]?\\)", RegexOption.IGNORE_CASE).find(style)
+            if (match != null) {
+                val bgUrl = match.groupValues[1].trim()
+                if (bgUrl.isNotEmpty() && !bgUrl.startsWith("data:image")) {
+                    return fixUrlNull(bgUrl)
+                }
+            }
+        }
+
+        return null
+    }
+
     private fun Element.toSearchResponse(): SearchResponse? {
-        val aTag = if (tagName() == "a") this else selectFirst("a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], a[href]") ?: return null
+        val aTag = if (tagName() == "a") this else selectFirst("a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], a[href*='/bolum/'], a[href]") ?: return null
         val href = fixUrlNull(aTag.href()) ?: return null
-        val imgEl = selectFirst("img") ?: aTag.selectFirst("img")
+        if (href.isBlank()) return null
+
         val title = (attr("title").takeIf { it.isNotBlank() }
             ?: aTag.attr("title").takeIf { it.isNotBlank() }
-            ?: imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
-            ?: selectFirst("h2,h3,h4,.title,.card-title,span")?.text()?.trim()
+            ?: selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
+            ?: aTag.selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
+            ?: selectFirst("h2,h3,h4,h5,.title,.card-title,span")?.text()?.trim()
             ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return null
 
-        val posterUrl = listOf("data-src", "data-lazy-src", "data-original", "src")
-            .firstNotNullOfOrNull { key -> imgEl?.attr(key)?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("data:image") } }
-            ?.let(::fixUrlNull)
+        val posterUrl = extractPoster()
 
         return when {
-            href.contains("/movies/", true) || href.contains("/film/", true) || href.contains("/movie/", true) -> newMovieSearchResponse(title, href, TvType.Movie) {
-                this.posterUrl = posterUrl
+            href.contains("/movies/", true) || href.contains("/film/", true) || href.contains("/movie/", true) -> {
+                newMovieSearchResponse(title, href, TvType.Movie) {
+                    this.posterUrl = posterUrl
+                }
             }
-            else -> newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-                this.posterUrl = posterUrl
+            href.contains("/bolum/", true) -> {
+                val seriesHref = href.substringBefore("/bolum/").let { base ->
+                    if (base == href) href.replace(Regex("/\\d+x\\d+$"), "").substringBeforeLast("-") else base
+                }
+                newTvSeriesSearchResponse(title, seriesHref, TvType.TvSeries) {
+                    this.posterUrl = posterUrl
+                }
+            }
+            else -> {
+                newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+                    this.posterUrl = posterUrl
+                }
             }
         }
     }
@@ -99,59 +150,8 @@ class DiziPalOriginal : MainAPI() {
             url, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
 
-        val items = when {
-            request.data.contains("/bolumler") -> {
-                document.select("div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], .card, article").mapNotNull { el ->
-                    val aTag = if (el.tagName() == "a") el else el.selectFirst("a[href*='/bolum/']") ?: el.selectFirst("a[href]") ?: return@mapNotNull null
-                    val href = fixUrlNull(aTag.href()) ?: return@mapNotNull null
-                    val imgEl = el.selectFirst("img") ?: aTag.selectFirst("img")
-                    val name = imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
-                        ?: el.selectFirst("h2,h3,h4,.title,.card-title,span")?.text()?.trim()
-                        ?: aTag.text().trim()
-                    if (name.isBlank()) return@mapNotNull null
-
-                    val episode = el.selectFirst("div.episode, .episode-text, span.text-sm")?.text()?.trim()
-                        ?.replace(". Sezon ", "x")?.replace(". Bölüm", "") ?: ""
-                    val title = if (episode.isNotEmpty()) "$name $episode" else name
-
-                    val posterUrl = listOf("data-src", "data-lazy-src", "data-original", "src")
-                        .firstNotNullOfOrNull { key -> imgEl?.attr(key)?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("data:image") } }
-                        ?.let(::fixUrlNull)
-
-                    val seriesHref = href.substringBefore("/bolum/").let { base ->
-                        if (base == href) href.replace(Regex("/\\d+x\\d+$"), "").substringBeforeLast("-") else base
-                    }
-
-                    newTvSeriesSearchResponse(title, seriesHref, TvType.TvSeries) {
-                        this.posterUrl = posterUrl
-                    }
-                }
-            }
-            request.data.contains("/filmler") -> {
-                document.select("div.bg-\\[\\#22232a\\] , a[href*='/movies/'], a[href*='/film/'], a[href*='/movie/'], .card, article").mapNotNull { el ->
-                    val aTag = if (el.tagName() == "a") el else el.selectFirst("a[href*='/movies/'], a[href*='/film/'], a[href*='/movie/'], a[href]") ?: return@mapNotNull null
-                    val href = fixUrlNull(aTag.href()) ?: return@mapNotNull null
-                    val imgEl = el.selectFirst("img") ?: aTag.selectFirst("img")
-                    val title = (el.attr("title").takeIf { it.isNotBlank() }
-                        ?: aTag.attr("title").takeIf { it.isNotBlank() }
-                        ?: imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
-                        ?: el.selectFirst("h2,h3,h4,.title,.card-title,span")?.text()?.trim()
-                        ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return@mapNotNull null
-
-                    val posterUrl = listOf("data-src", "data-lazy-src", "data-original", "src")
-                        .firstNotNullOfOrNull { key -> imgEl?.attr(key)?.trim()?.takeIf { it.isNotEmpty() && !it.startsWith("data:image") } }
-                        ?.let(::fixUrlNull)
-
-                    newMovieSearchResponse(title, href, TvType.Movie) {
-                        this.posterUrl = posterUrl
-                    }
-                }
-            }
-            else -> {
-                document.select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article").mapNotNull { it.toSearchResponse() }
-            }
-        }.distinctBy { it.url }
-
+        val selector = "div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article, div.relative"
+        val items = document.select(selector).mapNotNull { it.toSearchResponse() }.distinctBy { it.url }
         return newHomePageResponse(request.name, items, items.isNotEmpty())
     }
 
@@ -164,7 +164,7 @@ class DiziPalOriginal : MainAPI() {
             headers = getHeaders(mainUrl)
         )
             .document
-            .select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article")
+            .select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/'], .card, article, div.relative")
             .mapNotNull { it.toSearchResponse() }
             .distinctBy { it.url }
     }
@@ -181,6 +181,7 @@ class DiziPalOriginal : MainAPI() {
             ?: return null
         val poster = fixUrlNull(document.selectFirst("meta[property='og:image']")?.attr("content"))
             ?: fixUrlNull(document.selectFirst("div.page-top img[alt]")?.attr("src"))
+            ?: document.selectFirst("div.page-top")?.extractPoster()
 
         val year = document.selectXpath("//div[text()='Yıl']//following-sibling::div").text().trim().toIntOrNull()
             ?: document.selectFirst(".year, [itemprop='releaseDate']")?.text()?.trim()?.toIntOrNull()
@@ -331,7 +332,7 @@ class DiziPalOriginal : MainAPI() {
     private fun getHeaders(baseUrl: String): Map<String, String> {
         return mapOf(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*|q=0.8",
             "Accept-Language" to "tr-TR,tr;q=0.9,en;q=0.8",
             "Referer" to baseUrl
         )
