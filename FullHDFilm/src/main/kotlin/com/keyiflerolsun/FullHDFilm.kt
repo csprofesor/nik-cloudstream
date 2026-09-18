@@ -11,7 +11,7 @@ import org.jsoup.nodes.Element
 import java.util.regex.Pattern
 
 class FullHDFilm : MainAPI() {
-    override var mainUrl              = "https://hdfilm.us"
+    override var mainUrl              = "https://fullfilmizle.fit"
     override var name                 = "FullHDFilm"
     override val hasMainPage          = true
     override var lang                 = "tr"
