@@ -322,10 +322,12 @@ class HintFilmIzle : MainAPI() {
                 var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
                 function cleanAds() {
                   try {
-                    document.querySelectorAll('.belink, .belink.active, [class*="belink"], [id*="belink"]').forEach(function(e) {
+                    var selectors = ['.belink', '[class*="belink"]', '[id*="belink"]', '.ad-overlay', '.ad-overlay-container', '.advertisement-overlay', '.video-ad-overlay', '.player-ad-overlay', '[data-ad-overlay]', 'iframe[src*="ad"]', 'div[class*="ads"]', 'ins.adsbygoogle', '[id*="google_ads"]'];
+                    document.querySelectorAll(selectors.join(',')).forEach(function(e) {
                       e.style.setProperty('display', 'none', 'important');
                       e.style.setProperty('visibility', 'hidden', 'important');
                       e.style.setProperty('pointer-events', 'none', 'important');
+                      try { e.remove(); } catch (_) {}
                     });
                   } catch (_) {}
                 }
