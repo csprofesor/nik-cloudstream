@@ -309,7 +309,7 @@ class HintFilmIzle : MainAPI() {
                 app.get(kine, referer = parent, headers = headers(), interceptor = interceptor).text
             }.getOrNull()
             if (!html.isNullOrBlank()) {
-                kinescopeManifestRegex.find(html)?.value?.let { direct ->
+                decodeKinescopeManifestResponse(html)?.let { direct ->
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = kine
                         headers = mapOf("Referer" to kine, "Origin" to mainUrl, "User-Agent" to ua)
@@ -339,8 +339,25 @@ class HintFilmIzle : MainAPI() {
         }.distinct()
 
         for (u in urls) {
-            if (loadExtractor(u, parent, subtitleCallback, callback)) return@runCatching true
-            if (loadExtractor(u, "$mainUrl/", subtitleCallback, callback)) return@runCatching true
+            val resp = runCatching {
+                app.get(u, referer = parent, headers = mapOf(
+                    "Referer" to parent,
+                    "Origin" to "https://kinescope.io",
+                    "User-Agent" to ua,
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                ), interceptor = interceptor).text
+            }.getOrNull()
+
+            if (!resp.isNullOrBlank()) {
+                decodeKinescopeManifestResponse(resp)?.let { direct ->
+                    callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
+                        referer = u
+                        headers = mapOf("Referer" to u, "Origin" to "https://kinescope.io", "User-Agent" to ua)
+                        quality = getQualityFromName(direct)
+                    })
+                    return@runCatching true
+                }
+            }
         }
 
         false
