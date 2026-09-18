@@ -202,13 +202,19 @@ class HintFilmIzle : MainAPI() {
         val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers()).document}.getOrNull()?:return false
         val players=linkedSetOf<String>();fun add(value:String?){player(value,data)?.let{players.add(it)}}
         documentFrames(doc,data,::add);var found=false
-        for(p in players){when{p.contains("player.hintfilmizle.com",true)||p.contains("kinescope",true)->if(kinescope(p,data,callback))found=true;p.contains("playmate.to",true)->{found=true;loadExtractor(p,data,subtitleCallback,callback)}else->{found=true;loadExtractor(p,data,subtitleCallback,callback)}}}
+        for(p in players){
+            when {
+                p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) -> if(kinescope(p, data, callback)) found = true
+                p.contains("playmate.to", true) -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
+                else -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
+            }
+        }
         return found
     }
 
     private fun documentFrames(doc: org.jsoup.nodes.Document, base:String, add:(String?)->Unit){
         doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach{e->listOf(e.attr("data-frame"),e.attr("src"),e.attr("data-src"),e.attr("data-url"),e.attr("data-iframe")).forEach(add)}
-        doc.select("[data-publisher-id][data-id]").forEach{e->{val pub=e.attr("data-publisher-id").trim();val id=e.attr("data-id").trim();if(pub.isNotBlank()&&id.isNotBlank())add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")}}
+        doc.select("[data-publisher-id][data-id]").forEach{e->val pub=e.attr("data-publisher-id").trim();val id=e.attr("data-id").trim();if(pub.isNotBlank()&&id.isNotBlank())add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")}
         doc.select("script").forEach{s->Regex("https?://[^\\\"'\\s<>]+",RegexOption.IGNORE_CASE).findAll(s.data()).forEach{add(it.value)}}
     }
 }
