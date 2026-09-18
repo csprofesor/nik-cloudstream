@@ -41,6 +41,7 @@ jobs:
               '.git', '.github', 'gradle', '__Temel', 'CanliTV', 'OxAx',
               'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
               'HintFilmIzle',
+              'DiziPalOriginal',
               'KONTROL.py', 'LICENSE', 'README.md', 'MiBox.md',
               '_config.yml', 'repo.json', 'settings.gradle.kts',
               'build.gradle.kts', 'gradle.properties', 'gradlew', 'gradlew.bat'
@@ -49,7 +50,6 @@ jobs:
           required_missing = {
               'AltiYuzAltmisAltiFilmIzle',
               'AsyaAnimeleri',
-              'DiziPalOriginal',
               'RareFilmm',
               'TLCtr',
               'TRanimaci',

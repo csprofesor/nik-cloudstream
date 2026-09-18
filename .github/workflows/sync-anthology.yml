@@ -1,0 +1,57 @@
+name: Anthology Upstream Sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+  push:
+    branches:
+      - master
+
+permissions:
+  contents: write
+
+concurrency:
+  group: anthology-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Sync entire repository from Anthology
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+
+          git clone --depth 1 https://github.com/falsisdev/anthology.git "$tmp/anthology"
+
+          # Keep this updater inside the mirrored tree so scheduled syncs continue
+          # after the repository contents are replaced by Anthology.
+          mkdir -p "$tmp/anthology/.github/workflows"
+          cp "$GITHUB_WORKSPACE/.github/workflows/sync-anthology.yml" \
+             "$tmp/anthology/.github/workflows/sync-anthology.yml"
+
+          # Replace the repository tree completely, while preserving .git.
+          rsync -a --delete --exclude='.git' "$tmp/anthology/" "$GITHUB_WORKSPACE/"
+
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+          if git diff --quiet && git diff --cached --quiet; then
+            echo "Anthology ile aynı; güncelleme yok."
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "Sync entire repository from falsisdev/anthology"
+          git push origin HEAD:master

@@ -3,6 +3,7 @@ package com.nikyokki
 // Kinescope WebView resolver: only the real HLS manifest terminates the resolver.
 // Analytics/ad requests are blocked in-page without using interceptUrl.
 
+import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
@@ -28,9 +29,15 @@ import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.json.JSONArray
+import org.json.JSONObject
+import org.json.JSONTokener
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
+import java.net.URLDecoder
 import java.net.URLEncoder
+import java.util.ArrayDeque
 
 class HintFilmIzle : MainAPI() {
     override var mainUrl = "https://www.hintfilmizle.com"
@@ -90,7 +97,7 @@ class HintFilmIzle : MainAPI() {
         card.selectFirst(".title")?.text(), card.selectFirst(".name")?.text(), card.selectFirst("img")?.attr("alt"), card.attr("title")
     ).mapNotNull(::cleanTitle).firstOrNull()
 
-    private fun detailTitle(doc: org.jsoup.nodes.Document, url: String): String? {
+    private fun detailTitle(doc: Document, url: String): String? {
         val target = url.substringBefore("?").trimEnd('/')
         val exactLink = doc.select("a[href]").firstOrNull { a ->
             val href = fix(a.attr("href"), url)?.substringBefore("?")?.trimEnd('/')
@@ -114,7 +121,7 @@ class HintFilmIzle : MainAPI() {
     private fun cardFor(anchor: Element): Element = anchor.parents().firstOrNull { p -> p.select("img").isNotEmpty() && p.select("a[href*='/film/'],a[href*='/dizi/']").size <= 4 } ?: anchor
     private fun categorySlug(data: String): String? = data.substringBefore("?").trimEnd('/').substringAfter("/tur/", "").takeIf { it.isNotBlank() }
     private fun categoryMatches(card: Element, slug: String): Boolean = card.select("a[href*='/tur/']").any { a -> val href = fix(a.attr("href")) ?: return@any false; href.substringBefore("?").trimEnd('/').equals("$mainUrl/tur/$slug", ignoreCase = true) }
-    private fun results(doc: org.jsoup.nodes.Document, slug: String? = null): List<SearchResponse> = doc.select("a[href*='/film/'],a[href*='/dizi/']").mapNotNull { a -> val card = cardFor(a); if (slug != null && !categoryMatches(card, slug)) null else a.toResult(card) }.distinctBy { it.url }
+    private fun results(doc: Document, slug: String? = null): List<SearchResponse> = doc.select("a[href*='/film/'],a[href*='/dizi/']").mapNotNull { a -> val card = cardFor(a); if (slug != null && !categoryMatches(card, slug)) null else a.toResult(card) }.distinctBy { it.url }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val base = request.data.substringBefore("?").trimEnd('/'); val q = request.data.substringAfter("?", "").takeIf { it.isNotBlank() }
@@ -124,8 +131,8 @@ class HintFilmIzle : MainAPI() {
         var doc = response.document; var r = results(doc, slug)
         if (slug != null && r.isEmpty()) {
             val fallbackUrl = if (page <= 1) "$mainUrl/film?order=DESC&orderby=date" else "$mainUrl/film/page/$page/?order=DESC&orderby=date"
-            val fallbackResponse = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull()
-            if (fallbackResponse != null) { doc = fallbackResponse.document; r = results(doc, slug) }
+            response = runCatching { app.get(fallbackUrl, referer = "$mainUrl/", headers = headers()) }.getOrNull() ?: response
+            doc = response.document; r = results(doc, slug)
         }
         return newHomePageResponse(request.name, r, hasNext = r.isNotEmpty())
     }
@@ -137,11 +144,11 @@ class HintFilmIzle : MainAPI() {
     }
     override suspend fun quickSearch(query: String) = search(query)
 
-    private fun body(doc: org.jsoup.nodes.Document) = doc.body()?.text()?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
+    private fun body(doc: Document) = doc.body()?.text()?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
     private fun label(text: String, name: String, next: String): String? = Regex("${Regex.escape(name)}\\s*[:\\-]?\\s*(.*?)\\s*(?=${Regex.escape(next)}|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
-    private fun genres(doc: org.jsoup.nodes.Document, text: String): List<String> { val dom = doc.select("a[href*='/tur/'],.genres a,.genre a,.categories a").map { it.text().trim() }.filter { it.isNotBlank() && it.contains("Film", true) }.distinct(); if (dom.isNotEmpty()) return dom; return label(text, "Türü", "Bu Film özeti").orEmpty().split(",").map { it.trim() }.filter { it.isNotBlank() && it.contains("Film", true) } }
-    private fun actors(doc: org.jsoup.nodes.Document): List<Actor> { val links = doc.select("a[href*='/oyuncular/'],a[href*='/oyuncu/'],a[href*='/actor/'],a[href*='/cast/']").map { cleanTitle(it.text()) }.filterNotNull().filter { it.length < 100 }.distinct(); if (links.isNotEmpty()) return links.map(::Actor); val heading = doc.select("h1,h2,h3,h4,h5,h6").firstOrNull { it.text().contains("Öne Çıkan Oyuncular", true) }; val container = heading?.parents()?.firstOrNull { p -> val count = p.select("a").size; count in 1..20 && p.text().contains("Yönetmen", true) }; return container?.select("a")?.map { cleanTitle(it.text()) }?.filterNotNull()?.filter { it.length < 100 }?.distinct()?.map(::Actor).orEmpty() }
-    private fun plot(doc: org.jsoup.nodes.Document, text: String): String? { val section = Regex("GENEL BAKIŞ\\s+(.*?)(?=BU FİLM ÖZETİ|HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|ÜLKE\\s)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1) ?: return null; val cleaned = section.replace(Regex("^Türü\\s*:\\s*.*?(?=ÇEVİRİ\\s*:)", RegexOption.IGNORE_CASE), "").replace(Regex("^ÇEVİRİ\\s*:\\s*.*?(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü])", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim(); return cleaned.takeIf { it.length >= 20 } }
+    private fun genres(doc: Document, text: String): List<String> { val dom = doc.select("a[href*='/tur/'],.genres a,.genre a,.categories a").map { it.text().trim() }.filter { it.isNotBlank() && it.contains("Film", true) }.distinct(); if (dom.isNotEmpty()) return dom; return label(text, "Türü", "Bu Film özeti").orEmpty().split(",").map { it.trim() }.filter { it.isNotBlank() && it.contains("Film", true) } }
+    private fun actors(doc: Document): List<Actor> { val links = doc.select("a[href*='/oyuncular/'],a[href*='/oyuncu/'],a[href*='/actor/'],a[href*='/cast/']").map { cleanTitle(it.text()) }.filterNotNull().filter { it.length < 100 }.distinct(); if (links.isNotEmpty()) return links.map(::Actor); val heading = doc.select("h1,h2,h3,h4,h5,h6").firstOrNull { it.text().contains("Öne Çıkan Oyuncular", true) }; val container = heading?.parents()?.firstOrNull { p -> val count = p.select("a").size; count in 1..20 && p.text().contains("Yönetmen", true) }; return container?.select("a")?.map { cleanTitle(it.text()) }?.filterNotNull()?.filter { it.length < 100 }?.distinct()?.map(::Actor).orEmpty() }
+    private fun plot(doc: Document, text: String): String? { val section = Regex("GENEL BAKIŞ\\s+(.*?)(?=BU FİLM ÖZETİ|HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|ÜLKE\\s)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1) ?: return null; val cleaned = section.replace(Regex("^Türü\\s*:\\s*.*?(?=ÇEVİRİ\\s*:)", RegexOption.IGNORE_CASE), "").replace(Regex("^ÇEVİRİ\\s*:\\s*.*?(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü])", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim(); return cleaned.takeIf { it.length >= 20 } }
 
     override suspend fun load(url: String): LoadResponse? {
         val doc = runCatching { app.get(url, referer = "$mainUrl/", headers = headers()).document }.getOrNull() ?: return null
@@ -167,36 +174,212 @@ class HintFilmIzle : MainAPI() {
         return null
     }
 
+    private val kinescopeManifestRegex = Regex(
+        "https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/(?:[^\"'\\s<>]+/)*hls/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
+        RegexOption.IGNORE_CASE
+    )
+    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\"'\\s<>]*kinescopecdn\\.net)(?:/[^\"'\\s<>]+)*/api/v1/embed(?:-kp|-serials)?/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+
+    private fun normalizeKinescopeValue(value: String?): String? = value
+        ?.replace("\\/", "/")
+        ?.replace("\\u0026", "&")
+        ?.replace("\\u003d", "=")
+        ?.replace("&amp;", "&")
+        ?.trim()
+        ?.trim('"')
+        ?.takeIf { it.isNotBlank() }
+
+    private fun firstManifest(value: String?): String? = value
+        ?.let(::normalizeKinescopeValue)
+        ?.let { normalized ->
+            kinescopeManifestRegex.find(normalized)?.value
+                ?: normalized.takeIf { '%' in it }?.let { encoded ->
+                    runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrNull()
+                }?.let { kinescopeManifestRegex.find(it)?.value }
+        }
+
+    private fun decodeBase64Candidates(value: String): List<String> {
+        fun decodeBytes(candidate: String): ByteArray? {
+            val normalized = candidate.replace('-', '+').replace('_', '/')
+            val padded = normalized.padEnd(normalized.length + (4 - normalized.length % 4) % 4, '=')
+            return runCatching { Base64.decode(padded, Base64.NO_WRAP) }.getOrNull()
+        }
+
+        val key = "RySdvcyu5iTUxn97vn4HwoniwgxaCynA".toByteArray()
+        return linkedSetOf(value, value.reversed()).flatMap { candidate ->
+            val decoded = decodeBytes(candidate) ?: return@flatMap emptyList()
+            buildList {
+                add(String(decoded, Charsets.UTF_8))
+                add(String(ByteArray(decoded.size) { i -> (decoded[i].toInt() xor key[i % key.size].toInt()).toByte() }, Charsets.UTF_8))
+            }
+        }.distinct()
+    }
+
+    private fun findManifestInJson(value: String): String? {
+        val root = runCatching { JSONTokener(value).nextValue() }.getOrNull() ?: return null
+        val queue = ArrayDeque<Any?>()
+        val seenStrings = linkedSetOf<String>()
+        queue.add(root)
+
+        fun enqueueJson(candidate: String): String? {
+            var parsed: Any? = runCatching { JSONTokener(candidate).nextValue() }.getOrNull() ?: return null
+            repeat(4) {
+                when (parsed) {
+                    is JSONObject, is JSONArray -> {
+                        queue.add(parsed)
+                        return null
+                    }
+                    is String -> {
+                        val normalized = normalizeKinescopeValue(parsed as String) ?: return null
+                        firstManifest(normalized)?.let { return it }
+                        parsed = runCatching { JSONTokener(normalized).nextValue() }.getOrNull() ?: return null
+                    }
+                    else -> return null
+                }
+            }
+            return null
+        }
+
+        while (queue.isNotEmpty()) {
+            when (val current = queue.removeFirst()) {
+                is JSONObject -> {
+                    val keys = current.keys()
+                    while (keys.hasNext()) queue.add(current.opt(keys.next()))
+                }
+                is JSONArray -> for (i in 0 until current.length()) queue.add(current.opt(i))
+                is String -> {
+                    val normalized = normalizeKinescopeValue(current) ?: continue
+                    if (!seenStrings.add(normalized)) continue
+                    firstManifest(normalized)?.let { return it }
+                    enqueueJson(normalized)?.let { return it }
+                    decodeBase64Candidates(normalized).forEach { decoded ->
+                        val candidate = normalizeKinescopeValue(decoded) ?: return@forEach
+                        if (seenStrings.add(candidate)) {
+                            firstManifest(candidate)?.let { return it }
+                            enqueueJson(candidate)?.let { return it }
+                        }
+                    }
+                }
+            }
+        }
+
+        return null
+    }
+
+    private fun decodeKinescopeManifestResponse(responseBody: String): String? {
+        firstManifest(responseBody)?.let { return it }
+        findManifestInJson(responseBody)?.let { return it }
+        val encrypted = runCatching { JSONObject(responseBody).optString("p") }.getOrNull()
+            ?.let(::normalizeKinescopeValue)
+            ?: return null
+        return decodeBase64Candidates(encrypted).firstNotNullOfOrNull(::firstManifest)
+    }
+
+    private fun redactUrlForLog(url: String): String = url.substringBefore('?') + if (url.contains("?")) "?<redacted>" else ""
+
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
-        val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return@runCatching false
-        val parsed = runCatching { URI(kine) }.getOrNull() ?: return@runCatching false
-        val query = parsed.rawQuery.orEmpty()
-        val lang = Regex("(?:^|&)lang=([^&]+)").find(query)?.groupValues?.getOrNull(1) ?: "tr"
-        val nc = Regex("(?:^|&)nc=([^&]+)").find(query)?.groupValues?.getOrNull(1) ?: (System.currentTimeMillis()/1000L).toString()
-        val actualKine = if (parsed.host.equals("player.hintfilmizle.com", true)) "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang,"UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${URLEncoder.encode(nc,"UTF-8")}" else kine
-        val actualParsed = runCatching { URI(actualKine) }.getOrNull() ?: return@runCatching false
-        Log.d("HintFilmIzle", "KINESCOPE_EMBED_HOST=${actualParsed.host}")
-        Log.d("HintFilmIzle", "KINESCOPE_WEBVIEW_URL=$actualKine")
-        val m3u = Regex("https?://[^\\\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\\\"'\\s<>]+\\.m3u8(?:\\?[^\\\"'\\s<>]*)?", RegexOption.IGNORE_CASE)
+        val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return false
+        val parsedKine = runCatching { URI(kine) }.getOrNull()
+        // Do not replace player.hintfilmizle.com with a hardcoded Kinescope
+        // publisher. The publisher is site-side and can change; the proxy URL
+        // must be allowed to resolve its current Kinescope embed itself.
+        val target = if (parsedKine?.host.equals("player.hintfilmizle.com", true)) kine else kine
+        val targetHost = runCatching { URI(target).host }.getOrNull()
+        val targetOrigin = targetHost?.let { "https://$it" } ?: mainUrl
+
         var stream: String? = null
+        var apiRequestUrl: String? = null
+        var apiRequestHeaders: Map<String, String> = emptyMap()
+        var streamHeaders: Map<String, String> = emptyMap()
+
         val script = """
-            (function(){try{
-              var blocked=/(?:\\/api\\/v1\\/ad-tags|\\/vast(?:[/?]|$)|\\/ads?(?:[/?._-]|$)|doubleclick|googlesyndication|googleadservices|googletagmanager|google-analytics|analytics\\.google\\.com|www\\.google-analytics\\.com|mc\\.yandex\\.ru|metrika\\.yandex\\.ru|yandex\\.ru\\/metrika)/i;
-              function isBlocked(u){try{return blocked.test(String(u||''));}catch(e){return false;}}
-              var f=window.fetch;window.fetch=function(input,init){var u='';try{u=typeof input==='string'?input:(input&&input.url)||'';}catch(e){}if(isBlocked(u))return Promise.reject(new TypeError('blocked tracking request'));return f.apply(this,arguments);};
-              var xo=XMLHttpRequest.prototype.open,xs=XMLHttpRequest.prototype.send;XMLHttpRequest.prototype.open=function(method,url){this.__csUrl=String(url||'');if(isBlocked(this.__csUrl))this.__csBlocked=true;return xo.apply(this,arguments);};XMLHttpRequest.prototype.send=function(){if(this.__csBlocked){try{this.abort();}catch(e){}return;}return xs.apply(this,arguments);};
-              var ob=navigator.sendBeacon;if(ob)navigator.sendBeacon=function(url,data){if(isBlocked(url))return true;return ob.apply(this,arguments);};
-              function scan(){try{performance.getEntriesByType('resource').forEach(function(e){var u=e.name||'';if(/\\.kinescopecdn\\.net\\/hls\\/.+\\/index\\.m3u8/i.test(u))window.__csManifest=u;});}catch(e){}}
-              new MutationObserver(scan).observe(document.documentElement||document,{subtree:true,childList:true});setInterval(scan,150);scan();return true;
-            }catch(e){return false;}})()
+            (function() {
+              try {
+                if (window.__csHintKineV13) return true;
+                window.__csHintKineV13 = true;
+                function isManifest(u) {
+                  try {
+                    if (typeof u !== 'string') return null;
+                    var m = u.match(/https?:\\/\\/[^\\s\"']*(?:kinescopecdn\\.net|kinescope\\.io)\\/(?:[^\\s\"']+\\/)*hls\\/[^\\s\"']+\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                    return m ? m[0] : null;
+                  } catch (_) { return null; }
+                }
+                function cleanAds(root) {
+                  try {
+                    var selectors = ['.belink','[class*="belink"]','[id*="belink"]','.ad-overlay','.ad-overlay-container','.advertisement-overlay','.video-ad-overlay','.player-ad-overlay','[data-ad-overlay]'];
+                    root.querySelectorAll(selectors.join(',')).forEach(function(e) {
+                      e.style.setProperty('display','none','important');
+                      e.style.setProperty('visibility','hidden','important');
+                      e.style.setProperty('pointer-events','none','important');
+                    });
+                  } catch (_) {}
+                }
+                try { window.open = function() { return null; }; } catch (_) {}
+                function startPlayer() {
+                  try {
+                    cleanAds(document);
+                    document.querySelectorAll('video').forEach(function(v) {
+                      try {
+                        v.muted = true; v.autoplay = true;
+                        v.setAttribute('muted',''); v.setAttribute('autoplay','');
+                        v.setAttribute('playsinline',''); v.setAttribute('webkit-playsinline','');
+                        if (v.paused || v.readyState < 2) { var p=v.play(); if(p&&p.catch)p.catch(function(){}); }
+                      } catch (_) {}
+                    });
+                    var buttons=document.querySelectorAll('button[aria-label*="Play" i],button[title*="Play" i],[role="button"][aria-label*="Play" i],.kinescope-player button');
+                    for(var i=0;i<buttons.length;i++) try { var b=buttons[i]; var label=((b.getAttribute('aria-label')||'')+' '+(b.getAttribute('title')||'')).toLowerCase(); if(label.indexOf('play')>=0&&label.indexOf('playlist')<0){b.click();break;} } catch(_){ }
+                  } catch (_) {}
+                }
+                function scanResources() {
+                  try {
+                    cleanAds(document); startPlayer();
+                    var es=performance.getEntriesByType('resource')||[];
+                    for(var i=es.length-1;i>=0;i--){var u=String(es[i].name||'');var m=isManifest(u);if(m){window.__csHintManifest=m;return;}}
+                  } catch (_) {}
+                }
+                scanResources();
+                [100,300,700,1500,3000,5000,10000].forEach(function(ms){setTimeout(scanResources,ms);});
+                var scanTimer=setInterval(function(){if(window.__csHintManifest){clearInterval(scanTimer);return;}scanResources();},1000);
+                try { new MutationObserver(function(){cleanAds(document);startPlayer();}).observe(document.documentElement||document,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','aria-label']}); } catch (_) {}
+                return true;
+              } catch (_) { return false; }
+            })()
         """.trimIndent()
-        val intercept = Regex("\\.kinescopecdn\\.net/hls/.+\\.m3u8(?:\\?.*)?$", RegexOption.IGNORE_CASE)
-        val resolver = WebViewResolver(interceptUrl=intercept,additionalUrls=emptyList(),userAgent=ua,useOkhttp=false,timeout=25_000L,script=script)
-        resolver.resolveUsingWebView(actualKine,referer=parent,headers=mapOf("Referer" to parent,"Origin" to "https://${actualParsed.host}","User-Agent" to ua)){req -> val u=req.url.toString(); if(m3u.containsMatchIn(u)){stream=u;Log.d("HintFilmIzle","KINESCOPE_MANIFEST="+u);true}else false}
-        val final=stream?:return@runCatching false
-        callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){referer=actualKine;headers=mapOf("Referer" to actualKine,"Origin" to "https://${actualParsed.host}","User-Agent" to ua);quality=getQualityFromName(final)})
+
+        val resolver = WebViewResolver(
+            interceptUrl = Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),
+            additionalUrls = emptyList(), userAgent = ua, useOkhttp = false, timeout = 60_000L, script = script
+        )
+
+        resolver.resolveUsingWebView(target, referer = parent, headers = mapOf("Referer" to parent,"Origin" to targetOrigin,"User-Agent" to ua,"Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")) { req ->
+            val u=req.url.toString()
+            if(kinescopeApiRegex.containsMatchIn(u)) { apiRequestUrl=fix(u,target)?:normalizeKinescopeValue(u)?:u; apiRequestHeaders=req.headers.toMap(); Log.d("HintFilmIzle","KINESCOPE_API_URL=${redactUrlForLog(apiRequestUrl?:u)}"); false }
+            else if(kinescopeManifestRegex.containsMatchIn(u)) { stream=fix(u,target)?:normalizeKinescopeValue(u)?:u; streamHeaders=req.headers.toMap(); Log.d("HintFilmIzle","KINESCOPE_MANIFEST=${redactUrlForLog(stream?:u)}"); true }
+            else false
+        }
+
+        if(stream==null) {
+            val apiManifest=apiRequestUrl?.let { url -> runCatching {
+                val requestHeaders=linkedMapOf<String,String>()
+                requestHeaders["Accept"]=apiRequestHeaders["Accept"]?:"application/json,text/plain,*/*"
+                requestHeaders["Accept-Language"]=apiRequestHeaders["Accept-Language"]?:"tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+                requestHeaders["Origin"]=apiRequestHeaders["Origin"]?:targetOrigin
+                requestHeaders["User-Agent"]=apiRequestHeaders["User-Agent"]?:ua
+                apiRequestHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{requestHeaders["Cookie"]=it}
+                val response=app.get(url,referer=apiRequestHeaders["Referer"]?:target,headers=requestHeaders)
+                decodeKinescopeManifestResponse(response.text).also{if(it==null)Log.d("HintFilmIzle","KINESCOPE_API_DECODE_FAILED")}
+            }.onFailure{Log.e("HintFilmIzle","KINESCOPE_API_RESOLVE_FAILED",it)}.getOrNull() }
+            if(!apiManifest.isNullOrBlank()){stream=apiManifest;streamHeaders=buildMap{put("Referer",apiRequestHeaders["Referer"]?:target);put("Origin",apiRequestHeaders["Origin"]?:targetOrigin);put("User-Agent",apiRequestHeaders["User-Agent"]?:ua);put("Accept-Language",apiRequestHeaders["Accept-Language"]?:"tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");apiRequestHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{put("Cookie",it)}};Log.d("HintFilmIzle","KINESCOPE_API_MANIFEST=${redactUrlForLog(apiManifest)}")}
+        }
+
+        val final=stream?:return false
+        val finalHeaders=linkedMapOf("Referer" to (streamHeaders["Referer"]?:target),"User-Agent" to (streamHeaders["User-Agent"]?:ua),"Accept" to (streamHeaders["Accept"]?:"*/*"))
+        streamHeaders["Origin"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Origin"]=it}
+        streamHeaders["Accept-Language"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Accept-Language"]=it}
+        streamHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Cookie"]=it}
+        callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){referer=finalHeaders["Referer"]?:target;headers=finalHeaders;quality=getQualityFromName(final)})
         true
-    }.getOrElse{Log.e("HintFilmIzle","KINESCOPE_FAILED",it);false}
+    }.getOrElse { Log.e("HintFilmIzle","KINESCOPE_FAILED",it); false }
 
     override suspend fun loadLinks(data:String,isCasting:Boolean,subtitleCallback:(SubtitleFile)->Unit,callback:(ExtractorLink)->Unit):Boolean {
         val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers()).document}.getOrNull()?:return false
@@ -212,7 +395,7 @@ class HintFilmIzle : MainAPI() {
         return found
     }
 
-    private fun documentFrames(doc: org.jsoup.nodes.Document, base:String, add:(String?)->Unit){
+    private fun documentFrames(doc: Document, base:String, add:(String?)->Unit){
         doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach{e->listOf(e.attr("data-frame"),e.attr("src"),e.attr("data-src"),e.attr("data-url"),e.attr("data-iframe")).forEach(add)}
         doc.select("[data-publisher-id][data-id]").forEach{e->val pub=e.attr("data-publisher-id").trim();val id=e.attr("data-id").trim();if(pub.isNotBlank()&&id.isNotBlank())add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")}
         doc.select("script").forEach{s->Regex("https?://[^\\\"'\\s<>]+",RegexOption.IGNORE_CASE).findAll(s.data()).forEach{add(it.value)}}
