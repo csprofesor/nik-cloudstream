@@ -9,7 +9,7 @@ import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
 
 class AnimeciX : MainAPI() {
-    override var mainUrl              = "https://test-beta.animecix.com"
+    override var mainUrl              = "https://animecix.tv"
     override var name                 = "AnimeciX"
     override val hasMainPage          = true
     override var lang                 = "tr"
@@ -146,7 +146,7 @@ override suspend fun loadLinks(
     Log.d("ACX", "iframeLink » $iframeLink")
 
     // Eğer iframeLink içinde çift URL varsa düzelt
-    val doubleUrlRegex = Regex("https://test-beta.animecix.com/(https://test-beta.animecix.com/secure/\\S+)")
+    val doubleUrlRegex = Regex("https://animecix.tv/(https://animecix.tv/secure/\\S+)")
     val match = doubleUrlRegex.find(iframeLink)
     if (match != null) {
         iframeLink = match.groupValues[1]
