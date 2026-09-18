@@ -408,6 +408,17 @@ class HintFilmIzle : MainAPI() {
                     }
                   }catch(_){}
                 }
+                function startPlayer(){
+                  try{
+                    document.querySelectorAll('video').forEach(function(v){
+                      try{ v.muted=true; v.play(); }catch(_){}
+                    });
+                    var cb=document.querySelectorAll('button,[role="button"],.kinescope-player,.ks-player');
+                    for(var i=0;i<cb.length;i++)try{cb[i].click();}catch(_){}
+                  }catch(_){}
+                }
+                startPlayer();
+                setInterval(startPlayer,1000);
                 setTimeout(scanResources,100);
                 setTimeout(scanResources,500);
                 setInterval(scanResources,1000);
