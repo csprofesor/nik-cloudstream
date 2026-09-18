@@ -303,8 +303,32 @@ class HintFilmIzle : MainAPI() {
     private fun redactUrlForLog(url: String): String = url.substringBefore('?') + if (url.contains("?")) "?<redacted>" else ""
 
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
-        val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return false
-        val target = if (kine.contains("river-3-329.kinescopecdn.net", true)) kine else
+        var embedUrl = kine
+        if (kine.contains("player.hintfilmizle.com", true)) {
+            val html = runCatching {
+                app.get(kine, referer = parent, headers = headers(), interceptor = interceptor).text
+            }.getOrNull()
+            if (!html.isNullOrBlank()) {
+                kinescopeManifestRegex.find(html)?.value?.let { direct ->
+                    callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
+                        referer = kine
+                        headers = mapOf("Referer" to kine, "Origin" to mainUrl, "User-Agent" to ua)
+                        quality = getQualityFromName(direct)
+                    })
+                    return@runCatching true
+                }
+                val iframeSrc = Regex("iframe[^>]+src=[\"']([^\"']+)[\"']", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+                if (!iframeSrc.isNullOrBlank()) {
+                    embedUrl = fix(iframeSrc, kine) ?: kine
+                }
+            }
+        }
+
+        val id = Regex("/embed/([A-Za-z0-9_-]+)|v=([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.let { it.groupValues[1].ifBlank { it.groupValues[2] } } ?: run {
+            Regex("kinescope\\.(?:io|net)/(?:embed/)?([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.groupValues?.get(1)
+        } ?: return false
+
+        val target = if (embedUrl.contains("kinescopecdn.net", true) || embedUrl.contains("kinescope.io", true)) embedUrl else
             "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
 
         val manifestRegex = kinescopeManifestRegex
@@ -314,17 +338,14 @@ class HintFilmIzle : MainAPI() {
         val script = """
             (function() {
               try {
-                if (window.__csHintKineV10) return true;
-                window.__csHintKineV10 = true;
+                if (window.__csHintKineV12) return true;
+                window.__csHintKineV12 = true;
                 var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
                 function cleanAds() {
                   try {
-                    var selectors = ['.belink', '[class*="belink"]', '[id*="belink"]', '.ad-overlay', '.ad-overlay-container', '.advertisement-overlay', '.video-ad-overlay', '.player-ad-overlay', '[data-ad-overlay]', 'iframe[src*="ad"]', 'div[class*="ads"]', 'ins.adsbygoogle', '[id*="google_ads"]'];
-                    document.querySelectorAll(selectors.join(',')).forEach(function(e) {
+                    document.querySelectorAll('.belink, .belink.active, [class*="belink"], [id*="belink"], .ad-overlay').forEach(function(e) {
                       e.style.setProperty('display', 'none', 'important');
                       e.style.setProperty('visibility', 'hidden', 'important');
-                      e.style.setProperty('pointer-events', 'none', 'important');
-                      try { e.remove(); } catch (_) {}
                     });
                   } catch (_) {}
                 }
@@ -334,7 +355,7 @@ class HintFilmIzle : MainAPI() {
                   try {
                     if (value == null) return null;
                     if (typeof value === 'string') {
-                      var m = value.match(/https?:\\/\\/[^\\s\"']*(?:kinescopecdn\\.net|kinescope\\.io)\\/[^\\s\"']*\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                      var m = value.match(/https?:\/\/[^\s"']*(?:kinescopecdn\.net|kinescope\.io)[^\s"']*\.m3u8(?:[^\s"']*)?/i);
                       return m ? m[0] : null;
                     }
                     if (typeof value !== 'object') return null;
@@ -355,9 +376,6 @@ class HintFilmIzle : MainAPI() {
                     window.__csHintManifest = url;
                     var v = document.createElement('video');
                     v.muted = true;
-                    v.setAttribute('muted','');
-                    v.setAttribute('playsinline','');
-                    v.preload = 'metadata';
                     v.src = url;
                     document.documentElement.appendChild(v);
                     v.load();
@@ -399,23 +417,10 @@ class HintFilmIzle : MainAPI() {
                     var es=performance.getEntriesByType('resource')||[];
                     for(var i=0;i<es.length;i++){
                       var u=String(es[i].name||'');
-                      if(/\\/api\\/v1\\/embed\\//i.test(u)){
-                        fetch(u,{credentials:'include'}).then(function(r){return r.text();}).then(inspectResponse).catch(function(){});
-                      }else if(/\\.m3u8(?:\\?|$)/i.test(u)) forceVideo(u);
+                      if(/kinescope[^\s"']*\.m3u8|\.m3u8/i.test(u)) forceVideo(u);
                     }
                   }catch(_){}
                 }
-                function startPlayer(){
-                  try{
-                    document.querySelectorAll('video').forEach(function(v){
-                      try{ v.muted=true; v.play(); }catch(_){}
-                    });
-                    var cb=document.querySelectorAll('button,[role="button"],.kinescope-player,.ks-player');
-                    for(var i=0;i<cb.length;i++)try{cb[i].click();}catch(_){}
-                  }catch(_){}
-                }
-                startPlayer();
-                setInterval(startPlayer,1000);
                 setTimeout(scanResources,100);
                 setTimeout(scanResources,500);
                 setInterval(scanResources,1000);
@@ -429,7 +434,7 @@ class HintFilmIzle : MainAPI() {
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = false,
-            timeout = 60_000L,
+            timeout = 30_000L,
             script = script
         )
 
