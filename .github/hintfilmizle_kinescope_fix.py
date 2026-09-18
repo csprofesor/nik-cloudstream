@@ -6,6 +6,9 @@ s = path.read_text(encoding="utf-8-sig")
 
 def replace_once(old: str, new: str, label: str) -> None:
     global s
+    if new in s:
+        print(f"Skipping {label}: already patched")
+        return
     if old not in s:
         raise RuntimeError(f"Kinescope patch target not found: {label}")
     s = s.replace(old, new, 1)

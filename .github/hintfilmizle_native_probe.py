@@ -37,6 +37,9 @@ insert = '''        // Probe the real CDN embed HTML natively before falling bac
         }
 
 '''
+if "KINESCOPE_HTML_MANIFEST_NOT_FOUND" in s:
+    print("HintFilmIzle native probe patch skipped: already present")
+    raise SystemExit(0)
 if marker is None:
     raise SystemExit("signed response marker not found")
 s = s.replace(marker, insert + marker, 1)
