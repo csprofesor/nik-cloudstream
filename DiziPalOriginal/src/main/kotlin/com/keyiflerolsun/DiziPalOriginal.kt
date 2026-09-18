@@ -124,9 +124,7 @@ class DiziPalOriginal : MainAPI() {
                 }
             }
             href.contains("/bolum/", true) -> {
-                val seriesHref = href.substringBefore("/bolum/").let { base ->
-                    if (base == href) href.replace(Regex("/\\d+x\\d+$"), "").substringBeforeLast("-") else base
-                }
+                val seriesHref = href.substringBefore("/sezon").substringBefore("/bolum/")
                 newTvSeriesSearchResponse(title, seriesHref, TvType.TvSeries) {
                     this.posterUrl = posterUrl
                 }
@@ -150,8 +148,49 @@ class DiziPalOriginal : MainAPI() {
             url, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
 
-        val selector = "div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']"
-        val items = document.select(selector).mapNotNull { it.toSearchResponse() }.distinctBy { it.url }
+        val items = when {
+            request.data.contains("/filmler") -> {
+                document.select("div.bg-\\[\\#22232a\\] , a[href*='/movies/'], a[href*='/film/'], a[href*='/movie/'], .card, article").mapNotNull { el ->
+                    val aTag = if (el.tagName() == "a") el else el.selectFirst("a[href*='/movies/'], a[href*='/film/'], a[href*='/movie/'], a[href]") ?: return@mapNotNull null
+                    val href = fixUrlNull(aTag.href()) ?: return@mapNotNull null
+                    val imgEl = el.selectFirst("img") ?: aTag.selectFirst("img")
+                    val title = (imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
+                        ?: el.attr("title").takeIf { it.isNotBlank() }
+                        ?: aTag.attr("title").takeIf { it.isNotBlank() }
+                        ?: el.selectFirst("h2,h3,h4,h5,.title,.card-title,span")?.text()?.trim()
+                        ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return@mapNotNull null
+
+                    val posterUrl = el.extractPoster() ?: aTag.extractPoster()
+
+                    newMovieSearchResponse(title, href, TvType.Movie) {
+                        this.posterUrl = posterUrl
+                    }
+                }
+            }
+            request.data.contains("/bolumler") -> {
+                document.select("div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], a[href*='/series/'], .card, article").mapNotNull { el ->
+                    val aTag = if (el.tagName() == "a") el else el.selectFirst("a[href*='/bolum/'], a[href*='/series/'], a[href]") ?: return@mapNotNull null
+                    val href = fixUrlNull(aTag.href()) ?: return@mapNotNull null
+                    val imgEl = el.selectFirst("img") ?: aTag.selectFirst("img")
+                    val title = (imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
+                        ?: el.attr("title").takeIf { it.isNotBlank() }
+                        ?: aTag.attr("title").takeIf { it.isNotBlank() }
+                        ?: el.selectFirst("h2,h3,h4,h5,.title,.card-title,span")?.text()?.trim()
+                        ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return@mapNotNull null
+
+                    val posterUrl = el.extractPoster() ?: aTag.extractPoster()
+                    val seriesHref = href.substringBefore("/sezon").substringBefore("/bolum/")
+
+                    newTvSeriesSearchResponse(title, seriesHref, TvType.TvSeries) {
+                        this.posterUrl = posterUrl
+                    }
+                }
+            }
+            else -> {
+                document.select("div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']").mapNotNull { it.toSearchResponse() }
+            }
+        }.distinctBy { it.url }
+
         return newHomePageResponse(request.name, items, items.isNotEmpty())
     }
 
@@ -292,7 +331,7 @@ class DiziPalOriginal : MainAPI() {
                 ?: return "".also { Log.e("DiziPalOriginal", "--> HATA: Regex 'iv' değerini bulamadı!") }
 
             val saltMatch = """"salt"\s*:\s*"([^"]+)"""".toRegex().find(rawJsonText)?.groupValues?.get(1)
-                ?: return "".also { Log.e("DiziPalOriginal", "--> HATA: Regex 'salt' değerini bulamadı!") }
+                ?: return "".also { Log.e("DiziPalOriginal", "--> HATA: RegExp 'salt' değerini bulamadı!") }
 
             Log.d("DiziPalOriginal", "--> Regex başarılı. Key türetiliyor...")
 
