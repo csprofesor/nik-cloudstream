@@ -353,11 +353,12 @@ class HintFilmIzle : MainAPI() {
         val targets = buildList {
             add("https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr")
             add("https://kinescope.io/embed/$id")
-            add("https://embed.kinescope.io/$id")
+            add("https://embed.kinescope.io/embed/$id")
             add(embedUrl)
         }.distinct()
 
         for (target in targets) {
+            Log.d("HintFilmIzle", "TRYING_KINE_TARGET=$target")
             val resp = runCatching {
                 app.get(target, referer = kine, headers = mapOf(
                     "Referer" to kine,
@@ -368,7 +369,9 @@ class HintFilmIzle : MainAPI() {
             }.getOrNull()
 
             if (!resp.isNullOrBlank()) {
+                Log.d("HintFilmIzle", "GOT_RESP_LEN=${resp.length}")
                 extractKinescopePlayerOptions(resp)?.let { direct ->
+                    Log.d("HintFilmIzle", "FOUND_PLAYER_OPTIONS=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
                         headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
@@ -377,6 +380,7 @@ class HintFilmIzle : MainAPI() {
                     return@runCatching true
                 }
                 kinescopeManifestRegex.find(resp)?.value?.let { direct ->
+                    Log.d("HintFilmIzle", "FOUND_MANIFEST_REGEX=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
                         headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
@@ -385,6 +389,7 @@ class HintFilmIzle : MainAPI() {
                     return@runCatching true
                 }
                 decodeKinescopeManifestResponse(resp)?.let { direct ->
+                    Log.d("HintFilmIzle", "FOUND_DECODED_MANIFEST=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
                         headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
