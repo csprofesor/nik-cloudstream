@@ -1,6 +1,6 @@
 [
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AnimeciX.cs3?v=63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/AnimeciX.cs3?v=55ff17585f4f1936264876b6dd1aea0cb8ff02c03acbfd2fa20e221c86c1e1ac",
     "status": 1,
     "version": 21,
     "name": "AnimeciX",
@@ -9,7 +9,7 @@
       "csprofesor"
     ],
     "description": "AnimeciX, animeleri keşfedebileceğiniz ve animeler hakkında her şeyi öğrenebileceğiniz bir paylaşım platformudur.",
-    "fileSize": 26561,
+    "fileSize": 26566,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -17,7 +17,7 @@
     ],
     "iconUrl": "https://animecix.tv/favicon.ico",
     "apiVersion": 1,
-    "fileHash": "sha256-63a0b89a612fb5820898dcf02e73d8b8d9b558f5f0d8ccd7ab15fce2217cd89f"
+    "fileHash": "sha256-55ff17585f4f1936264876b6dd1aea0cb8ff02c03acbfd2fa20e221c86c1e1ac"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/Anizm.cs3?v=4771dec4a1dcb0182bcc75273483c933a897307ae552bd841acdf21bb9ab9aa1",
@@ -550,7 +550,7 @@
     "fileHash": "sha256-1e42cb2ba862c2324ee5084f3f5399880d9a57e2d8db41d0f5089fa148c8467c"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=c2e9c1cc47525d1388b40e681b59446257d1cd2c1e4ed7af4b988daf6f38a42b",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=fa810e2b3253fec09aac15a1e528afa3bcfe5ac3d9e524b8c27c9edd8c1ad774",
     "status": 1,
     "version": 564,
     "name": "HintFilmİzle",
@@ -559,7 +559,7 @@
       "csprofesor"
     ],
     "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-    "fileSize": 37437,
+    "fileSize": 37429,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -568,7 +568,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-c2e9c1cc47525d1388b40e681b59446257d1cd2c1e4ed7af4b988daf6f38a42b"
+    "fileHash": "sha256-fa810e2b3253fec09aac15a1e528afa3bcfe5ac3d9e524b8c27c9edd8c1ad774"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3?v=006c7b68f7deb24c5356c753429c20607896f78009a8edbf27a46bd6ff0651fb",
@@ -818,7 +818,7 @@
     "fileHash": "sha256-d20e1936290d33d0aa1ea07a262b371bcfcd866e56363cc2dcf1c1abd60eb91a"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaCX.cs3?v=a190ac05f8aea8e02626447814c076b6442ed2854794634d07878c2728be06d9",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaCX.cs3?v=72a8d8da386d48becd4dca4a49dd47f8cbe87d5178e88ecda1101a719dbb3566",
     "status": 1,
     "version": 24,
     "name": "SinemaCX",
@@ -827,7 +827,7 @@
       "csprofesor"
     ],
     "description": "Güncel ve en iyi yabancı filmleri yüksek görüntü kalitesinde, Türkçe dublaj ve altyazı seçenekleriyle filmleri full izleyin.",
-    "fileSize": 16707,
+    "fileSize": 16715,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -835,7 +835,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.sinema.cx&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-a190ac05f8aea8e02626447814c076b6442ed2854794634d07878c2728be06d9"
+    "fileHash": "sha256-72a8d8da386d48becd4dca4a49dd47f8cbe87d5178e88ecda1101a719dbb3566"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SineWix.cs3?v=c1eb8c939d063e43ff8e8fd03eec66e73f4fb187fa638785d2cc3ed95eeb8e32",
