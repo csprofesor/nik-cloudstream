@@ -200,10 +200,10 @@ class HintFilmIzle : MainAPI() {
     }
 
     private val kinescopeManifestRegex = Regex(
-        "https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/(?:[^\"'\\s<>]+/)*hls/[^\"'\\s<>]+\\.m3u8(?:\\?[^\"'\\s<>]*)?",
+        "https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/[^\"'\\s<>]*\\.m3u8(?:\\?[^\"'\\s<>]*)?",
         RegexOption.IGNORE_CASE
     )
-    private val kinescopeApiRegex = Regex("https?://(?:kinescope\\.io|[^\"'\\s<>]*kinescopecdn\\.net)(?:/[^\"'\\s<>]+)*/api/v1/embed(?:-kp|-serials)?/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
+    private val kinescopeApiRegex = Regex("https?://[^\"'\\s<>]*(?:kinescopecdn\\.net|kinescope\\.io)/[^\"'\\s<>]*/api/[^\"'\\s<>]+", RegexOption.IGNORE_CASE)
 
     private fun normalizeKinescopeValue(value: String?): String? = value
         ?.replace("\\/", "/")
@@ -355,6 +355,57 @@ class HintFilmIzle : MainAPI() {
                     for(var i=0;i<buttons.length;i++) try { var b=buttons[i]; var label=((b.getAttribute('aria-label')||'')+' '+(b.getAttribute('title')||'')).toLowerCase(); if(label.indexOf('play')>=0&&label.indexOf('playlist')<0){b.click();break;} } catch(_){ }
                   } catch (_) {}
                 }
+                function captureManifestText(value) {
+                  try {
+                    if (typeof value !== 'string') return;
+                    var m = isManifest(value);
+                    if (!m || window.__csHintManifest === m) return;
+                    window.__csHintManifest = m;
+                    try {
+                      var v = document.createElement('video');
+                      v.muted = true;
+                      v.setAttribute('muted','');
+                      v.setAttribute('playsinline','');
+                      v.preload = 'metadata';
+                      v.src = m;
+                      document.documentElement.appendChild(v);
+                      v.load();
+                    } catch (_) {}
+                  } catch (_) {}
+                }
+                try {
+                  var nativeOpen = XMLHttpRequest.prototype.open;
+                  var nativeSend = XMLHttpRequest.prototype.send;
+                  XMLHttpRequest.prototype.open = function(method, url) {
+                    try { this.__csHintUrl = String(url || ''); } catch (_) { this.__csHintUrl = ''; }
+                    return nativeOpen.apply(this, arguments);
+                  };
+                  XMLHttpRequest.prototype.send = function() {
+                    try {
+                      this.addEventListener('load', function() {
+                        try {
+                          captureManifestText(String(this.responseURL || this.__csHintUrl || ''));
+                          captureManifestText(String(this.responseText || ''));
+                        } catch (_) {}
+                      });
+                    } catch (_) {}
+                    return nativeSend.apply(this, arguments);
+                  };
+                } catch (_) {}
+                try {
+                  var nativeFetch = window.fetch;
+                  window.fetch = function() {
+                    return nativeFetch.apply(this, arguments).then(function(response) {
+                      try {
+                        captureManifestText(String(response.url || ''));
+                        response.clone().text().then(function(text) {
+                          captureManifestText(String(text || ''));
+                        }).catch(function() {});
+                      } catch (_) {}
+                      return response;
+                    });
+                  };
+                } catch (_) {}
                 function scanResources() {
                   try {
                     cleanAds(document); startPlayer();
@@ -372,8 +423,8 @@ class HintFilmIzle : MainAPI() {
         """.trimIndent()
 
         val resolver = WebViewResolver(
-            interceptUrl = Regex("${kinescopeApiRegex.pattern}|${kinescopeManifestRegex.pattern}", RegexOption.IGNORE_CASE),
-            additionalUrls = emptyList(), userAgent = ua, useOkhttp = false, timeout = 60_000L, script = script
+            interceptUrl = Regex(kinescopeManifestRegex.pattern, RegexOption.IGNORE_CASE),
+            additionalUrls = emptyList(), userAgent = ua, useOkhttp = false, timeout = 90_000L, script = script
         )
 
         resolver.resolveUsingWebView(target, referer = parent, headers = mapOf("Referer" to parent,"Origin" to targetOrigin,"User-Agent" to ua,"Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")) { req ->
