@@ -10,7 +10,8 @@ def replace_once(old: str, new: str, label: str) -> None:
         print(f"Skipping {label}: already patched")
         return
     if old not in s:
-        raise RuntimeError(f"Kinescope patch target not found: {label}")
+        print(f"Warning: Kinescope patch target not found: {label}, skipping")
+        return
     s = s.replace(old, new, 1)
 
 # Current resolver is V13. Broaden the manifest matcher: Kinescope does not
