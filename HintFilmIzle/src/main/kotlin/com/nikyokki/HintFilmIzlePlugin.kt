@@ -302,7 +302,7 @@ class HintFilmIzle : MainAPI() {
 
     private fun redactUrlForLog(url: String): String = url.substringBefore('?') + if (url.contains("?")) "?<redacted>" else ""
 
-    private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
+    private suspend fun kinescope(kine: String, parent: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         var embedUrl = kine
         if (kine.contains("player.hintfilmizle.com", true)) {
             val html = runCatching {
@@ -326,7 +326,14 @@ class HintFilmIzle : MainAPI() {
 
         val id = Regex("/embed/([A-Za-z0-9_-]+)|v=([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.let { it.groupValues[1].ifBlank { it.groupValues[2] } } ?: run {
             Regex("kinescope\\.(?:io|net)/(?:embed/)?([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.groupValues?.get(1)
-        } ?: return false
+        }
+
+        if (id != null) {
+            val extUrl = "https://kinescope.io/$id"
+            if (loadExtractor(extUrl, parent, subtitleCallback, callback)) return@runCatching true
+            val cdnExtUrl = "https://river-3-329.kinescopecdn.net/677113747/embed/$id"
+            if (loadExtractor(cdnExtUrl, parent, subtitleCallback, callback)) return@runCatching true
+        }
 
         val target = if (embedUrl.contains("kinescopecdn.net", true) || embedUrl.contains("kinescope.io", true)) embedUrl else
             "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
@@ -434,7 +441,7 @@ class HintFilmIzle : MainAPI() {
             additionalUrls = emptyList(),
             userAgent = ua,
             useOkhttp = false,
-            timeout = 30_000L,
+            timeout = 15_000L,
             script = script
         )
 
@@ -492,7 +499,7 @@ class HintFilmIzle : MainAPI() {
         documentFrames(doc,data,::add);var found=false
         for(p in players){
             when {
-                p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) -> if(kinescope(p, data, callback)) found = true
+                p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) -> if(kinescope(p, data, subtitleCallback, callback)) found = true
                 p.contains("playmate.to", true) -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
                 else -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
             }
