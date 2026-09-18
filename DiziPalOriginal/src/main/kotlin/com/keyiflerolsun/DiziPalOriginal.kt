@@ -104,13 +104,16 @@ class DiziPalOriginal : MainAPI() {
     }
 
     private fun Element.toSearchResponse(): SearchResponse? {
-        val href = fixUrlNull(href()) ?: return null
+        val aTag = selectFirst("a[href]") ?: if (tagName() == "a") this else return null
+        val href = fixUrlNull(aTag.href()) ?: return null
         if (href.isBlank()) return null
 
-        val title = (attr("title").takeIf { it.isNotBlank() }
-            ?: selectFirst("img")?.attr("alt")?.takeIf { it.isNotBlank() }
+        val imgEl = selectFirst("img") ?: aTag.selectFirst("img")
+        val title = (imgEl?.attr("alt")?.takeIf { it.isNotBlank() }
+            ?: attr("title").takeIf { it.isNotBlank() }
+            ?: aTag.attr("title").takeIf { it.isNotBlank() }
             ?: selectFirst("h2,h3,h4,h5,.title,.card-title,span")?.text()?.trim()
-            ?: text().trim()).takeIf { it.isNotBlank() } ?: return null
+            ?: aTag.text().trim()).takeIf { it.isNotBlank() } ?: return null
 
         val posterUrl = extractPoster()
 
@@ -147,7 +150,7 @@ class DiziPalOriginal : MainAPI() {
             url, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
 
-        val selector = "a[href*='/bolum/'], a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']"
+        val selector = "div.bg-\\[\\#22232a\\] , a[href*='/bolum/'], a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']"
         val items = document.select(selector).mapNotNull { it.toSearchResponse() }.distinctBy { it.url }
         return newHomePageResponse(request.name, items, items.isNotEmpty())
     }
@@ -161,7 +164,7 @@ class DiziPalOriginal : MainAPI() {
             headers = getHeaders(mainUrl)
         )
             .document
-            .select("a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']")
+            .select("div.bg-\\[\\#22232a\\] , a[href*='/series/'], a[href*='/dizi/'], a[href*='/movies/'], a[href*='/film/']")
             .mapNotNull { it.toSearchResponse() }
             .distinctBy { it.url }
     }
