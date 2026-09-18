@@ -304,157 +304,158 @@ class HintFilmIzle : MainAPI() {
 
     private suspend fun kinescope(kine: String, parent: String, callback: (ExtractorLink) -> Unit): Boolean = runCatching {
         val id = Regex("/embed/([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(kine)?.groupValues?.getOrNull(1) ?: return false
-        val parsedKine = runCatching { URI(kine) }.getOrNull()
-        val target = if (parsedKine?.host.equals("player.hintfilmizle.com", true)) {
-            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr"
-        } else {
-            kine
-        }
-        val targetHost = runCatching { URI(target).host }.getOrNull()
-        val targetOrigin = targetHost?.let { "https://$it" } ?: mainUrl
+        val target = if (kine.contains("river-3-329.kinescopecdn.net", true)) kine else
+            "https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=${URLEncoder.encode(lang.ifBlank { "tr" }, "UTF-8")}&autoplay=1&muted=1&preload=1&playsinline=1&background=1&enableIframeApi=1&nc=${System.currentTimeMillis() / 1000L}"
 
+        val manifestRegex = Regex(
+            "https?://[^\"'\\s<>]+\\.kinescopecdn\\.net/hls/[^\"'\\s<>]+/index\\.m3u8(?:\\?[^\"'\\s<>]*)?",
+            RegexOption.IGNORE_CASE
+        )
         var stream: String? = null
-        var apiRequestUrl: String? = null
-        var apiRequestHeaders: Map<String, String> = emptyMap()
         var streamHeaders: Map<String, String> = emptyMap()
 
         val script = """
             (function() {
               try {
-                if (window.__csHintKineV13) return true;
-                window.__csHintKineV13 = true;
-                function isManifest(u) {
+                if (window.__csHintKineV10) return true;
+                window.__csHintKineV10 = true;
+                var KEY = 'RySdvcyu5iTUxn97vn4HwoniwgxaCynA';
+                function cleanAds() {
                   try {
-                    if (typeof u !== 'string') return null;
-                    var m = u.match(/https?:\\/\\/[^\\s\"']*(?:kinescopecdn\\.net|kinescope\\.io)\\/(?:[^\\s\"']+\\/)*hls\\/[^\\s\"']+\\.m3u8(?:\\?[^\\s\"']*)?/i);
-                    return m ? m[0] : null;
-                  } catch (_) { return null; }
-                }
-                function cleanAds(root) {
-                  try {
-                    var selectors = ['.belink','[class*="belink"]','[id*="belink"]','.ad-overlay','.ad-overlay-container','.advertisement-overlay','.video-ad-overlay','.player-ad-overlay','[data-ad-overlay]'];
-                    root.querySelectorAll(selectors.join(',')).forEach(function(e) {
-                      e.style.setProperty('display','none','important');
-                      e.style.setProperty('visibility','hidden','important');
-                      e.style.setProperty('pointer-events','none','important');
+                    document.querySelectorAll('.belink, .belink.active, [class*="belink"], [id*="belink"]').forEach(function(e) {
+                      e.style.setProperty('display', 'none', 'important');
+                      e.style.setProperty('visibility', 'hidden', 'important');
+                      e.style.setProperty('pointer-events', 'none', 'important');
                     });
                   } catch (_) {}
                 }
-                try { window.open = function() { return null; }; } catch (_) {}
-                function startPlayer() {
+                cleanAds();
+                new MutationObserver(cleanAds).observe(document.documentElement, {subtree:true, childList:true, attributes:true});
+                function findManifest(value, seen) {
                   try {
-                    cleanAds(document);
-                    document.querySelectorAll('video').forEach(function(v) {
-                      try {
-                        v.muted = true; v.autoplay = true;
-                        v.setAttribute('muted',''); v.setAttribute('autoplay','');
-                        v.setAttribute('playsinline',''); v.setAttribute('webkit-playsinline','');
-                        if (v.paused || v.readyState < 2) { var p=v.play(); if(p&&p.catch)p.catch(function(){}); }
-                      } catch (_) {}
-                    });
-                    var buttons=document.querySelectorAll('button[aria-label*="Play" i],button[title*="Play" i],[role="button"][aria-label*="Play" i],.kinescope-player button');
-                    for(var i=0;i<buttons.length;i++) try { var b=buttons[i]; var label=((b.getAttribute('aria-label')||'')+' '+(b.getAttribute('title')||'')).toLowerCase(); if(label.indexOf('play')>=0&&label.indexOf('playlist')<0){b.click();break;} } catch(_){ }
+                    if (value == null) return null;
+                    if (typeof value === 'string') {
+                      var m = value.match(/https?:\\/\\/[^\\s\"']+\\.kinescopecdn\\.net\\/hls\\/[^\\s\"']+\\/index\\.m3u8(?:\\?[^\\s\"']*)?/i);
+                      return m ? m[0] : null;
+                    }
+                    if (typeof value !== 'object') return null;
+                    seen = seen || [];
+                    if (seen.indexOf(value) >= 0) return null;
+                    seen.push(value);
+                    if (Array.isArray(value)) {
+                      for (var i=0;i<value.length;i++) { var a=findManifest(value[i],seen); if(a)return a; }
+                    } else {
+                      for (var k in value) { try { var b=findManifest(value[k],seen); if(b)return b; } catch(_){} }
+                    }
+                  } catch (_) {}
+                  return null;
+                }
+                function forceVideo(url) {
+                  try {
+                    if (!url || window.__csHintManifest === url) return;
+                    window.__csHintManifest = url;
+                    var v = document.createElement('video');
+                    v.muted = true;
+                    v.setAttribute('muted','');
+                    v.setAttribute('playsinline','');
+                    v.preload = 'metadata';
+                    v.src = url;
+                    document.documentElement.appendChild(v);
+                    v.load();
                   } catch (_) {}
                 }
-                function captureManifestText(value) {
+                function inspectResponse(text) {
                   try {
-                    if (typeof value !== 'string') return;
-                    var m = isManifest(value);
-                    if (!m || window.__csHintManifest === m) return;
-                    window.__csHintManifest = m;
-                    try {
-                      var v = document.createElement('video');
-                      v.muted = true;
-                      v.setAttribute('muted','');
-                      v.setAttribute('playsinline','');
-                      v.preload = 'metadata';
-                      v.src = m;
-                      document.documentElement.appendChild(v);
-                      v.load();
-                    } catch (_) {}
-                  } catch (_) {}
+                    var direct=findManifest(text,[]);
+                    if(direct){forceVideo(direct);return;}
+                    var obj=JSON.parse(text);
+                    if(!obj || typeof obj.p!=='string') return;
+                    var binary=atob(obj.p.split('').reverse().join(''));
+                    var out=new Uint8Array(binary.length);
+                    for(var i=0;i<binary.length;i++) out[i]=binary.charCodeAt(i)^KEY.charCodeAt(i%KEY.length);
+                    var decoded=new TextDecoder('utf-8').decode(out);
+                    var found=findManifest(JSON.parse(decoded),[]);
+                    if(found) forceVideo(found);
+                  }catch(_){}
                 }
-                try {
-                  var nativeOpen = XMLHttpRequest.prototype.open;
-                  var nativeSend = XMLHttpRequest.prototype.send;
-                  XMLHttpRequest.prototype.open = function(method, url) {
-                    try { this.__csHintUrl = String(url || ''); } catch (_) { this.__csHintUrl = ''; }
-                    return nativeOpen.apply(this, arguments);
-                  };
-                  XMLHttpRequest.prototype.send = function() {
-                    try {
-                      this.addEventListener('load', function() {
-                        try {
-                          captureManifestText(String(this.responseURL || this.__csHintUrl || ''));
-                          captureManifestText(String(this.responseText || ''));
-                        } catch (_) {}
-                      });
-                    } catch (_) {}
-                    return nativeSend.apply(this, arguments);
-                  };
-                } catch (_) {}
-                try {
-                  var nativeFetch = window.fetch;
-                  window.fetch = function() {
-                    return nativeFetch.apply(this, arguments).then(function(response) {
-                      try {
-                        captureManifestText(String(response.url || ''));
-                        response.clone().text().then(function(text) {
-                          captureManifestText(String(text || ''));
-                        }).catch(function() {});
-                      } catch (_) {}
-                      return response;
+                var of=window.fetch;
+                if(of){
+                  window.fetch=function(){
+                    var args=arguments;
+                    return of.apply(this,args).then(function(r){
+                      try{r.clone().text().then(inspectResponse).catch(function(){});}catch(_){}
+                      return r;
                     });
                   };
-                } catch (_) {}
-                function scanResources() {
-                  try {
-                    cleanAds(document); startPlayer();
+                }
+                var oo=XMLHttpRequest.prototype.open;
+                var os=XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.open=function(method,url){this.__csHintUrl=String(url||'');return oo.apply(this,arguments);};
+                XMLHttpRequest.prototype.send=function(){
+                  try{this.addEventListener('load',function(){inspectResponse(this.responseText||'');});}catch(_){}
+                  return os.apply(this,arguments);
+                };
+                function scanResources(){
+                  try{
                     var es=performance.getEntriesByType('resource')||[];
-                    for(var i=es.length-1;i>=0;i--){var u=String(es[i].name||'');var m=isManifest(u);if(m){window.__csHintManifest=m;return;}}
-                  } catch (_) {}
+                    for(var i=0;i<es.length;i++){
+                      var u=String(es[i].name||'');
+                      if(/\\/api\\/v1\\/embed\\//i.test(u)){
+                        fetch(u,{credentials:'include'}).then(function(r){return r.text();}).then(inspectResponse).catch(function(){});
+                      }else if(/\\.m3u8(?:\\?|$)/i.test(u)) forceVideo(u);
+                    }
+                  }catch(_){}
                 }
-                scanResources();
-                [100,300,700,1500,3000,5000,10000].forEach(function(ms){setTimeout(scanResources,ms);});
-                var scanTimer=setInterval(function(){if(window.__csHintManifest){clearInterval(scanTimer);return;}scanResources();},1000);
-                try { new MutationObserver(function(){cleanAds(document);startPlayer();}).observe(document.documentElement||document,{subtree:true,childList:true,attributes:true,attributeFilter:['class','style','aria-label']}); } catch (_) {}
+                setTimeout(scanResources,100);
+                setTimeout(scanResources,500);
+                setInterval(scanResources,1000);
                 return true;
-              } catch (_) { return false; }
+              }catch(_){return false;}
             })()
         """.trimIndent()
 
         val resolver = WebViewResolver(
-            interceptUrl = Regex(kinescopeManifestRegex.pattern, RegexOption.IGNORE_CASE),
-            additionalUrls = emptyList(), userAgent = ua, useOkhttp = false, timeout = 90_000L, script = script
+            interceptUrl = Regex("m3u8", RegexOption.IGNORE_CASE),
+            additionalUrls = emptyList(),
+            userAgent = ua,
+            useOkhttp = false,
+            timeout = 60_000L,
+            script = script
         )
 
-        resolver.resolveUsingWebView(target, referer = parent, headers = mapOf("Referer" to parent,"Origin" to targetOrigin,"User-Agent" to ua,"Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")) { req ->
+        resolver.resolveUsingWebView(
+            target,
+            referer = parent,
+            headers = mapOf(
+                "Referer" to parent,
+                "Origin" to mainUrl,
+                "User-Agent" to ua,
+                "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
+            )
+        ) { req ->
             val u=req.url.toString()
-            if(kinescopeApiRegex.containsMatchIn(u)) { apiRequestUrl=fix(u,target)?:normalizeKinescopeValue(u)?:u; apiRequestHeaders=req.headers.toMap(); Log.d("HintFilmIzle","KINESCOPE_API_URL=${redactUrlForLog(apiRequestUrl?:u)}"); false }
-            else if(kinescopeManifestRegex.containsMatchIn(u)) { stream=fix(u,target)?:normalizeKinescopeValue(u)?:u; streamHeaders=req.headers.toMap(); Log.d("HintFilmIzle","KINESCOPE_MANIFEST=${redactUrlForLog(stream?:u)}"); true }
-            else false
+            if(manifestRegex.containsMatchIn(u)){
+                stream=u
+                streamHeaders=req.headers.toMap()
+                Log.d("HintFilmIzle","KINESCOPE_MANIFEST="+u)
+                true
+            }else false
         }
 
-        if(stream==null) {
-            val apiManifest=apiRequestUrl?.let { url -> runCatching {
-                val requestHeaders=linkedMapOf<String,String>()
-                requestHeaders["Accept"]=apiRequestHeaders["Accept"]?:"application/json,text/plain,*/*"
-                requestHeaders["Accept-Language"]=apiRequestHeaders["Accept-Language"]?:"tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7"
-                requestHeaders["Origin"]=apiRequestHeaders["Origin"]?:targetOrigin
-                requestHeaders["User-Agent"]=apiRequestHeaders["User-Agent"]?:ua
-                apiRequestHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{requestHeaders["Cookie"]=it}
-                val response=app.get(url,referer=apiRequestHeaders["Referer"]?:target,headers=requestHeaders,interceptor=interceptor)
-                decodeKinescopeManifestResponse(response.text).also{if(it==null)Log.d("HintFilmIzle","KINESCOPE_API_DECODE_FAILED")}
-            }.onFailure{Log.e("HintFilmIzle","KINESCOPE_API_RESOLVE_FAILED",it)}.getOrNull() }
-            if(!apiManifest.isNullOrBlank()){stream=apiManifest;streamHeaders=buildMap{put("Referer",apiRequestHeaders["Referer"]?:target);put("Origin",apiRequestHeaders["Origin"]?:targetOrigin);put("User-Agent",apiRequestHeaders["User-Agent"]?:ua);put("Accept-Language",apiRequestHeaders["Accept-Language"]?:"tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7");apiRequestHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{put("Cookie",it)}};Log.d("HintFilmIzle","KINESCOPE_API_MANIFEST=${redactUrlForLog(apiManifest)}")}
-        }
-
-        val final=stream?:return false
-        val finalHeaders=linkedMapOf("Referer" to (streamHeaders["Referer"]?:target),"User-Agent" to (streamHeaders["User-Agent"]?:ua),"Accept" to (streamHeaders["Accept"]?:"*/*"))
+        val final=stream ?: return false
+        val finalHeaders=linkedMapOf(
+            "Referer" to (streamHeaders["Referer"] ?: target),
+            "User-Agent" to (streamHeaders["User-Agent"] ?: ua),
+            "Accept" to (streamHeaders["Accept"] ?: "*/*")
+        )
         streamHeaders["Origin"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Origin"]=it}
         streamHeaders["Accept-Language"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Accept-Language"]=it}
-        streamHeaders["Cookie"]?.takeIf{it.isNotBlank()}?.let{finalHeaders["Cookie"]=it}
-        callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){referer=finalHeaders["Referer"]?:target;headers=finalHeaders;quality=getQualityFromName(final)})
+
+        callback(newExtractorLink(source=name,name="HintFilmİzle Kinescope",url=final,type=ExtractorLinkType.M3U8){
+            referer=finalHeaders["Referer"] ?: target
+            headers=finalHeaders
+            quality=getQualityFromName(final)
+        })
         true
     }.getOrElse { Log.e("HintFilmIzle","KINESCOPE_FAILED",it); false }
 
