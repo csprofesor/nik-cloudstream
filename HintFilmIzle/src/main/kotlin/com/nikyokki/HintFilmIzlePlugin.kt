@@ -351,10 +351,14 @@ class HintFilmIzle : MainAPI() {
         } ?: return false
 
         val targets = buildList {
+            add("https://kinescope.io/api/v1/videos/$id")
+            add("https://kinescope.io/api/v1/embed/$id")
+            add("https://kinescopecdn.net/api/v1/videos/$id")
             add("https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr")
             add("https://kinescope.io/embed/$id")
             add("https://embed.kinescope.io/embed/$id")
             add(embedUrl)
+            add(kine)
         }.distinct()
 
         for (target in targets) {
