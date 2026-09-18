@@ -291,6 +291,13 @@ class HintFilmIzle : MainAPI() {
         return null
     }
 
+    private fun extractKinescopePlayerOptions(html: String): String? {
+        val jsonStr = Regex("playerOptions\\s*=\\s*(\\{.+?\\});", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+            ?: Regex("config\\s*=\\s*(\\{.+?\\});", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)
+            ?: return null
+        return findManifestInJson(jsonStr)
+    }
+
     private fun decodeKinescopeManifestResponse(responseBody: String): String? {
         firstManifest(responseBody)?.let { return it }
         findManifestInJson(responseBody)?.let { return it }
@@ -309,6 +316,14 @@ class HintFilmIzle : MainAPI() {
         }.getOrNull()
 
         if (!playerHtml.isNullOrBlank()) {
+            extractKinescopePlayerOptions(playerHtml)?.let { direct ->
+                callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
+                    referer = kine
+                    headers = mapOf("Referer" to kine, "Origin" to mainUrl, "User-Agent" to ua)
+                    quality = getQualityFromName(direct)
+                })
+                return@runCatching true
+            }
             kinescopeManifestRegex.find(playerHtml)?.value?.let { direct ->
                 callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                     referer = kine
@@ -338,7 +353,7 @@ class HintFilmIzle : MainAPI() {
         val targets = buildList {
             add("https://river-3-329.kinescopecdn.net/677113747/embed/$id?design=3&lang=tr")
             add("https://kinescope.io/embed/$id")
-            add("https://kinescope.io/$id")
+            add("https://embed.kinescope.io/$id")
             add(embedUrl)
         }.distinct()
 
@@ -353,6 +368,14 @@ class HintFilmIzle : MainAPI() {
             }.getOrNull()
 
             if (!resp.isNullOrBlank()) {
+                extractKinescopePlayerOptions(resp)?.let { direct ->
+                    callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
+                        referer = target
+                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
+                        quality = getQualityFromName(direct)
+                    })
+                    return@runCatching true
+                }
                 kinescopeManifestRegex.find(resp)?.value?.let { direct ->
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
