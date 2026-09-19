@@ -6,10 +6,6 @@ import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.network.CloudflareKiller
-import com.lagradost.cloudstream3.Score
-import okhttp3.Interceptor
-import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.util.regex.Pattern
@@ -21,24 +17,6 @@ class FullHDFilm : MainAPI() {
     override var lang                 = "tr"
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
-
-    // ! CloudFlare v2
-    private val cloudflareKiller by lazy { CloudflareKiller() }
-    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
-
-    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
-        override fun intercept(chain: Interceptor.Chain): Response {
-            val request  = chain.request()
-            val response = chain.proceed(request)
-            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
-
-            if (doc.html().contains("Just a moment")) {
-                return cloudflareKiller.intercept(chain)
-            }
-
-            return response
-        }
-    }
 
     override val mainPage = mainPageOf(
         "${mainUrl}/tur/turkce-altyazili-film-izle"       to "Altyazılı Filmler",
@@ -70,54 +48,38 @@ class FullHDFilm : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page == 1) request.data else "${request.data}/page/${page}"
-        val document = app.get(url, interceptor = interceptor).document
-        val movieBoxes = document.select("div.film-box, div.movie-box, div.movie-poster")
+        val document = app.get(url).document
+        val movieBoxes = document.select("div.movie-poster")
         val home = movieBoxes.mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("img")?.attr("alt") ?: this.selectFirst("div.name a")?.text() ?: return null
+        val title     = this.selectFirst("img")?.attr("alt") ?: return null
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src") ?: this.selectFirst("img")?.attr("data-src"))
-        val rating    = this.selectFirst("div.rating span.align-right, div.rating")?.text()?.trim()?.toFloatOrNull()
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) {
-            this.posterUrl = posterUrl
-            this.score = rating?.let { Score.from10(it) }
-        }
+        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/?s=${query}", interceptor = interceptor).document
+        val document = app.get("${mainUrl}/?s=${query}").document
 
-        return document.select("div.film-box, div.movie-box, div.movie-poster").mapNotNull { it.toSearchResult() }
+        return document.select("div.movie-poster").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url, interceptor = interceptor).document
+        val document = app.get(url).document
     
-        val title       = document.selectFirst("h1")?.text() ?: document.selectFirst("meta[property='og:title']")?.attr("content") ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src") ?: document.selectFirst("div.poster img")?.attr("data-src") ?: document.selectFirst("meta[property='og:image']")?.attr("content"))
-        val description = document.selectFirst("div.description")?.text()?.trim() ?: document.selectFirst("div.film")?.text()?.trim() ?: document.selectFirst("meta[property='og:description']")?.attr("content")?.trim()
-        val tags        = document.select("ul.post-categories li a, div.tur.info a").map { it.text() }
-        val year        = Regex("""(\d{4})""").find(document.selectFirst("li.release span, div.yayin-tarihi.info, div.category")?.text() ?: "")?.groupValues?.get(1)?.toIntOrNull()
-        val rating      = document.selectFirst("div.imdb-count")?.text()?.substringBefore(" ")?.trim()?.toFloatOrNull()
-        val actors      = document.select("div.actors.list a, div.cast a").map { Actor(it.text()) }
-
-        val recommendations = document.select("div.related-movies div.movie-box, div.film-box").mapNotNull { el ->
-            val recName = el.selectFirst("img")?.attr("alt") ?: el.selectFirst("div.name a")?.text() ?: return@mapNotNull null
-            val recHref = fixUrlNull(el.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val recPoster = fixUrlNull(el.selectFirst("img")?.attr("src") ?: el.selectFirst("img")?.attr("data-src"))
-            val recRating = el.selectFirst("div.rating span.align-right, div.rating")?.text()?.trim()?.toFloatOrNull()
-            newMovieSearchResponse(recName, recHref, TvType.Movie) {
-                this.posterUrl = recPoster
-                this.score = recRating?.let { Score.from10(it) }
-            }
-        }
+        val title       = document.selectFirst("h1")?.text() ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src"))
+        val description = document.selectFirst("div.film")?.text()?.trim() ?: document.selectFirst("meta[property='og:description']")?.attr("content")?.trim()
+        val tags        = document.select("div.tur.info a").map { it.text() }
+        val year        = Regex("""(\d{4})""").find(document.selectFirst("div.yayin-tarihi.info")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
+        val actors      = document.selectFirst("div.oyuncular")?.ownText()?.split(",")?.map { Actor(it.trim()) } ?: emptyList()
 
         val isSeries = url.lowercase().contains("-dizi") || tags.any { it.lowercase().contains("dizi") }
 
@@ -142,8 +104,6 @@ class FullHDFilm : MainAPI() {
                 this.year = year
                 this.plot = description
                 this.tags = tags
-                this.score = rating?.let { Score.from10(it) }
-                this.recommendations = recommendations
                 this.actors = actors.map { ActorData(it) }
             }
         }
@@ -153,8 +113,6 @@ class FullHDFilm : MainAPI() {
             this.year = year
             this.plot = description
             this.tags = tags
-            this.score = rating?.let { Score.from10(it) }
-            this.recommendations = recommendations
             this.actors = actors.map { ActorData(it) }
         }
     }
@@ -211,7 +169,7 @@ class FullHDFilm : MainAPI() {
             "Referer" to mainUrl
         )
 
-        val mainDoc = app.get(data, headers=headers, interceptor = interceptor).document
+        val mainDoc = app.get(data, headers=headers).document
         
         // Dublaj/Altyazı alternatiflerini bul
         val pageLinks = mutableListOf<Pair<String, String>>()
@@ -240,7 +198,7 @@ class FullHDFilm : MainAPI() {
             val sourceName = if (name.isBlank() || name == "Ana Sunucu") "Vidpapi" else "Vidpapi - $name"
             
             try {
-                val response = app.get(pageUrl, headers=headers, interceptor = interceptor)
+                val response = app.get(pageUrl, headers=headers)
                 val sourceCode = response.text
 
                 // Ana sayfadan altyazı URL’sini çek
@@ -257,10 +215,10 @@ class FullHDFilm : MainAPI() {
                 // Altyazı bulunduysa ekle
                 if (subtitleUrl != null) {
                     try {
-                        val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true, interceptor = interceptor)
+                        val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true)
                         if (subtitleResponse.isSuccessful) {
                             @Suppress("DEPRECATION")
-                            subtitleCallback(SubtitleFile("Türkçe", subtitleUrl))
+                            subtitleCallback(com.lagradost.cloudstream3.SubtitleFile("Türkçe", subtitleUrl))
                             Log.d("FHDF", "Subtitle added: $subtitleUrl")
                         }
                     } catch (e: Exception) {
@@ -273,7 +231,7 @@ class FullHDFilm : MainAPI() {
                     val iframeResponse = app.get(iframeSrc, headers=mapOf(
                         "User-Agent" to headers["User-Agent"]!!,
                         "Referer" to mainUrl
-                    ), interceptor = interceptor)
+                    ))
                     
                     val fpCookie = iframeResponse.cookies["fireplayer_player"] ?: ""
                     Log.d("FHDF", "Vidpapi cookie: $fpCookie")
