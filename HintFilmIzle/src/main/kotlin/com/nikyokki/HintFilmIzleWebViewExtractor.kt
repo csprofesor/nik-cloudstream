@@ -40,7 +40,10 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                 settings.apply {
                     javaScriptEnabled = true
                     domStorageEnabled = true
+                    mediaPlaybackRequiresUserGesture = false
                     mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
+                    loadWithOverviewMode = true
+                    useWideViewPort = true
                     userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                 }
 
@@ -50,11 +53,13 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                         request: WebResourceRequest?
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
-                        Log.d("HintFilmIzleWebView", "WEBVIEW_REQ=$reqUrl")
+                        if (reqUrl.contains("m3u8", true) || reqUrl.contains("mp4", true) || reqUrl.contains("playlist", true) || reqUrl.contains("api", true) || reqUrl.contains("manifest", true)) {
+                            Log.d("HintFilmIzleWebView", "WEBVIEW_INTERCEPTED=$reqUrl")
+                        }
 
-                        if (reqUrl.contains(".m3u8", true) || (reqUrl.contains(".mp4", true) && !reqUrl.contains("ads", true))) {
+                        if (reqUrl.contains(".m3u8", true) || (reqUrl.contains(".mp4", true) && !reqUrl.contains("ads", true)) || reqUrl.contains("playlist", true) || reqUrl.contains("manifest", true)) {
                             Log.d("HintFilmIzleWebView", "FOUND_STREAM_URL=$reqUrl")
-                            val isM3u8 = reqUrl.contains(".m3u8", true)
+                            val isM3u8 = reqUrl.contains(".m3u8", true) || reqUrl.contains("playlist", true) || reqUrl.contains("manifest", true)
                             val type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                             
                             GlobalScope.launch(Dispatchers.IO) {
@@ -66,7 +71,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                                         type = type
                                     ) {
                                         this.quality = Qualities.P1080.value
-                                        this.headers = mapOf("Referer" to mainUrl)
+                                        this.headers = mapOf("Referer" to mainUrl, "Origin" to "https://kinescope.io")
                                     }
                                 )
                             }
@@ -84,7 +89,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
             }
         }
 
-        delay(15_000)
+        delay(20_000)
 
         withContext(Dispatchers.Main) {
             try {
