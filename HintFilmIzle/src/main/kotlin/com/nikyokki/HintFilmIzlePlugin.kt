@@ -461,12 +461,18 @@ class HintFilmIzle : MainAPI() {
         val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers(),interceptor=interceptor).document}.getOrNull()?:return false
         val players=linkedSetOf<String>();fun add(value:String?){player(value,data)?.let{players.add(it)}}
         documentFrames(doc,data,::add);var found=false
+        val ctx = HintFilmIzlePlugin.pluginContext
         for(p in players){
-            when {
-                p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) -> if(kinescope(p, data, subtitleCallback, callback)) found = true
-                else -> {
-                    if (loadExtractor(p, data, subtitleCallback, callback)) found = true
+            if (p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) || p.contains("embed", true)) {
+                if (ctx != null) {
+                    runCatching {
+                        HintFilmIzleWebViewExtractor(ctx, name).getUrl(p, data, subtitleCallback, callback)
+                        found = true
+                    }
                 }
+                if (kinescope(p, data, subtitleCallback, callback)) found = true
+            } else {
+                if (loadExtractor(p, data, subtitleCallback, callback)) found = true
             }
         }
         return found
