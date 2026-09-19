@@ -6,118 +6,80 @@ import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
-import com.lagradost.cloudstream3.network.CloudflareKiller
-import com.lagradost.cloudstream3.Score
-import okhttp3.Interceptor
-import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import java.util.regex.Pattern
 
 class FullHDFilm : MainAPI() {
-    override var mainUrl              = "https://fullfilmizle.fit"
+    override var mainUrl              = "https://hdfilm.us"
     override var name                 = "FullHDFilm"
     override val hasMainPage          = true
     override var lang                 = "tr"
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
 
-    // ! CloudFlare v2
-    private val cloudflareKiller by lazy { CloudflareKiller() }
-    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
-
-    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
-        override fun intercept(chain: Interceptor.Chain): Response {
-            val request  = chain.request()
-            val response = chain.proceed(request)
-            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
-
-            if (doc.html().contains("Just a moment")) {
-                return cloudflareKiller.intercept(chain)
-            }
-
-            return response
-        }
-    }
-
     override val mainPage = mainPageOf(
-        "${mainUrl}/filmizle/turkce-altyazili-filmler/"  to "Altyazılı Filmler",
-        "${mainUrl}/filmizle/turkce-dublaj-film/"       to "Türkçe Dublaj",
-        "${mainUrl}/filmizle/yerli-filmler/"            to "Yerli Film",
-        "${mainUrl}/filmizle/vizyon-filmleri/"          to "Vizyon Filmleri",
-        "${mainUrl}/filmizle/aile-filmleri/"            to "Aile",
-        "${mainUrl}/filmizle/aksiyon-filmleri/"         to "Aksiyon",
-        "${mainUrl}/filmizle/animasyon-filmleri/"       to "Animasyon",
-        "${mainUrl}/filmizle/belgesel/"                 to "Belgesel",
-        "${mainUrl}/filmizle/bilim-kurgu-filmleri/"     to "Bilim Kurgu",
-        "${mainUrl}/filmizle/biyografi-filmleri/"       to "Biyografi",
-        "${mainUrl}/filmizle/dram-filmleri/"            to "Dram",
-        "${mainUrl}/filmizle/fantastik-filmler/"        to "Fantastik",
-        "${mainUrl}/filmizle/gerilim-filmleri/"         to "Gerilim",
-        "${mainUrl}/filmizle/gizem-filmleri/"           to "Gizem",
-        "${mainUrl}/filmizle/komedi-filmleri/"          to "Komedi",
-        "${mainUrl}/filmizle/korku-filmleri/"           to "Korku",
-        "${mainUrl}/filmizle/macera-filmleri/"          to "Macera",
-        "${mainUrl}/filmizle/muzikal-filmler/"          to "Müzikal",
-        "${mainUrl}/filmizle/romantik-filmler/"         to "Romantik",
-        "${mainUrl}/filmizle/savas-filmleri/"           to "Savaş",
-        "${mainUrl}/filmizle/spor-filmleri/"            to "Spor",
-        "${mainUrl}/filmizle/suc-filmleri/"             to "Suç",
-        "${mainUrl}/filmizle/tarih-filmleri/"           to "Tarih",
-        "${mainUrl}/filmizle/genclik-filmleri/"         to "Gençlik",
-        "${mainUrl}/filmizle/yesilcam-filmleri/"        to "Yeşilçam"
+        "${mainUrl}/tur/turkce-altyazili-film-izle"       to "Altyazılı Filmler",
+        "${mainUrl}/tur/netflix-filmleri-izle/"		       to "Netflix",
+        "${mainUrl}/tur/yerli-film-izle"		           to "Yerli Film",
+        "${mainUrl}/category/aile-filmleri-izle"	       to "Aile",
+        "${mainUrl}/category/aksiyon-filmleri-izle"       to "Aksiyon",
+        "${mainUrl}/category/animasyon-filmleri-izle"     to "Animasyon",
+        "${mainUrl}/category/belgesel-filmleri-izle"      to "Belgesel",
+        "${mainUrl}/category/bilim-kurgu-filmleri-izle"   to "Bilim Kurgu",
+        "${mainUrl}/category/biyografi-filmleri-izle"     to "Biyografi",
+        "${mainUrl}/category/dram-filmleri-izle"          to "Dram",
+        "${mainUrl}/category/fantastik-filmler-izle"      to "Fantastik",
+        "${mainUrl}/category/gerilim-filmleri-izle"       to "Gerilim",
+        "${mainUrl}/category/gizem-filmleri-izle"	       to "Gizem",
+        "${mainUrl}/category/kisa"	                       to "Kısa",
+        "${mainUrl}/category/komedi-filmleri-izle"	       to "Komedi",
+        "${mainUrl}/category/korku-filmleri-izle"	       to "Korku",
+        "${mainUrl}/category/macera-filmleri-izle"	       to "Macera",
+        "${mainUrl}/category/muzik"	                       to "Müzik",
+        "${mainUrl}/category/muzikal-filmleri-izle"	       to "Müzikal",
+        "${mainUrl}/category/romantik-filmler-izle"       to "Romantik",
+        "${mainUrl}/category/savas-filmleri-izle"         to "Savaş",
+        "${mainUrl}/category/spor-filmleri-izle"          to "Spor",
+        "${mainUrl}/category/suc-filmleri-izle"           to "Suç",
+        "${mainUrl}/category/tarih-filmleri-izle"         to "Tarih",
+        "${mainUrl}/category/western-filmleri-izle"       to "Western"
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page == 1) request.data else "${request.data}/page/${page}"
-        val document = app.get(url, interceptor = interceptor).document
-        val movieBoxes = document.select("div.film-box, div.movie-box, div.movie-poster")
+        val document = app.get(url).document
+        val movieBoxes = document.select("div.movie-poster")
         val home = movieBoxes.mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
-        val title     = this.selectFirst("img")?.attr("alt") ?: this.selectFirst("div.name a")?.text() ?: return null
+        val title     = this.selectFirst("img")?.attr("alt") ?: return null
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src") ?: this.selectFirst("img")?.attr("data-src"))
-        val rating    = this.selectFirst("div.rating span.align-right, div.rating")?.text()?.trim()?.toFloatOrNull()
+        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) {
-            this.posterUrl = posterUrl
-            this.score = rating?.let { Score.from10(it) }
-        }
+        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/?s=${query}", interceptor = interceptor).document
+        val document = app.get("${mainUrl}/?s=${query}").document
 
-        return document.select("div.film-box, div.movie-box, div.movie-poster").mapNotNull { it.toSearchResult() }
+        return document.select("div.movie-poster").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url, interceptor = interceptor).document
+        val document = app.get(url).document
     
-        val title       = document.selectFirst("h1")?.text() ?: document.selectFirst("meta[property='og:title']")?.attr("content") ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src") ?: document.selectFirst("div.poster img")?.attr("data-src") ?: document.selectFirst("meta[property='og:image']")?.attr("content"))
-        val description = document.selectFirst("div.description")?.text()?.trim() ?: document.selectFirst("div.film")?.text()?.trim() ?: document.selectFirst("meta[property='og:description']")?.attr("content")?.trim()
-        val tags        = document.select("ul.post-categories li a, div.tur.info a").map { it.text() }
-        val year        = Regex("""(\d{4})""").find(document.selectFirst("li.release span, div.yayin-tarihi.info, div.category")?.text() ?: "")?.groupValues?.get(1)?.toIntOrNull()
-        val rating      = document.selectFirst("div.imdb-count")?.text()?.substringBefore(" ")?.trim()?.toFloatOrNull()
-        val actors      = document.select("div.actors.list a, div.cast a").map { Actor(it.text()) }
-
-        val recommendations = document.select("div.related-movies div.movie-box, div.film-box").mapNotNull { el ->
-            val recName = el.selectFirst("img")?.attr("alt") ?: el.selectFirst("div.name a")?.text() ?: return@mapNotNull null
-            val recHref = fixUrlNull(el.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
-            val recPoster = fixUrlNull(el.selectFirst("img")?.attr("src") ?: el.selectFirst("img")?.attr("data-src"))
-            val recRating = el.selectFirst("div.rating span.align-right, div.rating")?.text()?.trim()?.toFloatOrNull()
-            newMovieSearchResponse(recName, recHref, TvType.Movie) {
-                this.posterUrl = recPoster
-                this.score = recRating?.let { Score.from10(it) }
-            }
-        }
+        val title       = document.selectFirst("h1")?.text() ?: return null
+        val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src"))
+        val description = document.selectFirst("div.film")?.text()?.trim() ?: document.selectFirst("meta[property='og:description']")?.attr("content")?.trim()
+        val tags        = document.select("div.tur.info a").map { it.text() }
+        val year        = Regex("""(\d{4})""").find(document.selectFirst("div.yayin-tarihi.info")?.text()?.trim() ?: "")?.groupValues?.get(1)?.toIntOrNull()
+        val actors      = document.selectFirst("div.oyuncular")?.ownText()?.split(",")?.map { Actor(it.trim()) } ?: emptyList()
 
         val isSeries = url.lowercase().contains("-dizi") || tags.any { it.lowercase().contains("dizi") }
 
@@ -142,8 +104,6 @@ class FullHDFilm : MainAPI() {
                 this.year = year
                 this.plot = description
                 this.tags = tags
-                this.score = rating?.let { Score.from10(it) }
-                this.recommendations = recommendations
                 this.actors = actors.map { ActorData(it) }
             }
         }
@@ -153,8 +113,6 @@ class FullHDFilm : MainAPI() {
             this.year = year
             this.plot = description
             this.tags = tags
-            this.score = rating?.let { Score.from10(it) }
-            this.recommendations = recommendations
             this.actors = actors.map { ActorData(it) }
         }
     }
@@ -211,7 +169,7 @@ class FullHDFilm : MainAPI() {
             "Referer" to mainUrl
         )
 
-        val mainDoc = app.get(data, headers=headers, interceptor = interceptor).document
+        val mainDoc = app.get(data, headers=headers).document
         
         // Dublaj/Altyazı alternatiflerini bul
         val pageLinks = mutableListOf<Pair<String, String>>()
@@ -240,7 +198,7 @@ class FullHDFilm : MainAPI() {
             val sourceName = if (name.isBlank() || name == "Ana Sunucu") "Vidpapi" else "Vidpapi - $name"
             
             try {
-                val response = app.get(pageUrl, headers=headers, interceptor = interceptor)
+                val response = app.get(pageUrl, headers=headers)
                 val sourceCode = response.text
 
                 // Ana sayfadan altyazı URL’sini çek
@@ -257,10 +215,10 @@ class FullHDFilm : MainAPI() {
                 // Altyazı bulunduysa ekle
                 if (subtitleUrl != null) {
                     try {
-                        val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true, interceptor = interceptor)
+                        val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true)
                         if (subtitleResponse.isSuccessful) {
                             @Suppress("DEPRECATION")
-                            subtitleCallback(SubtitleFile("Türkçe", subtitleUrl))
+                            subtitleCallback(com.lagradost.cloudstream3.SubtitleFile("Türkçe", subtitleUrl))
                             Log.d("FHDF", "Subtitle added: $subtitleUrl")
                         }
                     } catch (e: Exception) {
@@ -273,7 +231,7 @@ class FullHDFilm : MainAPI() {
                     val iframeResponse = app.get(iframeSrc, headers=mapOf(
                         "User-Agent" to headers["User-Agent"]!!,
                         "Referer" to mainUrl
-                    ), interceptor = interceptor)
+                    ))
                     
                     val fpCookie = iframeResponse.cookies["fireplayer_player"] ?: ""
                     Log.d("FHDF", "Vidpapi cookie: $fpCookie")
