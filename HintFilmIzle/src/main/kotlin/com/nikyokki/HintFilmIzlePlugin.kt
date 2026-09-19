@@ -216,7 +216,9 @@ class HintFilmIzle : MainAPI() {
         val year = Regex("YAPIM YILI\\s+(\\d{4})", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Regex("\\b(19|20)\\d{2}\\b").find(title)?.value?.toIntOrNull()
         val imdb = doc.selectFirst(".imdb-score, .puan, [itemprop='ratingValue']")?.text() ?: Regex("IMDB\\s*(?:PUANI|Puanı)?\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
         val duration = Regex("SÜRE\\s+(\\d+)\\s*dk", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        val tag = genres(doc, text); val cast = actors(doc); val rec = results(doc).ifEmpty { results(app.get("$mainUrl/film", referer = "$mainUrl/").document) }; val p = plot(doc, text)
+        val tag = genres(doc, text); val cast = actors(doc)
+        val rec = results(doc).ifEmpty { listOf(newMovieSearchResponse("Hint Filmleri", "$mainUrl/film", TvType.Movie) {}) }
+        val p = plot(doc, text)
         if (url.contains("/dizi/", true) || doc.selectFirst(".episodes,.episode-list,.seasons") != null) {
             val eps = doc.select("a[href*='/dizi/'],a[href*='sezon'],a[href*='bolum'],.episode a,.episodes a,.episode-list a").mapNotNull { a -> val u = fix(a.attr("href")) ?: return@mapNotNull null; val t = "${a.text()} ${a.attr("title")}"; val ss = Regex("(?:s|sezon[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull(); val ee = Regex("(?:e|bölüm[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull(); if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee } }.distinctBy { it.data }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) { posterUrl=poster; this.year=year; plot=p; tags=tag; score=Score.from10(imdb); this.duration=duration; addActors(cast); recommendations=rec }
@@ -503,7 +505,8 @@ class HintFilmIzle : MainAPI() {
 
         val ctx = HintFilmIzlePlugin.pluginContext
         for(p in players){
-            if (p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) || p.contains("kinescopecdn", true) || p.contains("embed", true)) {
+            val isKine = p.contains("kinescope", true) || p.contains("kinescopecdn", true) || p.contains("player.hintfilmizle.com", true)
+            if (isKine) {
                 if (ctx != null) {
                     runCatching {
                         HintFilmIzleWebViewExtractor(ctx, name).getUrl(p, data, subtitleCallback, wrappedCallback)
