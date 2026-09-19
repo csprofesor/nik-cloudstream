@@ -85,7 +85,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                     }
                 }
 
-                loadUrl(url)
+                loadUrl(url, mapOf("Referer" to "$mainUrl/"))
             }
         }
 
