@@ -117,6 +117,10 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                         request: WebResourceRequest?
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
+                        if (reqUrl.contains("ads", true) || reqUrl.contains("analytics", true) || reqUrl.contains("vast", true) || reqUrl.contains("banner", true) || reqUrl.contains("popunder", true) || reqUrl.contains("tracker", true) || reqUrl.contains("pixel", true) || reqUrl.contains("yandex.ru", true)) {
+                            return WebResourceResponse("text/plain", "UTF-8", null)
+                        }
+
                         if (reqUrl.contains(".m3u8", true) || reqUrl.contains("playlist", true) || reqUrl.contains("manifest", true) || reqUrl.contains("hls", true)) {
                             Log.d("HintFilmIzleWebView", "INTERCEPTED_REQ=$reqUrl")
                             if (!foundStream.getAndSet(true)) {
