@@ -102,7 +102,11 @@ class HintFilmIzle : MainAPI() {
 
     private fun Element.poster(): String? {
         val attrs = listOf("data-src", "data-lazy-src", "data-original", "data-image", "data-poster", "data-thumb", "src")
-        select("img,picture source").forEach { img ->
+        select("img, picture source, [data-background], .poster, .thumb").forEach { img ->
+            val bg = img.attr("data-background").ifBlank { img.attr("style") }
+            if (bg.contains("url")) {
+                Regex("url\\(['\"]?([^'\")]+)['\"]?\\)").find(bg)?.groupValues?.get(1)?.let { fix(it) }?.let { return it }
+            }
             attrs.firstNotNullOfOrNull {
                 fix(img.attr(it))?.takeIf { u -> !u.startsWith("data:") && !u.contains("placeholder", true) }
             }?.let { return it }
@@ -133,7 +137,12 @@ class HintFilmIzle : MainAPI() {
             ?: url.substringBefore("?").substringAfterLast('/').replace(Regex("[-_]+"), " ").replaceFirstChar { it.uppercase() }
     }
 
-    private fun rating(card: Element): String? = Regex("(?<!\\d)(?:10(?:[.,]0+)?|[1-9](?:[.,]\\d{1,3})?)(?!\\d)").findAll(card.text()).mapNotNull { it.value.replace(',', '.').toFloatOrNull() }.firstOrNull { it in 0f..10f }?.toString()
+    private fun rating(card: Element): String? {
+        val scoreText = card.selectFirst(".imdb, .rating, span.score, small, .puan")?.text() ?: card.text()
+        return Regex("(?<!\\d)(?:10(?:[.,]0+)?|[1-9](?:[.,]\\d{1,3})?)(?!\\d)").findAll(scoreText)
+            .mapNotNull { it.value.replace(',', '.').toFloatOrNull() }
+            .firstOrNull { it in 0f..10f }?.toString()
+    }
 
     private fun Element.toResult(card: Element = this): SearchResponse? {
         val href = fix(attr("href")) ?: return null
@@ -172,8 +181,27 @@ class HintFilmIzle : MainAPI() {
 
     private fun body(doc: Document) = doc.body()?.text()?.replace(Regex("\\s+"), " ")?.trim().orEmpty()
     private fun label(text: String, name: String, next: String): String? = Regex("${Regex.escape(name)}\\s*[:\\-]?\\s*(.*?)\\s*(?=${Regex.escape(next)}|$)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
-    private fun genres(doc: Document, text: String): List<String> { val dom = doc.select("a[href*='/tur/'],.genres a,.genre a,.categories a").map { it.text().trim() }.filter { it.isNotBlank() && it.contains("Film", true) }.distinct(); if (dom.isNotEmpty()) return dom; return label(text, "Türü", "Bu Film özeti").orEmpty().split(",").map { it.trim() }.filter { it.isNotBlank() && it.contains("Film", true) } }
-    private fun actors(doc: Document): List<Actor> { val links = doc.select("a[href*='/oyuncular/'],a[href*='/oyuncu/'],a[href*='/actor/'],a[href*='/cast/']").map { cleanTitle(it.text()) }.filterNotNull().filter { it.length < 100 }.distinct(); if (links.isNotEmpty()) return links.map(::Actor); val heading = doc.select("h1,h2,h3,h4,h5,h6").firstOrNull { it.text().contains("Öne Çıkan Oyuncular", true) }; val container = heading?.parents()?.firstOrNull { p -> val count = p.select("a").size; count in 1..20 && p.text().contains("Yönetmen", true) }; return container?.select("a")?.map { cleanTitle(it.text()) }?.filterNotNull()?.filter { it.length < 100 }?.distinct()?.map(::Actor).orEmpty() }
+    
+    private fun genres(doc: Document, text: String): List<String> {
+        val dom = doc.select("a[href*='/tur/'], .genres a, .genre a, .categories a, .tags a").map { it.text().trim() }.filter { it.isNotBlank() && !it.equals("Film", true) && !it.equals("Dizi", true) }.distinct()
+        if (dom.isNotEmpty()) return dom
+        return label(text, "Türü", "Bu Film özeti")?.split(",")?.map { it.trim() }?.filter { it.isNotBlank() } ?: emptyList()
+    }
+
+    private fun actors(doc: Document): List<Actor> {
+        val actorElements = doc.select("a[href*='/oyuncular/'], a[href*='/oyuncu/'], a[href*='/actor/'], a[href*='/cast/'], .cast-item, .actor-item")
+        val result = actorElements.mapNotNull { el ->
+            val name = cleanTitle(el.selectFirst("h4, span, .name")?.text() ?: el.text()) ?: return@mapNotNull null
+            if (name.length > 100 || name.length < 2) return@mapNotNull null
+            val img = fix(el.selectFirst("img")?.poster())
+            Actor(name, img)
+        }.distinctBy { it.name }
+        if (result.isNotEmpty()) return result
+
+        val heading = doc.select("h1,h2,h3,h4,h5,h6").firstOrNull { it.text().contains("Öne Çıkan Oyuncular", true) }
+        val container = heading?.parents()?.firstOrNull { p -> val count = p.select("a").size; count in 1..20 && p.text().contains("Yönetmen", true) }
+        return container?.select("a")?.mapNotNull { cleanTitle(it.text())?.takeIf { n -> n.length < 100 }?.let { n -> Actor(n) } }.orEmpty()
+    }
     private fun plot(doc: Document, text: String): String? { val section = Regex("GENEL BAKIŞ\\s+(.*?)(?=BU FİLM ÖZETİ|HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|ÜLKE\\s)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1) ?: return null; val cleaned = section.replace(Regex("^Türü\\s*:\\s*.*?(?=ÇEVİRİ\\s*:)", RegexOption.IGNORE_CASE), "").replace(Regex("^ÇEVİRİ\\s*:\\s*.*?(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü])", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim(); return cleaned.takeIf { it.length >= 20 } }
 
     override suspend fun load(url: String): LoadResponse? {
