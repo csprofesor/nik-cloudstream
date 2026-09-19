@@ -463,7 +463,7 @@ class HintFilmIzle : MainAPI() {
         documentFrames(doc,data,::add);var found=false
         val ctx = HintFilmIzlePlugin.pluginContext
         for(p in players){
-            if (p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) || p.contains("embed", true)) {
+            if (p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) || p.contains("kinescopecdn", true)) {
                 if (ctx != null) {
                     runCatching {
                         HintFilmIzleWebViewExtractor(ctx, name).getUrl(p, data, subtitleCallback, callback)
@@ -489,7 +489,9 @@ class HintFilmIzle : MainAPI() {
 
     private suspend fun documentFrames(doc: Document, base: String, add: (String?) -> Unit) {
         doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach { e -> listOf(e.attr("data-frame"), e.attr("src"), e.attr("data-src"), e.attr("data-url"), e.attr("data-iframe")).forEach(add) }
-        doc.select("a[data-url], a[data-embed], a[data-video], a[data-src], a[data-link], button[data-url], button[data-embed], button[data-video], button[data-src], button[data-link], .alternatifler a, .player-tabs a, .server-tabs a, .partlar a, .bolumler a").forEach { e -> listOf(e.attr("data-url"), e.attr("data-embed"), e.attr("data-video"), e.attr("data-src"), e.attr("data-link"), e.attr("href")).forEach(add) }
+        doc.select("a[data-frame], a[data-url], a[data-embed], a[data-video], a[data-src], a[data-link], button[data-url], button[data-embed], button[data-video], button[data-src], button[data-link], .alternatifler a, .player-tabs a, .server-tabs a, .partlar a, .bolumler a, .linkler a").forEach { e -> 
+            listOf(e.attr("data-frame"), e.attr("data-url"), e.attr("data-embed"), e.attr("data-video"), e.attr("data-src"), e.attr("data-link"), e.attr("href")).forEach(add) 
+        }
         doc.select("[data-publisher-id][data-id]").forEach { e -> val pub = e.attr("data-publisher-id").trim(); val id = e.attr("data-id").trim(); if (pub.isNotBlank() && id.isNotBlank()) add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr") }
 
         val postId = doc.selectFirst("[data-post], [data-post-id], [data-id], input[name='post_id']")?.attr("value")
