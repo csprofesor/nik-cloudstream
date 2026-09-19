@@ -11,7 +11,6 @@ import okhttp3.Interceptor
 import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
-import java.util.regex.Pattern
 
 class FullHDFilm : MainAPI() {
     override var mainUrl              = "https://fullfilmizle.fit"
