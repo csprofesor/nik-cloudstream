@@ -296,6 +296,25 @@ class HintFilmIzle : MainAPI() {
         return findManifestInJson(jsonStr)
     }
 
+    private fun parseKinescopeApiJson(resp: String): String? {
+        val json = runCatching { JSONObject(resp) }.getOrNull() ?: return null
+        val data = json.optJSONObject("data") ?: json
+        data.optJSONObject("files")?.optString("hls")?.takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+        data.optString("source").takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+        data.optString("url").takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+        val sources = data.optJSONArray("sources")
+        if (sources != null) {
+            for (i in 0 until sources.length()) {
+                val src = sources.optJSONObject(i)
+                val url = src?.optString("url") ?: src?.optString("file")
+                if (!url.isNullOrBlank()) {
+                    normalizeKinescopeValue(url)?.let { return it }
+                }
+            }
+        }
+        json.optJSONObject("files")?.optString("hls")?.takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+        return null
+    }
     private fun decodeKinescopeManifestResponse(responseBody: String): String? {
         firstManifest(responseBody)?.let { return it }
         findManifestInJson(responseBody)?.let { return it }
@@ -374,6 +393,15 @@ class HintFilmIzle : MainAPI() {
 
             if (!resp.isNullOrBlank()) {
                 Log.d("HintFilmIzle", "GOT_RESP_LEN=${resp.length}")
+                parseKinescopeApiJson(resp)?.let { direct ->
+                    Log.d("HintFilmIzle", "FOUND_API_JSON_MANIFEST=$direct")
+                    callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = if (direct.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO) {
+                        referer = target
+                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
+                        quality = getQualityFromName(direct)
+                    })
+                    return@runCatching true
+                }
                 extractKinescopePlayerOptions(resp)?.let { direct ->
                     Log.d("HintFilmIzle", "FOUND_PLAYER_OPTIONS=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
