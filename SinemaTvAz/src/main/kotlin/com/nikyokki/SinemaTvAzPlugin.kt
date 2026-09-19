@@ -6,7 +6,12 @@ import android.content.Context
 
 @CloudstreamPlugin
 class SinemaTvAzPlugin: Plugin() {
+    companion object {
+        var pluginContext: Context? = null
+    }
+
     override fun load(context: Context) {
+        pluginContext = context
         registerMainAPI(SinemaTvAz())
     }
 }
