@@ -22,6 +22,11 @@ class FullHDFilm : MainAPI() {
     override val hasQuickSearch       = false
     override val supportedTypes       = setOf(TvType.Movie, TvType.TvSeries)
 
+    private val headers = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer" to "$mainUrl/"
+    )
+
     // ! CloudFlare v2
     private val cloudflareKiller by lazy { CloudflareKiller() }
     private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
@@ -70,8 +75,8 @@ class FullHDFilm : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page == 1) request.data else "${request.data}/page/${page}"
-        val document = app.get(url, interceptor = interceptor).document
-        val movieBoxes = document.select("div.film-box, div.movie-box, div.movie-poster")
+        val document = app.get(url, headers = headers, interceptor = interceptor).document
+        val movieBoxes = document.select("div.film-box")
         val home = movieBoxes.mapNotNull { it.toSearchResult() }
 
         return newHomePageResponse(request.name, home)
@@ -90,15 +95,15 @@ class FullHDFilm : MainAPI() {
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/?s=${query}", interceptor = interceptor).document
+        val document = app.get("${mainUrl}/?s=${query}", headers = headers, interceptor = interceptor).document
 
-        return document.select("div.film-box, div.movie-box, div.movie-poster").mapNotNull { it.toSearchResult() }
+        return document.select("div.film-box").mapNotNull { it.toSearchResult() }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url, interceptor = interceptor).document
+        val document = app.get(url, headers = headers, interceptor = interceptor).document
     
         val title       = document.selectFirst("h1")?.text() ?: document.selectFirst("meta[property='og:title']")?.attr("content") ?: return null
         val poster      = fixUrlNull(document.selectFirst("div.poster img")?.attr("src") ?: document.selectFirst("div.poster img")?.attr("data-src") ?: document.selectFirst("meta[property='og:image']")?.attr("content"))
@@ -108,7 +113,7 @@ class FullHDFilm : MainAPI() {
         val rating      = document.selectFirst("div.imdb-count")?.text()?.substringBefore(" ")?.trim()?.toFloatOrNull()
         val actors      = document.select("div.actors.list a, div.cast a").map { Actor(it.text()) }
 
-        val recommendations = document.select("div.related-movies div.movie-box, div.film-box").mapNotNull { el ->
+        val recommendations = document.select("div.related-movies div.movie-box").mapNotNull { el ->
             val recName = el.selectFirst("img")?.attr("alt") ?: el.selectFirst("div.name a")?.text() ?: return@mapNotNull null
             val recHref = fixUrlNull(el.selectFirst("a")?.attr("href")) ?: return@mapNotNull null
             val recPoster = fixUrlNull(el.selectFirst("img")?.attr("src") ?: el.selectFirst("img")?.attr("data-src"))
@@ -192,8 +197,7 @@ class FullHDFilm : MainAPI() {
     private suspend fun extractSubtitleFromIframe(iframeUrl: String): String? {
         if (iframeUrl.isEmpty()) return null
         return try {
-            val headers = mapOf("User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36")
-            val iframeResponse = app.get(iframeUrl, headers=headers)
+            val iframeResponse = app.get(iframeUrl, headers = headers)
             extractSubtitleUrl(iframeResponse.text)
         } catch (e: Exception) {
             null
@@ -206,12 +210,7 @@ class FullHDFilm : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ): Boolean {
-        val headers = mapOf(
-            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-            "Referer" to mainUrl
-        )
-
-        val mainDoc = app.get(data, headers=headers, interceptor = interceptor).document
+        val mainDoc = app.get(data, headers = headers, interceptor = interceptor).document
         
         // Dublaj/Altyazı alternatiflerini bul
         val pageLinks = mutableListOf<Pair<String, String>>()
@@ -240,7 +239,7 @@ class FullHDFilm : MainAPI() {
             val sourceName = if (name.isBlank() || name == "Ana Sunucu") "Vidpapi" else "Vidpapi - $name"
             
             try {
-                val response = app.get(pageUrl, headers=headers, interceptor = interceptor)
+                val response = app.get(pageUrl, headers = headers, interceptor = interceptor)
                 val sourceCode = response.text
 
                 // Ana sayfadan altyazı URL’sini çek
@@ -257,7 +256,7 @@ class FullHDFilm : MainAPI() {
                 // Altyazı bulunduysa ekle
                 if (subtitleUrl != null) {
                     try {
-                        val subtitleResponse = app.get(subtitleUrl, headers=headers, allowRedirects=true, interceptor = interceptor)
+                        val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects = true, interceptor = interceptor)
                         if (subtitleResponse.isSuccessful) {
                             @Suppress("DEPRECATION")
                             subtitleCallback(SubtitleFile("Türkçe", subtitleUrl))
@@ -270,10 +269,7 @@ class FullHDFilm : MainAPI() {
 
                 if (iframeSrc.contains("vidpapi.xyz")) {
                     val videoId = iframeSrc.split("/").lastOrNull() ?: continue
-                    val iframeResponse = app.get(iframeSrc, headers=mapOf(
-                        "User-Agent" to headers["User-Agent"]!!,
-                        "Referer" to mainUrl
-                    ), interceptor = interceptor)
+                    val iframeResponse = app.get(iframeSrc, headers = headers, interceptor = interceptor)
                     
                     val fpCookie = iframeResponse.cookies["fireplayer_player"] ?: ""
                     Log.d("FHDF", "Vidpapi cookie: $fpCookie")
@@ -287,7 +283,7 @@ class FullHDFilm : MainAPI() {
                         "Cookie" to "fireplayer_player=$fpCookie"
                     )
 
-                    val apiResponse = app.post(apiURL, headers=apiHeaders, data=mapOf("data" to videoId, "do" to "getVideo"))
+                    val apiResponse = app.post(apiURL, headers = apiHeaders, data = mapOf("data" to videoId, "do" to "getVideo"))
                     val securedLink = Regex("""securedLink":"([^"]+)""").find(apiResponse.text)?.groupValues?.get(1)?.replace("\\/", "/")
                     
                     if (securedLink != null && securedLink.isNotBlank()) {
