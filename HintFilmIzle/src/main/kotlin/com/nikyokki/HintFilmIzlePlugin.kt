@@ -73,7 +73,7 @@ class HintFilmIzle : MainAPI() {
         }
     }
 
-    private val ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36"
+    private val ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
     private fun headers() = mapOf("User-Agent" to ua, "Accept-Language" to "tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7")
 
     override val mainPage = mainPageOf(
@@ -192,11 +192,8 @@ class HintFilmIzle : MainAPI() {
 
     private fun player(value: String?, base: String): String? {
         val u = fix(value, base) ?: return null
-        if (u.contains("youtube", true) || u.contains("schema.org", true) || u.contains("imdb.com", true) || u.contains("google.com/search", true) || u.contains("yandex", true) || u.contains("dmca.com", true) || u.contains("wp-content", true) || u.contains("wp-includes", true)) return null
-        if (u.contains("player.hintfilmizle.com", true)) return u
-        if (u.contains("kinescopecdn.net", true) || u.contains("kinescope.io", true)) return u
-        if (u.contains("playmate.to", true)) return u
-        return null
+        if (u.contains("youtube", true) || u.contains("schema.org", true) || u.contains("imdb.com", true) || u.contains("google.com/search", true) || u.contains("yandex", true) || u.contains("dmca.com", true) || u.contains("wp-content", true) || u.contains("wp-includes", true) || u.contains("javascript:", true)) return null
+        return u
     }
 
     private val kinescopeManifestRegex = Regex(
@@ -363,13 +360,16 @@ class HintFilmIzle : MainAPI() {
 
         for (target in targets) {
             Log.d("HintFilmIzle", "TRYING_KINE_TARGET=$target")
+            val isApi = target.contains("/api/")
+            val targetReferer = if (isApi) "https://kinescope.io/embed/$id" else parent
+            val targetOrigin = if (isApi) "https://kinescope.io" else mainUrl
             val resp = runCatching {
-                app.get(target, referer = "$mainUrl/", headers = mapOf(
-                    "Referer" to "$mainUrl/",
-                    "Origin" to mainUrl,
+                app.get(target, referer = targetReferer, headers = mapOf(
+                    "Referer" to targetReferer,
+                    "Origin" to targetOrigin,
                     "X-Requested-With" to "XMLHttpRequest",
                     "User-Agent" to ua,
-                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                    "Accept" to "text/html,application/xhtml+xml,application/json,application/xml;q=0.9,*/*;q=0.8"
                 ), interceptor = interceptor).text
             }.getOrNull()
 
@@ -379,7 +379,7 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "FOUND_PLAYER_OPTIONS=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
-                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
+                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
                         quality = getQualityFromName(direct)
                     })
                     return@runCatching true
@@ -388,7 +388,7 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "FOUND_MANIFEST_REGEX=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
-                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
+                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
                         quality = getQualityFromName(direct)
                     })
                     return@runCatching true
@@ -397,7 +397,7 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "FOUND_MANIFEST_IN_JSON=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
-                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
+                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
                         quality = getQualityFromName(direct)
                     })
                     return@runCatching true
@@ -406,7 +406,7 @@ class HintFilmIzle : MainAPI() {
                     Log.d("HintFilmIzle", "FOUND_DECODED_MANIFEST=$direct")
                     callback(newExtractorLink(source = name, name = "HintFilmİzle Kinescope", url = direct, type = ExtractorLinkType.M3U8) {
                         referer = target
-                        headers = mapOf("Referer" to target, "Origin" to mainUrl, "User-Agent" to ua)
+                        headers = mapOf("Referer" to target, "Origin" to "https://kinescope.io", "User-Agent" to ua)
                         quality = getQualityFromName(direct)
                     })
                     return@runCatching true
@@ -424,8 +424,9 @@ class HintFilmIzle : MainAPI() {
         for(p in players){
             when {
                 p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) -> if(kinescope(p, data, subtitleCallback, callback)) found = true
-                p.contains("playmate.to", true) -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
-                else -> { found = true; loadExtractor(p, data, subtitleCallback, callback) }
+                else -> {
+                    if (loadExtractor(p, data, subtitleCallback, callback)) found = true
+                }
             }
         }
         return found
@@ -433,6 +434,7 @@ class HintFilmIzle : MainAPI() {
 
     private fun documentFrames(doc: Document, base:String, add:(String?)->Unit){
         doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach{e->listOf(e.attr("data-frame"),e.attr("src"),e.attr("data-src"),e.attr("data-url"),e.attr("data-iframe")).forEach(add)}
+        doc.select("a[data-url], a[data-embed], a[data-video], a[data-src], button[data-url], button[data-embed], button[data-video], button[data-src], .alternatifler a, .player-tabs a, .server-tabs a").forEach{e->listOf(e.attr("data-url"),e.attr("data-embed"),e.attr("data-video"),e.attr("data-src"),e.attr("href")).forEach(add)}
         doc.select("[data-publisher-id][data-id]").forEach{e->val pub=e.attr("data-publisher-id").trim();val id=e.attr("data-id").trim();if(pub.isNotBlank()&&id.isNotBlank())add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")}
         doc.select("script").forEach{s->
             Regex("https?://[^\\\"'\\s<>]+",RegexOption.IGNORE_CASE).findAll(s.data()).forEach{add(it.value)}
