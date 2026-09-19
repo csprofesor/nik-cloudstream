@@ -36,17 +36,34 @@ class SinemaTvAz : MainAPI() {
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page == 1) request.data else "${request.data}page/$page/"
         val document = app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
-        val home = document.select("a.poster-item").mapNotNull { it.toMainPageResult() }
+        
+        val tvType = when {
+            request.data.contains("/serial") -> TvType.TvSeries
+            request.data.contains("/mult") -> TvType.TvSeries
+            request.data.contains("/anime") -> TvType.Anime
+            else -> TvType.Movie
+        }
+
+        val home = document.select("a.poster-item").mapNotNull { it.toMainPageResult(tvType) }
         return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toMainPageResult(): SearchResponse? {
+    private fun Element.toMainPageResult(type: TvType = TvType.Movie): SearchResponse? {
         val title     = this.selectFirst("div.poster-item__title")?.text() ?: this.attr("title") ?: return null
         val href      = fixUrlNull(this.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src") ?: this.selectFirst("img")?.attr("src"))
+        val img       = this.selectFirst("img")
+        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("data-original") ?: img?.attr("src"))
         
-        return newMovieSearchResponse(title, href, TvType.Movie) { 
-            this.posterUrl = posterUrl 
+        return if (type == TvType.Movie) {
+            newMovieSearchResponse(title, href, type) { 
+                this.posterUrl = posterUrl 
+                this.posterHeaders = browserHeaders
+            }
+        } else {
+            newTvSeriesSearchResponse(title, href, type) { 
+                this.posterUrl = posterUrl 
+                this.posterHeaders = browserHeaders
+            }
         }
     }
 
@@ -67,9 +84,22 @@ class SinemaTvAz : MainAPI() {
     private fun Element.toSearchResult(): SearchResponse? {
         val title     = this.selectFirst("div.poster-item__title")?.text() ?: this.attr("title") ?: return null
         val href      = fixUrlNull(this.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src") ?: this.selectFirst("img")?.attr("src"))
+        val img       = this.selectFirst("img")
+        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("data-original") ?: img?.attr("src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        val tvType = if (href.contains("/serial") || href.contains("/mult")) TvType.TvSeries else TvType.Movie
+
+        return if (tvType == TvType.Movie) {
+            newMovieSearchResponse(title, href, tvType) { 
+                this.posterUrl = posterUrl 
+                this.posterHeaders = browserHeaders
+            }
+        } else {
+            newTvSeriesSearchResponse(title, href, tvType) { 
+                this.posterUrl = posterUrl 
+                this.posterHeaders = browserHeaders
+            }
+        }
     }
 
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
@@ -78,7 +108,8 @@ class SinemaTvAz : MainAPI() {
         val document = app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
 
         val title           = document.selectFirst("h1")?.text()?.trim() ?: return null
-        val poster          = fixUrlNull(document.selectFirst("div.page__poster img")?.attr("data-src") ?: document.selectFirst("div.page__poster img")?.attr("src"))
+        val posterImg       = document.selectFirst("div.page__poster img")
+        val poster          = fixUrlNull(posterImg?.attr("data-src") ?: posterImg?.attr("data-original") ?: posterImg?.attr("src"))
         val description     = document.selectFirst("div.page__text")?.text()?.trim()
         val year            = document.selectFirst("div.page__year")?.text()?.trim()?.toIntOrNull()
         val tags            = document.selectFirst("span.page__meta-item--genres")?.text()?.split(",")?.map { it.trim() }
@@ -87,23 +118,52 @@ class SinemaTvAz : MainAPI() {
         val trailer         = fixUrlNull(document.selectFirst("div.page__trailer iframe")?.attr("data-src") ?: document.selectFirst("div.page__trailer iframe")?.attr("src"))
         val recommendations = document.select("a.poster-item").mapNotNull { it.toRecommendationResult() }
 
-        return newMovieLoadResponse(title, url, TvType.Movie, url) {
-            this.posterUrl       = poster
-            this.plot            = description
-            this.year            = year
-            this.tags            = tags
-            this.recommendations = recommendations
-            addActors(actors)
-            addTrailer(trailer)
+        val isSeries        = url.contains("/serial/") || document.select("select#season").isNotEmpty() || document.select("div.serial-tabs").isNotEmpty()
+
+        return if (isSeries) {
+            newTvSeriesLoadResponse(title, url, TvType.TvSeries, emptyList()) {
+                this.posterUrl       = poster
+                this.posterHeaders   = browserHeaders
+                this.plot            = description
+                this.year            = year
+                this.tags            = tags
+                this.recommendations = recommendations
+                addActors(actors)
+                addTrailer(trailer)
+            }
+        } else {
+            newMovieLoadResponse(title, url, TvType.Movie, url) {
+                this.posterUrl       = poster
+                this.posterHeaders   = browserHeaders
+                this.plot            = description
+                this.year            = year
+                this.tags            = tags
+                this.recommendations = recommendations
+                addActors(actors)
+                addTrailer(trailer)
+            }
         }
     }
 
     private fun Element.toRecommendationResult(): SearchResponse? {
         val title     = this.selectFirst("div.poster-item__title")?.text() ?: this.attr("title") ?: return null
         val href      = fixUrlNull(this.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("img")?.attr("data-src") ?: this.selectFirst("img")?.attr("src"))
+        val img       = this.selectFirst("img")
+        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("data-original") ?: img?.attr("src"))
 
-        return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
+        val tvType = if (href.contains("/serial") || href.contains("/mult")) TvType.TvSeries else TvType.Movie
+
+        return if (tvType == TvType.Movie) {
+            newMovieSearchResponse(title, href, tvType) { 
+                this.posterUrl = posterUrl 
+                this.posterHeaders = browserHeaders
+            }
+        } else {
+            newTvSeriesSearchResponse(title, href, tvType) { 
+                this.posterUrl = posterUrl 
+                this.posterHeaders = browserHeaders
+            }
+        }
     }
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
@@ -113,37 +173,11 @@ class SinemaTvAz : MainAPI() {
             val src = iframe.attr("data-src").ifEmpty { iframe.attr("src") }
             if (src.isNotEmpty()) {
                 val playerUrl = fixUrl(src) ?: return@forEach
-                val playerHtml = runCatching { app.get(playerUrl, headers = browserHeaders, referer = data).text }.getOrNull().orEmpty()
-
-                val streams = Regex(
-                    "https?://[^\",'\\s<>]+(?:\\.m3u8(?:\\?[^\"',\\s<>]*)?|\\.mp4(?:\\?[^\"',\\s<>]*)?)",
-                    RegexOption.IGNORE_CASE
-                ).findAll(playerHtml).map { it.value }.distinct().toList()
-
-                for (stream in streams) {
-                    var fixStream = stream
-                    if (fixStream.contains("cdn1.sinematv.az")) {
-                        fixStream = fixStream.replace("cdn1.sinematv.az", "abyss.to")
-                    }
-                    callback(
-                        newExtractorLink(
-                            source = name,
-                            name = name,
-                            url = fixStream,
-                            type = if (fixStream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                        ) {
-                            this.referer = playerUrl
-                            this.quality = Qualities.Unknown.value
-                        }
-                    )
-                }
-
-                if (streams.isEmpty()) {
-                    var fixUrl = playerUrl
-                    if (fixUrl.contains("cdn1.sinematv.az")) {
-                        fixUrl = fixUrl.replace("cdn1.sinematv.az", "abyss.to")
-                    }
-                    loadExtractor(fixUrl, data, subtitleCallback, callback)
+                val context = SinemaTvAzPlugin.pluginContext
+                if (context != null) {
+                    SinemaTvAzWebViewExtractor(context).getUrl(playerUrl, data, subtitleCallback, callback)
+                } else {
+                    loadExtractor(playerUrl, data, subtitleCallback, callback)
                 }
             }
         }
