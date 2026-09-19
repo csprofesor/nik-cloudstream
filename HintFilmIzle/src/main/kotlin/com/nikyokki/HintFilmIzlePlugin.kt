@@ -202,16 +202,21 @@ class HintFilmIzle : MainAPI() {
         val container = heading?.parents()?.firstOrNull { p -> val count = p.select("a").size; count in 1..20 && p.text().contains("Yönetmen", true) }
         return container?.select("a")?.mapNotNull { cleanTitle(it.text())?.takeIf { n -> n.length < 100 }?.let { n -> Actor(n) } }.orEmpty()
     }
-    private fun plot(doc: Document, text: String): String? { val section = Regex("GENEL BAKIŞ\\s+(.*?)(?=BU FİLM ÖZETİ|HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|ÜLKE\\s)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.getOrNull(1) ?: return null; val cleaned = section.replace(Regex("^Türü\\s*:\\s*.*?(?=ÇEVİRİ\\s*:)", RegexOption.IGNORE_CASE), "").replace(Regex("^ÇEVİRİ\\s*:\\s*.*?(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü])", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim(); return cleaned.takeIf { it.length >= 20 } }
+    private fun plot(doc: Document, text: String): String? {
+        doc.selectFirst("meta[property='og:description'], meta[name='description']")?.attr("content")?.takeIf { it.isNotBlank() }?.let { return it.trim() }
+        val section = Regex("GENEL BAKIŞ\\s+(.*?)(?=BU FİLM ÖZETİ|HATA BİLDİR|FRAGMAN|ÖNE ÇIKAN OYUNCULAR|YÖNETMEN|ÜLKE\\s)", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(text)?.groupValues?.get(1) ?: return null
+        val cleaned = section.replace(Regex("^Türü\\s*:\\s*.*?(?=ÇEVİRİ\\s*:)", RegexOption.IGNORE_CASE), "").replace(Regex("^ÇEVİRİ\\s*:\\s*.*?(?=[A-ZÇĞİÖŞÜ][a-zçğıöşü])", RegexOption.IGNORE_CASE), "").replace(Regex("\\s+"), " ").trim()
+        return cleaned.takeIf { it.length >= 10 }
+    }
 
     override suspend fun load(url: String): LoadResponse? {
         val doc = runCatching { app.get(url, referer = "$mainUrl/", headers = headers(), interceptor = interceptor).document }.getOrNull() ?: return null
         val text = body(doc); val title = detailTitle(doc, url) ?: return null
         val poster = fix(doc.selectFirst("meta[property='og:image'],meta[name='twitter:image']")?.attr("content")) ?: doc.selectFirst("article,.movie-detail,.film-detail")?.poster()
         val year = Regex("YAPIM YILI\\s+(\\d{4})", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: Regex("\\b(19|20)\\d{2}\\b").find(title)?.value?.toIntOrNull()
-        val imdb = Regex("IMDB\\s+PUANI\\s+([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)
+        val imdb = doc.selectFirst(".imdb-score, .puan, [itemprop='ratingValue']")?.text() ?: Regex("IMDB\\s*(?:PUANI|Puanı)?\\s*([0-9]+(?:[.,][0-9]+)?)", RegexOption.IGNORE_CASE).find(text)?.groupValues?.get(1)
         val duration = Regex("SÜRE\\s+(\\d+)\\s*dk", RegexOption.IGNORE_CASE).find(text)?.groupValues?.getOrNull(1)?.toIntOrNull()
-        val tag = genres(doc, text); val cast = actors(doc); val rec = results(doc); val p = plot(doc, text)
+        val tag = genres(doc, text); val cast = actors(doc); val rec = results(doc).ifEmpty { results(app.get("$mainUrl/film", referer = "$mainUrl/").document) }; val p = plot(doc, text)
         if (url.contains("/dizi/", true) || doc.selectFirst(".episodes,.episode-list,.seasons") != null) {
             val eps = doc.select("a[href*='/dizi/'],a[href*='sezon'],a[href*='bolum'],.episode a,.episodes a,.episode-list a").mapNotNull { a -> val u = fix(a.attr("href")) ?: return@mapNotNull null; val t = "${a.text()} ${a.attr("title")}"; val ss = Regex("(?:s|sezon[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull(); val ee = Regex("(?:e|bölüm[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull(); if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee } }.distinctBy { it.data }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) { posterUrl=poster; this.year=year; plot=p; tags=tag; score=Score.from10(imdb); this.duration=duration; addActors(cast); recommendations=rec }
@@ -488,22 +493,42 @@ class HintFilmIzle : MainAPI() {
     override suspend fun loadLinks(data:String,isCasting:Boolean,subtitleCallback:(SubtitleFile)->Unit,callback:(ExtractorLink)->Unit):Boolean {
         val doc=runCatching{app.get(data,referer="$mainUrl/",headers=headers(),interceptor=interceptor).document}.getOrNull()?:return false
         val players=linkedSetOf<String>();fun add(value:String?){player(value,data)?.let{players.add(it)}}
-        documentFrames(doc,data,::add);var found=false
+        documentFrames(doc,data,::add)
+        
+        var linkCount = 0
+        val wrappedCallback: (ExtractorLink) -> Unit = { link ->
+            linkCount++
+            callback(link)
+        }
+
         val ctx = HintFilmIzlePlugin.pluginContext
         for(p in players){
-            if (p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) || p.contains("kinescopecdn", true)) {
+            if (p.contains("player.hintfilmizle.com", true) || p.contains("kinescope", true) || p.contains("kinescopecdn", true) || p.contains("embed", true)) {
                 if (ctx != null) {
                     runCatching {
-                        HintFilmIzleWebViewExtractor(ctx, name).getUrl(p, data, subtitleCallback, callback)
-                        found = true
+                        HintFilmIzleWebViewExtractor(ctx, name).getUrl(p, data, subtitleCallback, wrappedCallback)
                     }
                 }
-                if (kinescope(p, data, subtitleCallback, callback)) found = true
+                runCatching {
+                    kinescope(p, data, subtitleCallback, wrappedCallback)
+                }
             } else {
-                if (loadExtractor(p, data, subtitleCallback, callback)) found = true
+                runCatching {
+                    loadExtractor(p, data, subtitleCallback, wrappedCallback)
+                }
             }
         }
-        return found
+
+        if (linkCount == 0) {
+            doc.select("iframe").forEach { iframe ->
+                val src = fix(iframe.attr("src").ifBlank { iframe.attr("data-src") }, data)
+                if (!src.isNullOrBlank()) {
+                    runCatching { loadExtractor(src, data, subtitleCallback, wrappedCallback) }
+                }
+            }
+        }
+
+        return linkCount > 0
     }
 
     private fun extractKinescopeId(url: String): String? {
