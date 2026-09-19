@@ -49,22 +49,23 @@ class FilmModu : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}?page=${page}").document
-        val home     = document.select("div.movie").mapNotNull { it.toMainPageResult() }
+        val document = app.get("${request.data}?page=${page}", referer = "$mainUrl/").document
+        val home     = document.select("div.movie, div.movie-large").mapNotNull { it.toMainPageResult() }
 
         return newHomePageResponse(request.name, home)
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val title     = this.selectFirst("a")?.text() ?: return null
+        val title     = this.selectFirst("a")?.text()?.ifEmpty { null } ?: this.selectFirst("img")?.attr("alt") ?: return null
         val href      = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: return null
-        val posterUrl = fixUrlNull(this.selectFirst("picture img")?.attr("data-src"))
+        val posterImg = this.selectFirst("picture img") ?: this.selectFirst("img")
+        val posterUrl = fixUrlNull(posterImg?.attr("data-src")?.ifEmpty { null } ?: posterImg?.attr("src"))
 
         return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val document = app.get("${mainUrl}/film-ara?term=${query}").document
+        val document = app.get("${mainUrl}/film-ara?term=${query}", referer = "$mainUrl/").document
 
         return document.select("div.movie").mapNotNull { it.toMainPageResult() }
     }
@@ -72,7 +73,7 @@ class FilmModu : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, referer = "$mainUrl/").document
 
         val orgTitle    = document.selectFirst("div.titles h1")?.text()?.trim() ?: return null
         val altTitle    = document.selectFirst("div.titles h2")?.text()?.trim() ?: ""
@@ -96,18 +97,26 @@ class FilmModu : MainAPI() {
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("FLMMD", "data » $data")
-        val document = app.get(data).document
+        val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+        val mainResp = app.get(data, referer = "$mainUrl/", headers = mapOf("User-Agent" to userAgent))
+        val document = mainResp.document
 
         document.select("div.alternates a").forEach {
             val altLink = fixUrlNull(it.attr("href")) ?: return@forEach
             val altName = it.text()
-            if (altName == "Fragman") return@forEach
+            if (altName.contains("Fragman", ignoreCase = true) || altName.contains("Trailer", ignoreCase = true)) return@forEach
 
-            val altReq  = app.get(altLink)
+            val altReq  = app.get(altLink, referer = data, headers = mapOf("User-Agent" to userAgent))
+            val altCookies = altReq.headers.values("Set-Cookie").joinToString("; ") { it.substringBefore(";") }
+
             val vidId   = Regex("""var videoId = '(.*)'""").find(altReq.text)?.groupValues?.get(1) ?: return@forEach
             val vidType = Regex("""var videoType = '(.*)'""").find(altReq.text)?.groupValues?.get(1) ?: return@forEach
 
-            val vidReq = app.get("${mainUrl}/get-source?movie_id=${vidId}&type=${vidType}").parsedSafe<GetSource>() ?: return@forEach
+            val sourceReq = app.get("${mainUrl}/get-source?movie_id=${vidId}&type=${vidType}", referer = altLink, headers = mapOf("User-Agent" to userAgent, "X-Requested-With" to "XMLHttpRequest"))
+            val sourceCookies = sourceReq.headers.values("Set-Cookie").joinToString("; ") { it.substringBefore(";") }
+            val cookies = listOf(altCookies, sourceCookies).filter { it.isNotBlank() }.joinToString("; ")
+
+            val vidReq = sourceReq.parsedSafe<GetSource>() ?: return@forEach
 
             if (vidReq.subtitle != null) {
                 subtitleCallback.invoke(
@@ -126,9 +135,14 @@ class FilmModu : MainAPI() {
                         url     = fixUrl(source.src),
                         type    = ExtractorLinkType.M3U8
                     ) {
-                       headers = mapOf("Referer" to "${mainUrl}/")
-                       quality = getQualityFromName(source.label)
-            }
+                        quality = getQualityFromName(source.label)
+                        headers = mapOf(
+                            "Referer" to "${mainUrl}/",
+                            "Origin" to mainUrl,
+                            "User-Agent" to userAgent,
+                            if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                        ).filterKeys { it.isNotBlank() }
+                    }
                 )
             }
         }
