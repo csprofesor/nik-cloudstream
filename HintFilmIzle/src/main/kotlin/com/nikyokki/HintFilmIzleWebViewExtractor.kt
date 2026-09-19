@@ -3,6 +3,7 @@ package com.nikyokki
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
+import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -19,6 +20,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.concurrent.atomic.AtomicBoolean
 
 class HintFilmIzleWebViewExtractor(private val context: Context, private val pluginName: String) : ExtractorApi() {
     override val name = "HintFilmİzle WebView"
@@ -35,6 +37,8 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
         callback: (ExtractorLink) -> Unit
     ) {
         Log.d("HintFilmIzleWebView", "WEBVIEW_EXTRACTOR_START=$url")
+        val foundStream = AtomicBoolean(false)
+
         withContext(Dispatchers.Main) {
             webView = WebView(context).apply {
                 settings.apply {
@@ -47,28 +51,23 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                     userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                 }
 
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView?,
-                        request: WebResourceRequest?
-                    ): WebResourceResponse? {
-                        val reqUrl = request?.url?.toString() ?: ""
-                        if (reqUrl.contains("m3u8", true) || reqUrl.contains("mp4", true) || reqUrl.contains("playlist", true) || reqUrl.contains("api", true) || reqUrl.contains("manifest", true)) {
-                            Log.d("HintFilmIzleWebView", "WEBVIEW_INTERCEPTED=$reqUrl")
-                        }
+                addJavascriptInterface(object : Any() {
+                    @JavascriptInterface
+                    fun onStreamFound(body: String, reqUrl: String) {
+                        Log.d("HintFilmIzleWebView", "BRIDGE_FOUND: $reqUrl")
+                        val m3u8 = Regex("https?://[^\"'\\s<>]+(?:\\.m3u8|playlist|manifest|hls)[^\"'\\s<>]*", RegexOption.IGNORE_CASE).find(body)?.value 
+                            ?: Regex("https?://[^\"'\\s<>]+(?:\\.m3u8|playlist|manifest|hls)[^\"'\\s<>]*", RegexOption.IGNORE_CASE).find(reqUrl)?.value
+                            ?: reqUrl
 
-                        if (reqUrl.contains(".m3u8", true) || (reqUrl.contains(".mp4", true) && !reqUrl.contains("ads", true)) || reqUrl.contains("playlist", true) || reqUrl.contains("manifest", true)) {
-                            Log.d("HintFilmIzleWebView", "FOUND_STREAM_URL=$reqUrl")
-                            val isM3u8 = reqUrl.contains(".m3u8", true) || reqUrl.contains("playlist", true) || reqUrl.contains("manifest", true)
-                            val type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
-                            
+                        if ((m3u8.contains("m3u8", true) || m3u8.contains("playlist", true) || m3u8.contains("manifest", true) || m3u8.contains("hls", true)) && !foundStream.getAndSet(true)) {
+                            Log.d("HintFilmIzleWebView", "EMITTING_STREAM=$m3u8")
                             GlobalScope.launch(Dispatchers.IO) {
                                 callback.invoke(
                                     newExtractorLink(
                                         source = pluginName,
                                         name = pluginName,
-                                        url = reqUrl,
-                                        type = type
+                                        url = m3u8,
+                                        type = ExtractorLinkType.M3U8
                                     ) {
                                         this.quality = Qualities.P1080.value
                                         this.headers = mapOf("Referer" to mainUrl, "Origin" to "https://kinescope.io")
@@ -76,11 +75,66 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                                 )
                             }
                         }
+                    }
+                }, "AndroidBridge")
 
-                        if (reqUrl.contains("yandex.ru") || reqUrl.contains("googletagmanager") || reqUrl.contains("ads") || reqUrl.contains("analytics")) {
-                            return WebResourceResponse("text/plain", "UTF-8", null)
+                webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        val js = """
+                            (function() {
+                                const originalFetch = window.fetch;
+                                window.fetch = async function(...args) {
+                                    const response = await originalFetch.apply(this, args);
+                                    try {
+                                        const clone = response.clone();
+                                        const text = await clone.text();
+                                        if (text.includes('m3u8') || text.includes('playlist') || text.includes('manifest') || text.includes('hls')) {
+                                            window.AndroidBridge.onStreamFound(text, response.url);
+                                        }
+                                    } catch(e) {}
+                                    return response;
+                                };
+                                
+                                const originalXHR = window.XMLHttpRequest.prototype.open;
+                                window.XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                                    this.addEventListener('load', function() {
+                                        try {
+                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('playlist') || this.responseText.includes('manifest'))) {
+                                                window.AndroidBridge.onStreamFound(this.responseText, url);
+                                            }
+                                        } catch(e) {}
+                                    });
+                                    return originalXHR.apply(this, [method, url, ...args]);
+                                };
+                            })();
+                        """.trimIndent()
+                        view?.evaluateJavascript(js, null)
+                    }
+
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        request: WebResourceRequest?
+                    ): WebResourceResponse? {
+                        val reqUrl = request?.url?.toString() ?: ""
+                        if (reqUrl.contains(".m3u8", true) || reqUrl.contains("playlist", true) || reqUrl.contains("manifest", true) || reqUrl.contains("hls", true)) {
+                            Log.d("HintFilmIzleWebView", "INTERCEPTED_REQ=$reqUrl")
+                            if (!foundStream.getAndSet(true)) {
+                                GlobalScope.launch(Dispatchers.IO) {
+                                    callback.invoke(
+                                        newExtractorLink(
+                                            source = pluginName,
+                                            name = pluginName,
+                                            url = reqUrl,
+                                            type = ExtractorLinkType.M3U8
+                                        ) {
+                                            this.quality = Qualities.P1080.value
+                                            this.headers = mapOf("Referer" to mainUrl, "Origin" to "https://kinescope.io")
+                                        }
+                                    )
+                                }
+                            }
                         }
-
                         return super.shouldInterceptRequest(view, request)
                     }
                 }
