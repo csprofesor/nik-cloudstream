@@ -297,22 +297,35 @@ class HintFilmIzle : MainAPI() {
     }
 
     private fun parseKinescopeApiJson(resp: String): String? {
+        Log.d("HintFilmIzle", "KINE_RESP_PREVIEW=${resp.take(300)}")
         val json = runCatching { JSONObject(resp) }.getOrNull() ?: return null
         val data = json.optJSONObject("data") ?: json
-        data.optJSONObject("files")?.optString("hls")?.takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
-        data.optString("source").takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
-        data.optString("url").takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
-        val sources = data.optJSONArray("sources")
-        if (sources != null) {
-            for (i in 0 until sources.length()) {
-                val src = sources.optJSONObject(i)
-                val url = src?.optString("url") ?: src?.optString("file")
-                if (!url.isNullOrBlank()) {
-                    normalizeKinescopeValue(url)?.let { return it }
+        Log.d("HintFilmIzle", "KINE_DATA_KEYS=${data.keys().asSequence().toList()}")
+        
+        val files = data.optJSONObject("files")
+        if (files != null) {
+            Log.d("HintFilmIzle", "KINE_FILES_KEYS=${files.keys().asSequence().toList()}")
+            files.optString("hls").takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+            files.optString("dash").takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+            files.optString("mp4").takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+        }
+        
+        listOf("master_playlist", "playlist", "hls", "dash", "link", "url", "stream").forEach { key ->
+            data.optString(key).takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+        }
+        
+        listOf("outputs", "streams", "variants", "sources", "quality").forEach { containerKey ->
+            val arr = data.optJSONArray(containerKey)
+            if (arr != null) {
+                for (i in 0 until arr.length()) {
+                    val item = arr.optJSONObject(i) ?: continue
+                    listOf("url", "file", "src", "link", "hls", "playlist").forEach { subKey ->
+                        item.optString(subKey).takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+                    }
                 }
             }
         }
-        json.optJSONObject("files")?.optString("hls")?.takeIf { it.isNotBlank() }?.let { return normalizeKinescopeValue(it) }
+        
         return null
     }
     private fun decodeKinescopeManifestResponse(responseBody: String): String? {
