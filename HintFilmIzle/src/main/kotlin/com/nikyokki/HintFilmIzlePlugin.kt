@@ -35,6 +35,7 @@ import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
@@ -343,9 +344,7 @@ class HintFilmIzle : MainAPI() {
             }
         }
 
-        val id = Regex("/embed/([A-Za-z0-9_-]+)|v=([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.let { it.groupValues[1].ifBlank { it.groupValues[2] } } ?: run {
-            Regex("kinescope\\.(?:io|net)/(?:embed/)?([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(embedUrl)?.groupValues?.get(1)
-        } ?: return false
+        val id = extractKinescopeId(embedUrl) ?: extractKinescopeId(kine) ?: return false
 
         val targets = buildList {
             add("https://kinescope.io/api/v1/videos/$id")
@@ -432,12 +431,44 @@ class HintFilmIzle : MainAPI() {
         return found
     }
 
-    private fun documentFrames(doc: Document, base:String, add:(String?)->Unit){
-        doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach{e->listOf(e.attr("data-frame"),e.attr("src"),e.attr("data-src"),e.attr("data-url"),e.attr("data-iframe")).forEach(add)}
-        doc.select("a[data-url], a[data-embed], a[data-video], a[data-src], button[data-url], button[data-embed], button[data-video], button[data-src], .alternatifler a, .player-tabs a, .server-tabs a").forEach{e->listOf(e.attr("data-url"),e.attr("data-embed"),e.attr("data-video"),e.attr("data-src"),e.attr("href")).forEach(add)}
-        doc.select("[data-publisher-id][data-id]").forEach{e->val pub=e.attr("data-publisher-id").trim();val id=e.attr("data-id").trim();if(pub.isNotBlank()&&id.isNotBlank())add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr")}
-        doc.select("script").forEach{s->
-            Regex("https?://[^\\\"'\\s<>]+",RegexOption.IGNORE_CASE).findAll(s.data()).forEach{add(it.value)}
+    private fun extractKinescopeId(url: String): String? {
+        val cleaned = url.substringBefore("?").trimEnd('/')
+        val uuidMatch = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", RegexOption.IGNORE_CASE).find(cleaned)
+        if (uuidMatch != null) return uuidMatch.value
+        val m = Regex("/embed/([A-Za-z0-9_-]+)|v=([A-Za-z0-9_-]+)", RegexOption.IGNORE_CASE).find(cleaned)
+        if (m != null) return m.groupValues[1].ifBlank { m.groupValues[2] }
+        return cleaned.substringAfterLast('/').takeIf { it.isNotBlank() && it != "embed" && it != "videos" && it != "api" }
+    }
+
+    private suspend fun documentFrames(doc: Document, base: String, add: (String?) -> Unit) {
+        doc.select("[data-frame], iframe[src], iframe[data-src], iframe[data-url], iframe[data-iframe], frame[src], video[src], video[data-src], video[data-url], video source[src], video source[data-src]").forEach { e -> listOf(e.attr("data-frame"), e.attr("src"), e.attr("data-src"), e.attr("data-url"), e.attr("data-iframe")).forEach(add) }
+        doc.select("a[data-url], a[data-embed], a[data-video], a[data-src], a[data-link], button[data-url], button[data-embed], button[data-video], button[data-src], button[data-link], .alternatifler a, .player-tabs a, .server-tabs a, .partlar a, .bolumler a").forEach { e -> listOf(e.attr("data-url"), e.attr("data-embed"), e.attr("data-video"), e.attr("data-src"), e.attr("data-link"), e.attr("href")).forEach(add) }
+        doc.select("[data-publisher-id][data-id]").forEach { e -> val pub = e.attr("data-publisher-id").trim(); val id = e.attr("data-id").trim(); if (pub.isNotBlank() && id.isNotBlank()) add("https://river-3-329.kinescopecdn.net/$pub/embed/$id?design=3&lang=tr") }
+
+        val postId = doc.selectFirst("[data-post], [data-post-id], [data-id], input[name='post_id']")?.attr("value")
+            ?: doc.selectFirst("[data-post], [data-post-id], [data-id]")?.attr("data-post")
+            ?: doc.selectFirst("[data-post], [data-post-id], [data-id]")?.attr("data-id")
+
+        if (!postId.isNullOrBlank()) {
+            runCatching {
+                val ajaxResp = app.post(
+                    "$mainUrl/wp-admin/admin-ajax.php",
+                    referer = base,
+                    headers = headers() + mapOf("X-Requested-With" to "XMLHttpRequest"),
+                    data = mapOf("action" to "get_embed", "post_id" to postId, "id" to postId)
+                ).text
+                if (ajaxResp.isNotBlank()) {
+                    val ajaxDoc = Jsoup.parse(ajaxResp)
+                    ajaxDoc.select("iframe[src], iframe[data-src], [data-url]").forEach { e ->
+                        add(e.attr("src").ifBlank { e.attr("data-src") }.ifBlank { e.attr("data-url") })
+                    }
+                    Regex("https?://[^\\\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(ajaxResp).forEach { add(it.value) }
+                }
+            }
+        }
+
+        doc.select("script").forEach { s ->
+            Regex("https?://[^\\\"'\\s<>]+", RegexOption.IGNORE_CASE).findAll(s.data()).forEach { add(it.value) }
             val scriptData = s.data()
             if (scriptData.contains("var cfg =") && scriptData.contains("playerId")) {
                 val idMatch = Regex(""""playerId"\s*:\s*"([^"]+)"""").find(scriptData)
