@@ -2,6 +2,7 @@ package com.nikyokki
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.util.Log
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
@@ -33,6 +34,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
+        Log.d("HintFilmIzleWebView", "WEBVIEW_EXTRACTOR_START=$url")
         withContext(Dispatchers.Main) {
             webView = WebView(context).apply {
                 settings.apply {
@@ -48,8 +50,10 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                         request: WebResourceRequest?
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
+                        Log.d("HintFilmIzleWebView", "WEBVIEW_REQ=$reqUrl")
 
                         if (reqUrl.contains(".m3u8", true) || (reqUrl.contains(".mp4", true) && !reqUrl.contains("ads", true))) {
+                            Log.d("HintFilmIzleWebView", "FOUND_STREAM_URL=$reqUrl")
                             val isM3u8 = reqUrl.contains(".m3u8", true)
                             val type = if (isM3u8) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                             
@@ -86,8 +90,9 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
             try {
                 webView?.destroy()
                 webView = null
+                Log.d("HintFilmIzleWebView", "WEBVIEW_EXTRACTOR_DESTROYED")
             } catch (e: Exception) {
-                // Ignore
+                Log.e("HintFilmIzleWebView", "WEBVIEW_DESTROY_ERROR", e)
             }
         }
     }
