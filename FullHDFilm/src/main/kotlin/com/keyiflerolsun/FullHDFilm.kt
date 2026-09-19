@@ -2,7 +2,6 @@
 
 package com.keyiflerolsun
 
-import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
@@ -164,46 +163,6 @@ class FullHDFilm : MainAPI() {
         }
     }
 
-    private fun getIframe(sourceCode: String): String {
-        // Base64 kodlu iframe'i içeren script bloğunu yakala
-        val base64ScriptRegex = Regex("""<script[^>]*>(PCEtLWJhc2xpazp[^<]*)</script>""")
-        val base64Encoded = base64ScriptRegex.find(sourceCode)?.groupValues?.get(1) ?: return ""
-    
-        return try {
-            // Base64 decode
-            val decodedHtml = String(Base64.decode(base64Encoded, Base64.DEFAULT), Charsets.UTF_8)
-            // Decode edilmiş HTML içinden iframe src'sini bul
-            val iframeMatch = Regex("""src=["']([^"']+)["']""").find(decodedHtml)
-            iframeMatch?.groupValues?.get(1) ?: ""
-        } catch (e: Exception) {
-            Log.e("FHDF", "Base64 decode error", e)
-            ""
-        }
-    }
-
-    private fun extractSubtitleUrl(sourceCode: String): String? {
-        val patterns = listOf(
-            Pattern.compile("var playerjsSubtitle = \"\\[Türkçe\\](https?://[^\\s\"]+?\\.srt)\""),
-            Pattern.compile("var playerjsSubtitle = \"(https?://[^\\s\"]+?\\.srt)\""),
-            Pattern.compile("subtitle:\\s*\"(https?://[^\\s\"]+?\\.srt)\"")
-        )
-        for (pattern in patterns) {
-            val matcher = pattern.matcher(sourceCode)
-            if (matcher.find()) return matcher.group(1)
-        }
-        return null
-    }
-
-    private suspend fun extractSubtitleFromIframe(iframeUrl: String): String? {
-        if (iframeUrl.isEmpty()) return null
-        return try {
-            val iframeResponse = app.get(iframeUrl, headers = headers)
-            extractSubtitleUrl(iframeResponse.text)
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     override suspend fun loadLinks(
         data: String,
         isCasting: Boolean,
@@ -212,100 +171,33 @@ class FullHDFilm : MainAPI() {
     ): Boolean {
         val mainDoc = app.get(data, headers = headers, interceptor = interceptor).document
         
-        // Dublaj/Altyazı alternatiflerini bul
         val pageLinks = mutableListOf<Pair<String, String>>()
-        pageLinks.add("Ana Sunucu" to data) // Mevcut sayfa (genellikle dublaj)
+        val firstPartName = mainDoc.selectFirst("div.keremiya_part span")?.text()?.trim() ?: "Tek Part"
+        pageLinks.add(firstPartName to data)
 
-        // Diğer sayfaları (altyazı vb.) bul
-        mainDoc.select("div#action-parts a[href]").forEach {
-            val href = it.attr("href")
-            val linkText = it.text().trim()
-            if (href.contains("?page=")) {
-                val linkUrl = if (href.startsWith("?")) {
-                    "${data.split("?")[0].removeSuffix("/")}$href"
-                } else {
-                    fixUrlNull(href)
-                }
-                if (linkUrl != null && !pageLinks.any { p -> p.second == linkUrl }) {
-                    pageLinks.add(linkText to linkUrl)
-                }
+        mainDoc.select("div.keremiya_part a[href], .post-page-numbers[href]").forEach {
+            val href = fixUrlNull(it.attr("href")) ?: return@forEach
+            val partName = it.text().trim()
+            if (!pageLinks.any { p -> p.second == href }) {
+                pageLinks.add((if (partName.isNotBlank()) partName else "Alternatif") to href)
             }
         }
 
-        Log.d("FHDF", "Pages to process: ${pageLinks.map { it.second }}")
+        Log.d("FullHDFilm", "Pages/Parts to process: ${pageLinks.map { it.second }}")
         var foundLinks = false
 
         for ((name, pageUrl) in pageLinks) {
-            val sourceName = if (name.isBlank() || name == "Ana Sunucu") "Vidpapi" else "Vidpapi - $name"
-            
             try {
-                val response = app.get(pageUrl, headers = headers, interceptor = interceptor)
-                val sourceCode = response.text
+                val doc = if (pageUrl == data) mainDoc else app.get(pageUrl, headers = headers, interceptor = interceptor).document
+                val iframeSrc = fixUrlNull(doc.selectFirst("div.video-content iframe, iframe")?.attr("src")) ?: continue
 
-                // Ana sayfadan altyazı URL’sini çek
-                var subtitleUrl = extractSubtitleUrl(sourceCode)
+                Log.d("FullHDFilm", "Found iframe for $name: $iframeSrc")
 
-                // Iframe’den URL’yi çek
-                val iframeSrc = getIframe(sourceCode)
-                Log.d("FHDF", "iframeSrc for $pageUrl: $iframeSrc")
-
-                if (subtitleUrl == null && iframeSrc.isNotEmpty()) {
-                    subtitleUrl = extractSubtitleFromIframe(iframeSrc)
-                }
-
-                // Altyazı bulunduysa ekle
-                if (subtitleUrl != null) {
-                    try {
-                        val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects = true, interceptor = interceptor)
-                        if (subtitleResponse.isSuccessful) {
-                            @Suppress("DEPRECATION")
-                            subtitleCallback(SubtitleFile("Türkçe", subtitleUrl))
-                            Log.d("FHDF", "Subtitle added: $subtitleUrl")
-                        }
-                    } catch (e: Exception) {
-                        Log.d("FHDF", "Subtitle URL error: ${e.message}")
-                    }
-                }
-
-                if (iframeSrc.contains("vidpapi.xyz")) {
-                    val videoId = iframeSrc.split("/").lastOrNull() ?: continue
-                    val iframeResponse = app.get(iframeSrc, headers = headers, interceptor = interceptor)
-                    
-                    val fpCookie = iframeResponse.cookies["fireplayer_player"] ?: ""
-                    Log.d("FHDF", "Vidpapi cookie: $fpCookie")
-
-                    val apiURL = "https://vidpapi.xyz/player/index.php?data=$videoId&do=getVideo"
-                    val apiHeaders = mapOf(
-                        "User-Agent" to headers["User-Agent"]!!,
-                        "Referer" to iframeSrc,
-                        "X-Requested-With" to "XMLHttpRequest",
-                        "Content-Type" to "application/x-www-form-urlencoded; charset=UTF-8",
-                        "Cookie" to "fireplayer_player=$fpCookie"
-                    )
-
-                    val apiResponse = app.post(apiURL, headers = apiHeaders, data = mapOf("data" to videoId, "do" to "getVideo"))
-                    val securedLink = Regex("""securedLink":"([^"]+)""").find(apiResponse.text)?.groupValues?.get(1)?.replace("\\/", "/")
-                    
-                    if (securedLink != null && securedLink.isNotBlank()) {
-                        Log.d("FHDF", "Found M3U8: $securedLink")
-                        callback(newExtractorLink(
-                            sourceName,
-                            sourceName,
-                            securedLink,
-                            type = ExtractorLinkType.M3U8
-                        ) {
-                            referer = mainUrl
-                        })
-                        foundLinks = true
-                    }
-                } else if (iframeSrc.isNotEmpty()) {
-                    // Diğer extractors (vidmoly vb.)
-                    if (loadExtractor(iframeSrc, data, subtitleCallback, callback)) {
-                        foundLinks = true
-                    }
+                if (loadExtractor(iframeSrc, data, subtitleCallback, callback)) {
+                    foundLinks = true
                 }
             } catch (e: Exception) {
-                Log.e("FHDF", "Error loading links for $pageUrl", e)
+                Log.e("FullHDFilm", "Error loading links for $pageUrl", e)
             }
         }
 
