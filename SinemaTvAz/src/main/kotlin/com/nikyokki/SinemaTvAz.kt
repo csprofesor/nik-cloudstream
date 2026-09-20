@@ -58,12 +58,16 @@ class SinemaTvAz : MainAPI() {
         return if (type == TvType.Movie) {
             newMovieSearchResponse(title, href, type) { 
                 this.posterUrl = posterUrl 
-                this.posterHeaders = browserHeaders
+                if (posterUrl?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
             }
         } else {
             newTvSeriesSearchResponse(title, href, type) { 
                 this.posterUrl = posterUrl 
-                this.posterHeaders = browserHeaders
+                if (posterUrl?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
             }
         }
     }
@@ -93,12 +97,16 @@ class SinemaTvAz : MainAPI() {
         return if (tvType == TvType.Movie) {
             newMovieSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                this.posterHeaders = browserHeaders
+                if (posterUrl?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
             }
         } else {
             newTvSeriesSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                this.posterHeaders = browserHeaders
+                if (posterUrl?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
             }
         }
     }
@@ -124,7 +132,9 @@ class SinemaTvAz : MainAPI() {
         return if (isSeries) {
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, emptyList()) {
                 this.posterUrl       = poster
-                this.posterHeaders   = browserHeaders
+                if (poster?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
                 this.plot            = description
                 this.year            = year
                 this.tags            = tags
@@ -135,7 +145,9 @@ class SinemaTvAz : MainAPI() {
         } else {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl       = poster
-                this.posterHeaders   = browserHeaders
+                if (poster?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
                 this.plot            = description
                 this.year            = year
                 this.tags            = tags
@@ -157,12 +169,16 @@ class SinemaTvAz : MainAPI() {
         return if (tvType == TvType.Movie) {
             newMovieSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                this.posterHeaders = browserHeaders
+                if (posterUrl?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
             }
         } else {
             newTvSeriesSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                this.posterHeaders = browserHeaders
+                if (posterUrl?.contains("sinematv.az") == true) {
+                    this.posterHeaders = browserHeaders
+                }
             }
         }
     }
