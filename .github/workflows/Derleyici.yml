@@ -46,9 +46,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: SinemaTvAz Eklentisini Derle
+      - name: Tüm CloudStream Eklentilerini Derle
         working-directory: src
-        run: ./gradlew :SinemaTvAz:make --stacktrace
+        run: ./gradlew make --stacktrace
 
       - name: "'build' Derlemelerini Yükle"
         run: |
