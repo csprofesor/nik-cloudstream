@@ -847,7 +847,7 @@
             "csprofesor"
         ],
         "description": "SinemaTvAz - Az\u0259rbaycan dilind\u0259 filml\u0259r v\u0259 seriallar",
-        "fileSize": 29684,
+        "fileSize": 30542,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "az",
         "tvTypes": [
@@ -857,7 +857,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=sinematv.az&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-c12b88c854e7c164a5a1db6e006dd6d6d2560791e67026562323d274df0b2a7d"
+        "fileHash": "sha256-fec9a77a041a459d96c3cff0391adf04010add2f5d7ecd9d0cb83f0913fb63e4"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SineWix.cs3",
