@@ -5,7 +5,8 @@ import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 
-open class CloseLoadExtractor : ExtractorApi() {
+
+class CloseLoadExtractor : ExtractorApi() {
     override val mainUrl = "https://closeload.filmmakinesi.to"
     override val name = "CloseLoad"
     override val requiresReferer = true
@@ -75,16 +76,20 @@ open class CloseLoadExtractor : ExtractorApi() {
             return
         }
 
-        Log.d(name, "Master fetch deneniyor: $videoUrl")
-        try {
-            val masterResponse = app.get(videoUrl, referer = url, headers = mapOf(
-                "Accept" to "*/*",
-                "Origin" to mainUrl
-            ))
-            Log.d(name, "Master status: ${masterResponse.code}")
-        } catch (e: Exception) {
-            Log.w(name, "Master fetch hatası (önemsiz): ${e.message}")
+        Log.d(name, "Master fetch ediliyor: $videoUrl")
+        val masterResponse = app.get(videoUrl, referer = url, headers = mapOf(
+            "Accept" to "*/*",
+            "Origin" to "https://closeload.filmmakinesi.to"
+        ))
+        Log.d(name, "Master status: ${masterResponse.code}")
+
+        if (masterResponse.code != 200) {
+            Log.e(name, "Master 404/500!")
+            return
         }
+
+        val masterBody = masterResponse.text
+        Log.d(name, "Master body (ilk 500):\n${masterBody.take(500)}")
 
         val tracksMatch = Regex("""tracks:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(rawHtml)
         val tracksStr = tracksMatch?.groupValues?.get(1)
@@ -119,7 +124,7 @@ open class CloseLoadExtractor : ExtractorApi() {
                 this.quality = Qualities.Unknown.value
                 this.headers = mapOf(
                     "Accept" to "*/*",
-                    "Origin" to mainUrl
+                    "Origin" to "https://closeload.filmmakinesi.to"
                 )
             }
         )
@@ -291,24 +296,4 @@ open class CloseLoadExtractor : ExtractorApi() {
         var decoded = atob(value); decoded = decoded.reversed(); decoded = atob(decoded)
         return xorUnmix(decoded, 130, 10)
     }
-}
-
-class CloseLoadTo : CloseLoadExtractor() {
-    override val mainUrl = "https://closeload.filmmakinesi.to"
-}
-
-class CloseLoadFilm : CloseLoadExtractor() {
-    override val mainUrl = "https://closeload.filmmakinesi.film"
-}
-
-class CloseLoadDe : CloseLoadExtractor() {
-    override val mainUrl = "https://closeload.filmmakinesi.de"
-}
-
-class CloseLoadTv : CloseLoadExtractor() {
-    override val mainUrl = "https://closeload.filmmakinesi.tv"
-}
-
-class CloseLoadSh : CloseLoadExtractor() {
-    override val mainUrl = "https://closeload.filmmakinesi.sh"
 }
