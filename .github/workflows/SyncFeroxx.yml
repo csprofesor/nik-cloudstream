@@ -40,7 +40,7 @@ jobs:
           excluded = {
               '.git', '.github', 'gradle', '__Temel', 'CanliTV', 'OxAx',
               'SineWix', 'YouTube', 'NetflixMirror', 'HQPorner',
-              'HintFilmIzle',
+              'HintFilmIzle', 'RecTV',
               'DiziPalOriginal',
               'KONTROL.py', 'LICENSE', 'README.md', 'MiBox.md',
               '_config.yml', 'repo.json', 'settings.gradle.kts',
