@@ -195,17 +195,34 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                         super.onPageFinished(view, url)
                         val js = """
                             (function() {
-                                // Poll JWPlayer instance if present
+                                // Poll JWPlayer instance thoroughly
                                 setInterval(function() {
                                     try {
-                                        if (typeof jwplayer !== 'undefined' && jwplayer().getPlaylistItem) {
-                                            const item = jwplayer().getPlaylistItem();
-                                            if (item && item.file) {
-                                                window.AndroidBridge.onStreamFound(item.file, item.file);
+                                        if (typeof jwplayer !== 'undefined') {
+                                            const player = jwplayer();
+                                            if (player && player.getConfig) {
+                                                const cfg = player.getConfig();
+                                                if (cfg) {
+                                                    if (cfg.file) window.AndroidBridge.onStreamFound(cfg.file, cfg.file);
+                                                    if (cfg.playlist && cfg.playlist[0] && cfg.playlist[0].file) {
+                                                        window.AndroidBridge.onStreamFound(cfg.playlist[0].file, cfg.playlist[0].file);
+                                                    }
+                                                    if (cfg.sources) {
+                                                        cfg.sources.forEach(s => {
+                                                            if (s.file) window.AndroidBridge.onStreamFound(s.file, s.file);
+                                                        });
+                                                    }
+                                                }
+                                            }
+                                            if (player && player.getPlaylistItem) {
+                                                const item = player.getPlaylistItem();
+                                                if (item && item.file) {
+                                                    window.AndroidBridge.onStreamFound(item.file, item.file);
+                                                }
                                             }
                                         }
                                     } catch(e) {}
-                                }, 500);
+                                }, 200);
 
                                 const originalFetch = window.fetch;
                                 window.fetch = async function(...args) {
