@@ -148,42 +148,27 @@ class FilmMakinesi : MainAPI() {
         val document = app.get(data, referer = mainUrl).document
         Log.d(name, "Sayfa yüklendi")
 
-        var foundLinks = false
-
-        val videoParts = document.select(".video-parts a[data-video_url], .video-options a[data-video_url], div#action-parts a[href]")
+        val videoParts = document.select(".video-parts a[data-video_url]")
         Log.d(name, "Video part sayısı: ${videoParts.size}")
 
         if (videoParts.isNotEmpty()) {
             videoParts.forEachIndexed { index, part ->
-                val embedUrl = part.attr("data-video_url").ifBlank { part.attr("href") }
+                val embedUrl = part.attr("data-video_url")
                 val label = part.text().trim()
                 Log.d(name, "Part #$index - label: '$label', url: '$embedUrl'")
-                if (embedUrl.isNotBlank() && !embedUrl.startsWith("#")) {
-                    val targetUrl = fixUrl(embedUrl)
-                    if (targetUrl.contains("http")) {
-                        if (loadExtractor(targetUrl, data, subtitleCallback, callback)) {
-                            foundLinks = true
-                        }
-                    }
+                if (embedUrl.isNotBlank()) {
+                    loadExtractor(embedUrl, data, subtitleCallback, callback)
                 }
+            }
+        } else {
+            val iframeSrc = document.selectFirst(".after-player iframe")?.attr("data-src")
+            Log.d(name, "Fallback iframe: $iframeSrc")
+            if (iframeSrc != null) {
+                loadExtractor(iframeSrc, data, subtitleCallback, callback)
             }
         }
 
-        val iframes = document.select("iframe[data-src], div.player-div iframe, .after-player iframe, iframe")
-        iframes.forEach { iframe ->
-            val iframeSrc = iframe.attr("data-src").ifBlank { iframe.attr("src") }
-            Log.d(name, "Iframe src: $iframeSrc")
-            if (iframeSrc.isNotBlank() && !iframeSrc.contains("youtube.com") && !iframeSrc.contains("youtu.be")) {
-                val targetUrl = fixUrl(iframeSrc)
-                if (targetUrl.contains("http")) {
-                    if (loadExtractor(targetUrl, data, subtitleCallback, callback)) {
-                        foundLinks = true
-                    }
-                }
-            }
-        }
-
-        Log.d(name, "loadLinks tamamlandı, found: $foundLinks")
-        return foundLinks
+        Log.d(name, "loadLinks tamamlandı")
+        return true
     }
 }

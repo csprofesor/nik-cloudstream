@@ -5,7 +5,8 @@ import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 
-open class RapidExtractor : ExtractorApi() {
+
+class RapidExtractor : ExtractorApi() {
     override val mainUrl = "https://rapid.filmmakinesi.to"
     override val name = "Rapid"
     override val requiresReferer = true
@@ -309,24 +310,4 @@ open class RapidExtractor : ExtractorApi() {
             }
         }
     }
-}
-
-class RapidTo : RapidExtractor() {
-    override val mainUrl = "https://rapid.filmmakinesi.to"
-}
-
-class RapidFilm : RapidExtractor() {
-    override val mainUrl = "https://rapid.filmmakinesi.film"
-}
-
-class RapidDe : RapidExtractor() {
-    override val mainUrl = "https://rapid.filmmakinesi.de"
-}
-
-class RapidTv : RapidExtractor() {
-    override val mainUrl = "https://rapid.filmmakinesi.tv"
-}
-
-class RapidSh : RapidExtractor() {
-    override val mainUrl = "https://rapid.filmmakinesi.sh"
 }
