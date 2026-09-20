@@ -70,10 +70,10 @@ jobs:
                   data = []
               built = {p.stem: p for p in root.glob('*.cs3')}
               data = [item for item in data if isinstance(item, dict)]
-              data = [item for item in data if item.get('internalName') in built]
               for item in data:
-                  target = built.get(item.get('internalName', ''))
-                  if target:
+                  name = item.get('internalName')
+                  if name in built:
+                      target = built[name]
                       digest = hashlib.sha256(target.read_bytes()).hexdigest()
                       item['fileSize'] = target.stat().st_size
                       item['fileHash'] = f'sha256-{digest}'
