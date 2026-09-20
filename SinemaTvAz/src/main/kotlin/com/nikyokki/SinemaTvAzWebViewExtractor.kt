@@ -43,6 +43,14 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
         val src: String?
     )
 
+    data class CatalogEpisode(
+        val m3u8MasterFilePath: String?,
+        val episodeVariants: List<CatalogVariant>?
+    )
+    data class CatalogVariant(
+        val filepath: String?
+    )
+
     @SuppressLint("SetJavaScriptEnabled")
     override suspend fun getUrl(
         url: String,
@@ -107,6 +115,29 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                         } catch (e: Exception) {
                             Log.e("SinemaTvAzWebView", "JSON parsing failed", e)
                         }
+                    } else if (fixStream.contains("catalog-api/episodes")) {
+                        try {
+                            val jsonStr = app.get(fixStream, referer = mainUrl).text
+                            val episodes = parseJson<List<CatalogEpisode>>(jsonStr)
+                            episodes.firstOrNull()?.let { ep ->
+                                val masterPath = ep.m3u8MasterFilePath ?: ep.episodeVariants?.firstOrNull()?.filepath
+                                if (masterPath != null) {
+                                    callback.invoke(
+                                        newExtractorLink(
+                                            source = "SinemaTvAzWebView",
+                                            name = "SinemaTvAz",
+                                            url = masterPath,
+                                            type = if (masterPath.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                                        ) {
+                                            this.quality = Qualities.Unknown.value
+                                            this.headers = mapOf("Referer" to mainUrl)
+                                        }
+                                    )
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("SinemaTvAzWebView", "Catalog API parsing failed", e)
+                        }
                     } else {
                         callback.invoke(
                             newExtractorLink(
@@ -138,7 +169,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     @JavascriptInterface
                     fun onStreamFound(body: String, reqUrl: String) {
                         Log.d("SinemaTvAzWebView", "BRIDGE_FOUND: $reqUrl")
-                        val urls = Regex("https?://[^\"'\\s<>]+(?:\\.m3u8(?:\\?[^\"',\\s<>]*)?|\\.mp4(?:\\?[^\"',\\s<>]*)?|parsed\\.json(?:\\?[^\"',\\s<>]*)?)", RegexOption.IGNORE_CASE)
+                        val urls = Regex("https?://[^\"'\\s<>]+(?:\\.m3u8(?:\\?[^\"',\\s<>]*)?|\\.mp4(?:\\?[^\"',\\s<>]*)?|parsed\\.json(?:\\?[^\"',\\s<>]*)?|catalog-api/episodes(?:\\?[^\"',\\s<>]*)?)", RegexOption.IGNORE_CASE)
                             .findAll("$body $reqUrl")
                             .map { it.value }
                             .distinct()
@@ -161,7 +192,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                     try {
                                         const clone = response.clone();
                                         const text = await clone.text();
-                                        if (text.includes('m3u8') || text.includes('mp4') || text.includes('parsed.json') || response.url.includes('parsed.json')) {
+                                        if (text.includes('m3u8') || text.includes('mp4') || text.includes('parsed.json') || response.url.includes('parsed.json') || response.url.includes('catalog-api/episodes')) {
                                             window.AndroidBridge.onStreamFound(text, response.url);
                                         }
                                     } catch(e) {}
@@ -172,7 +203,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                 window.XMLHttpRequest.prototype.open = function(method, url, ...args) {
                                     this.addEventListener('load', function() {
                                         try {
-                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('mp4') || this.responseText.includes('parsed.json') || url.includes('parsed.json'))) {
+                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('mp4') || this.responseText.includes('parsed.json') || url.includes('parsed.json') || url.includes('catalog-api/episodes'))) {
                                                 window.AndroidBridge.onStreamFound(this.responseText, url);
                                             }
                                         } catch(e) {}
@@ -190,7 +221,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
 
-                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("parsed.json")) {
+                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("parsed.json") || reqUrl.contains("catalog-api/episodes")) {
                             emitStream(reqUrl)
                         }
 
