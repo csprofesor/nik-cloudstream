@@ -52,7 +52,7 @@ class SinemaTvAz : MainAPI() {
             else -> TvType.Movie
         }
 
-        val home = document.select("a.poster-item").mapNotNull { it.toMainPageResult(tvType) }
+        val home = document.select("div#dle-content a.poster-item").mapNotNull { it.toMainPageResult(tvType) }
         return newHomePageResponse(request.name, home)
     }
 
@@ -65,16 +65,12 @@ class SinemaTvAz : MainAPI() {
         return if (type == TvType.Movie) {
             newMovieSearchResponse(title, href, type) { 
                 this.posterUrl = posterUrl 
-                if (posterUrl?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders = browserHeaders
             }
         } else {
             newTvSeriesSearchResponse(title, href, type) { 
                 this.posterUrl = posterUrl 
-                if (posterUrl?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders = browserHeaders
             }
         }
     }
@@ -90,7 +86,7 @@ class SinemaTvAz : MainAPI() {
             )
         ).document
 
-        return document.select("a.poster-item").mapNotNull { it.toSearchResult() }
+        return document.select("div#dle-content a.poster-item, div.search-results a.poster-item, a.poster-item").mapNotNull { it.toSearchResult() }
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
@@ -104,16 +100,12 @@ class SinemaTvAz : MainAPI() {
         return if (tvType == TvType.Movie) {
             newMovieSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                if (posterUrl?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders = browserHeaders
             }
         } else {
             newTvSeriesSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                if (posterUrl?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders = browserHeaders
             }
         }
     }
@@ -132,16 +124,14 @@ class SinemaTvAz : MainAPI() {
         val actorsText      = document.selectFirst("div.line-clamp:contains(В ролях:)")?.ownText() ?: ""
         val actors          = actorsText.split(",").map { Actor(it.trim()) }.filter { it.name.isNotEmpty() }
         val trailer         = fixUrlNull(document.selectFirst("div.page__trailer iframe")?.attr("data-src") ?: document.selectFirst("div.page__trailer iframe")?.attr("src"))
-        val recommendations = document.select("a.poster-item").mapNotNull { it.toRecommendationResult() }
+        val recommendations = document.select("div#owl-related a.poster-item, div.sect__content a.poster-item").mapNotNull { it.toRecommendationResult() }
 
         val isSeries        = url.contains("/serial/") || document.select("select#season").isNotEmpty() || document.select("div.serial-tabs").isNotEmpty()
 
         return if (isSeries) {
             newTvSeriesLoadResponse(title, url, TvType.TvSeries, emptyList()) {
                 this.posterUrl       = poster
-                if (poster?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders   = browserHeaders
                 this.plot            = description
                 this.year            = year
                 this.tags            = tags
@@ -152,9 +142,7 @@ class SinemaTvAz : MainAPI() {
         } else {
             newMovieLoadResponse(title, url, TvType.Movie, url) {
                 this.posterUrl       = poster
-                if (poster?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders   = browserHeaders
                 this.plot            = description
                 this.year            = year
                 this.tags            = tags
@@ -176,16 +164,12 @@ class SinemaTvAz : MainAPI() {
         return if (tvType == TvType.Movie) {
             newMovieSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                if (posterUrl?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders = browserHeaders
             }
         } else {
             newTvSeriesSearchResponse(title, href, tvType) { 
                 this.posterUrl = posterUrl 
-                if (posterUrl?.contains("sinematv.az") == true) {
-                    this.posterHeaders = browserHeaders
-                }
+                this.posterHeaders = browserHeaders
             }
         }
     }
