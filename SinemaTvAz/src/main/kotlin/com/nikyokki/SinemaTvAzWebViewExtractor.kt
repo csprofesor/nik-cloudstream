@@ -189,6 +189,18 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                         super.onPageFinished(view, url)
                         val js = """
                             (function() {
+                                // Poll JWPlayer instance if present
+                                setInterval(function() {
+                                    try {
+                                        if (typeof jwplayer !== 'undefined' && jwplayer().getPlaylistItem) {
+                                            const item = jwplayer().getPlaylistItem();
+                                            if (item && item.file) {
+                                                window.AndroidBridge.onStreamFound(item.file, item.file);
+                                            }
+                                        }
+                                    } catch(e) {}
+                                }, 500);
+
                                 const originalFetch = window.fetch;
                                 window.fetch = async function(...args) {
                                     const response = await originalFetch.apply(this, args);
