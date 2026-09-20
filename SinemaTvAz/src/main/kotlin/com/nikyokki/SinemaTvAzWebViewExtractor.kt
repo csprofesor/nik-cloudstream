@@ -10,6 +10,8 @@ import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import com.lagradost.cloudstream3.SubtitleFile
+import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
@@ -28,6 +30,18 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
     override val requiresReferer = true
 
     private var webView: WebView? = null
+
+    data class ParsedJson(
+        val sources: List<ParsedSource>?
+    )
+    data class ParsedSource(
+        val link: String?,
+        val links: List<ParsedLink>?
+    )
+    data class ParsedLink(
+        val quality: String?,
+        val src: String?
+    )
 
     @SuppressLint("SetJavaScriptEnabled")
     override suspend fun getUrl(
@@ -49,17 +63,63 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
             if ((fixStream.startsWith("http://") || fixStream.startsWith("https://")) && !foundStream.getAndSet(true)) {
                 Log.d("SinemaTvAzWebView", "EMITTING_STREAM=$fixStream")
                 CoroutineScope(Dispatchers.IO).launch {
-                    callback.invoke(
-                        newExtractorLink(
-                            source = "SinemaTvAzWebView",
-                            name = "SinemaTvAz",
-                            url = fixStream,
-                            type = if (fixStream.contains(".m3u8", true) || fixStream.contains("playlist", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
-                        ) {
-                            this.quality = Qualities.Unknown.value
-                            this.headers = mapOf("Referer" to mainUrl)
+                    if (fixStream.contains("parsed.json")) {
+                        try {
+                            val jsonStr = app.get(fixStream, referer = mainUrl).text
+                            val parsed = parseJson<ParsedJson>(jsonStr)
+                            parsed.sources?.forEach { src ->
+                                src.link?.let { link ->
+                                    callback.invoke(
+                                        newExtractorLink(
+                                            source = "SinemaTvAzWebView",
+                                            name = "SinemaTvAz Auto",
+                                            url = link,
+                                            type = ExtractorLinkType.M3U8,
+                                        ) {
+                                            this.quality = Qualities.Unknown.value
+                                            this.headers = mapOf("Referer" to mainUrl)
+                                        }
+                                    )
+                                }
+                                src.links?.forEach { link ->
+                                    link.src?.let { srcLink ->
+                                        val qualityValue = when(link.quality) {
+                                            "1080" -> Qualities.P1080.value
+                                            "720" -> Qualities.P720.value
+                                            "480" -> Qualities.P480.value
+                                            "360" -> Qualities.P360.value
+                                            else -> Qualities.Unknown.value
+                                        }
+                                        callback.invoke(
+                                            newExtractorLink(
+                                                source = "SinemaTvAzWebView",
+                                                name = "SinemaTvAz ${link.quality}p",
+                                                url = srcLink,
+                                                type = if (srcLink.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                                            ) {
+                                                this.quality = qualityValue
+                                                this.headers = mapOf("Referer" to mainUrl)
+                                            }
+                                        )
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e("SinemaTvAzWebView", "JSON parsing failed", e)
                         }
-                    )
+                    } else {
+                        callback.invoke(
+                            newExtractorLink(
+                                source = "SinemaTvAzWebView",
+                                name = "SinemaTvAz",
+                                url = fixStream,
+                                type = if (fixStream.contains(".m3u8", true) || fixStream.contains("playlist", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                            ) {
+                                this.quality = Qualities.Unknown.value
+                                this.headers = mapOf("Referer" to mainUrl)
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -78,7 +138,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     @JavascriptInterface
                     fun onStreamFound(body: String, reqUrl: String) {
                         Log.d("SinemaTvAzWebView", "BRIDGE_FOUND: $reqUrl")
-                        val urls = Regex("https?://[^\"'\\s<>]+(?:\\.m3u8(?:\\?[^\"',\\s<>]*)?|\\.mp4(?:\\?[^\"',\\s<>]*)?|playlist[^\"'\\s<>]*)", RegexOption.IGNORE_CASE)
+                        val urls = Regex("https?://[^\"'\\s<>]+(?:\\.m3u8(?:\\?[^\"',\\s<>]*)?|\\.mp4(?:\\?[^\"',\\s<>]*)?|parsed\\.json(?:\\?[^\"',\\s<>]*)?)", RegexOption.IGNORE_CASE)
                             .findAll("$body $reqUrl")
                             .map { it.value }
                             .distinct()
@@ -101,7 +161,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                     try {
                                         const clone = response.clone();
                                         const text = await clone.text();
-                                        if (text.includes('m3u8') || text.includes('mp4') || text.includes('playlist') || text.includes('balancer')) {
+                                        if (text.includes('m3u8') || text.includes('mp4') || text.includes('parsed.json') || response.url.includes('parsed.json')) {
                                             window.AndroidBridge.onStreamFound(text, response.url);
                                         }
                                     } catch(e) {}
@@ -112,7 +172,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                 window.XMLHttpRequest.prototype.open = function(method, url, ...args) {
                                     this.addEventListener('load', function() {
                                         try {
-                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('mp4') || this.responseText.includes('playlist') || this.responseText.includes('balancer'))) {
+                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('mp4') || this.responseText.includes('parsed.json') || url.includes('parsed.json'))) {
                                                 window.AndroidBridge.onStreamFound(this.responseText, url);
                                             }
                                         } catch(e) {}
@@ -130,7 +190,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
 
-                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("playlist") || reqUrl.contains("balancer")) {
+                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("parsed.json")) {
                             emitStream(reqUrl)
                         }
 
