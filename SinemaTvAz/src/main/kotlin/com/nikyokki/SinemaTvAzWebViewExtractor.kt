@@ -164,6 +164,21 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
             url
         }
 
+        val finalUrl = withContext(Dispatchers.IO) {
+            try {
+                val doc = app.get(targetUrl, referer = referer ?: mainUrl).document
+                val iframeSrc = doc.selectFirst("iframe")?.attr("src")?.takeIf { it.isNotBlank() }
+                when {
+                    iframeSrc?.startsWith("//") == true -> "https:$iframeSrc"
+                    iframeSrc?.startsWith("http") == true -> iframeSrc
+                    iframeSrc != null -> "${mainUrl}${if (iframeSrc.startsWith("/")) "" else "/"}$iframeSrc"
+                    else -> targetUrl
+                }
+            } catch (_: Exception) {
+                targetUrl
+            }
+        }
+
         withContext(Dispatchers.Main) {
             webView = WebView(context).apply {
                 settings.apply {
@@ -267,7 +282,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     }
                 }
 
-                loadUrl(targetUrl)
+                loadUrl(finalUrl)
             }
         }
 
