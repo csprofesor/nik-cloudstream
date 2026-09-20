@@ -67,11 +67,8 @@ class CloseLoadExtractor : ExtractorApi() {
         if (videoUrl.isNullOrBlank()) {
             val jsonLdMatch = Regex(""""contentUrl"\s*:\s*"([^"]+)"""").find(rawHtml)
             videoUrl = jsonLdMatch?.groupValues?.get(1)
+                ?.replace(".txt", ".m3u8")
             Log.d(name, "Fallback JSON-LD contentUrl: $videoUrl")
-        }
-
-        if (videoUrl != null && videoUrl.endsWith(".txt")) {
-            videoUrl = videoUrl.replace(".txt", ".m3u8")
         }
 
         if (videoUrl.isNullOrBlank()) {
