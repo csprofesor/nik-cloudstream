@@ -46,17 +46,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: HintFilmIzle Kinescope + Reklam Engelleme
+      - name: SinemaTvAz Eklentisini Derle
         working-directory: src
-        run: python3 .github/hintfilmizle_kinescope_fix.py
-
-      - name: HintFilmIzle Derleme Kontrolü
-        working-directory: src
-        run: ./gradlew :HintFilmIzle:make --stacktrace
-
-      - name: Tüm Eklentileri Derle
-        working-directory: src
-        run: ./gradlew make --stacktrace
+        run: ./gradlew :SinemaTvAz:make --stacktrace
 
       - name: "'build' Derlemelerini Yükle"
         run: |
@@ -105,7 +97,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "Yüklenecek değişiklik yok, atlanıyor."
           else
-            git commit -m "Yeni tüm eklenti derlemeleri: $GITHUB_SHA"
+            git commit -m "Yeni SinemaTvAz derlemesi: $GITHUB_SHA"
             for deneme in 1 2 3; do
               git fetch origin builds
               git reset --hard HEAD
