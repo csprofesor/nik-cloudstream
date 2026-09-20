@@ -13,7 +13,6 @@ import com.lagradost.cloudstream3.SubtitleFile
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
-import com.lagradost.cloudstream3.utils.INFER_TYPE
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import kotlinx.coroutines.CoroutineScope
@@ -39,6 +38,32 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
     ) {
         val foundStream = AtomicBoolean(false)
 
+        fun emitStream(streamUrl: String) {
+            var fixStream = streamUrl
+            if (fixStream.contains("cdn1.sinematv.az")) {
+                fixStream = fixStream.replace("cdn1.sinematv.az", "abyss.to")
+            }
+            if (fixStream.startsWith("//")) {
+                fixStream = "https:$fixStream"
+            }
+            if ((fixStream.startsWith("http://") || fixStream.startsWith("https://")) && !foundStream.getAndSet(true)) {
+                Log.d("SinemaTvAzWebView", "EMITTING_STREAM=$fixStream")
+                CoroutineScope(Dispatchers.IO).launch {
+                    callback.invoke(
+                        newExtractorLink(
+                            source = "SinemaTvAzWebView",
+                            name = "SinemaTvAz",
+                            url = fixStream,
+                            type = if (fixStream.contains(".m3u8", true) || fixStream.contains("playlist", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
+                        ) {
+                            this.quality = Qualities.Unknown.value
+                            this.headers = mapOf("Referer" to mainUrl)
+                        }
+                    )
+                }
+            }
+        }
+
         withContext(Dispatchers.Main) {
             webView = WebView(context).apply {
                 settings.apply {
@@ -52,33 +77,15 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                 addJavascriptInterface(object : Any() {
                     @JavascriptInterface
                     fun onStreamFound(body: String, reqUrl: String) {
-                        Log.d("SinemaTvAzWebView", "BRIDGE_FOUND: $reqUrl, body: $body")
-                        val urls = Regex("https?://[^\"'\\s<>]+(?:\\.m3u8(?:\\?[^\"',\\s<>]*)?|\\.mp4(?:\\?[^\"',\\s<>]*)?)", RegexOption.IGNORE_CASE)
+                        Log.d("SinemaTvAzWebView", "BRIDGE_FOUND: $reqUrl")
+                        val urls = Regex("https?://[^\"'\\s<>]+(?:\\.m3u8(?:\\?[^\"',\\s<>]*)?|\\.mp4(?:\\?[^\"',\\s<>]*)?|playlist[^\"'\\s<>]*)", RegexOption.IGNORE_CASE)
                             .findAll("$body $reqUrl")
                             .map { it.value }
                             .distinct()
                             .toList()
 
                         for (stream in urls) {
-                            var fixStream = stream
-                            if (fixStream.contains("cdn1.sinematv.az")) {
-                                fixStream = fixStream.replace("cdn1.sinematv.az", "abyss.to")
-                            }
-                            if (!foundStream.getAndSet(true)) {
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    callback.invoke(
-                                        newExtractorLink(
-                                            source = "SinemaTvAzWebView",
-                                            name = "SinemaTvAz",
-                                            url = fixStream,
-                                            type = if (fixStream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
-                                        ) {
-                                            this.quality = Qualities.Unknown.value
-                                            this.headers = mapOf("Referer" to mainUrl)
-                                        }
-                                    )
-                                }
-                            }
+                            emitStream(stream)
                         }
                     }
                 }, "AndroidBridge")
@@ -100,6 +107,18 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                     } catch(e) {}
                                     return response;
                                 };
+
+                                const originalXHR = window.XMLHttpRequest.prototype.open;
+                                window.XMLHttpRequest.prototype.open = function(method, url, ...args) {
+                                    this.addEventListener('load', function() {
+                                        try {
+                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('mp4') || this.responseText.includes('playlist') || this.responseText.includes('balancer'))) {
+                                                window.AndroidBridge.onStreamFound(this.responseText, url);
+                                            }
+                                        } catch(e) {}
+                                    });
+                                    return originalXHR.apply(this, [method, url, ...args]);
+                                };
                             })();
                         """.trimIndent()
                         evaluateJavascript(js, null)
@@ -111,29 +130,8 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
 
-                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("playlist")) {
-                            var fixUrl = reqUrl
-                            if (fixUrl.contains("cdn1.sinematv.az")) {
-                                fixUrl = fixUrl.replace("cdn1.sinematv.az", "abyss.to")
-                            }
-                            val isM3u8 = fixUrl.contains(".m3u8") || fixUrl.contains("playlist")
-                            val type = if (isM3u8) INFER_TYPE else ExtractorLinkType.VIDEO
-                            
-                            if (!foundStream.getAndSet(true)) {
-                                CoroutineScope(Dispatchers.IO).launch {
-                                    callback.invoke(
-                                        newExtractorLink(
-                                            source = "SinemaTvAzWebView",
-                                            name = "SinemaTvAz",
-                                            url = fixUrl,
-                                            type = type,
-                                        ) {
-                                            this.quality = Qualities.Unknown.value
-                                            this.headers = mapOf("Referer" to mainUrl)
-                                        }
-                                    )
-                                }
-                            }
+                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("playlist") || reqUrl.contains("balancer")) {
+                            emitStream(reqUrl)
                         }
 
                         return super.shouldInterceptRequest(view, request)
