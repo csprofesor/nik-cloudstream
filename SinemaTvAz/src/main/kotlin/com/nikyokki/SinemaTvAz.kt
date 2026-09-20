@@ -42,6 +42,13 @@ class SinemaTvAz : MainAPI() {
         "$mainUrl/turkce-filmler/" to "Türkçe filmler"
     )
 
+    private fun Element.getImgUrl(): String? {
+        val dataSrc = this.attr("data-src").takeIf { it.isNotBlank() }
+        val dataOrig = this.attr("data-original").takeIf { it.isNotBlank() }
+        val src = this.attr("src").takeIf { it.isNotBlank() }
+        return dataSrc ?: dataOrig ?: src
+    }
+
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page == 1) request.data else "${request.data}page/$page/"
         val html = app.get(url, headers = browserHeaders, referer = "$mainUrl/").text
@@ -65,7 +72,7 @@ class SinemaTvAz : MainAPI() {
         val title     = this.selectFirst("div.poster-item__title")?.text() ?: this.attr("title") ?: return null
         val href      = fixUrlNull(this.attr("href")) ?: return null
         val img       = this.selectFirst("img")
-        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("data-original") ?: img?.attr("src"))
+        val posterUrl = fixUrlNull(img?.getImgUrl())
         
         return if (type == TvType.Movie) {
             newMovieSearchResponse(title, href, type) { 
@@ -98,7 +105,7 @@ class SinemaTvAz : MainAPI() {
         val title     = this.selectFirst("div.poster-item__title")?.text() ?: this.attr("title") ?: return null
         val href      = fixUrlNull(this.attr("href")) ?: return null
         val img       = this.selectFirst("img")
-        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("data-original") ?: img?.attr("src"))
+        val posterUrl = fixUrlNull(img?.getImgUrl())
 
         val tvType = if (href.contains("/serial") || href.contains("/mult")) TvType.TvSeries else TvType.Movie
 
@@ -122,13 +129,13 @@ class SinemaTvAz : MainAPI() {
 
         val title           = document.selectFirst("h1")?.text()?.trim() ?: return null
         val posterImg       = document.selectFirst("div.page__poster img")
-        val poster          = fixUrlNull(posterImg?.attr("data-src") ?: posterImg?.attr("data-original") ?: posterImg?.attr("src"))
+        val poster          = fixUrlNull(posterImg?.getImgUrl())
         val description     = document.selectFirst("div.page__text")?.text()?.trim()
         val year            = document.selectFirst("div.page__year")?.text()?.trim()?.toIntOrNull()
         val tags            = document.selectFirst("span.page__meta-item--genres")?.text()?.split(",")?.map { it.trim() }
         val actorsText      = document.selectFirst("div.line-clamp:contains(В ролях:)")?.ownText() ?: ""
         val actors          = actorsText.split(",").map { Actor(it.trim()) }.filter { it.name.isNotEmpty() }
-        val trailer         = fixUrlNull(document.selectFirst("div.page__trailer iframe")?.attr("data-src") ?: document.selectFirst("div.page__trailer iframe")?.attr("src"))
+        val trailer         = fixUrlNull(document.selectFirst("div.page__trailer iframe")?.attr("data-src")?.takeIf { it.isNotBlank() } ?: document.selectFirst("div.page__trailer iframe")?.attr("src"))
         val recommendations = document.select("div#owl-related a.poster-item, div.sect__content a.poster-item").mapNotNull { it.toRecommendationResult() }
 
         val isSeries        = url.contains("/serial/") || document.select("select#season").isNotEmpty() || document.select("div.serial-tabs").isNotEmpty()
@@ -162,7 +169,7 @@ class SinemaTvAz : MainAPI() {
         val title     = this.selectFirst("div.poster-item__title")?.text() ?: this.attr("title") ?: return null
         val href      = fixUrlNull(this.attr("href")) ?: return null
         val img       = this.selectFirst("img")
-        val posterUrl = fixUrlNull(img?.attr("data-src") ?: img?.attr("data-original") ?: img?.attr("src"))
+        val posterUrl = fixUrlNull(img?.getImgUrl())
 
         val tvType = if (href.contains("/serial") || href.contains("/mult")) TvType.TvSeries else TvType.Movie
 
