@@ -9,8 +9,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import com.lagradost.cloudstream3.SubtitleFile
-import com.lagradost.cloudstream3.app
+import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.AppUtils.parseJson
 import com.lagradost.cloudstream3.utils.ExtractorApi
 import com.lagradost.cloudstream3.utils.ExtractorLink
@@ -164,21 +163,6 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
             url
         }
 
-        val finalUrl = withContext(Dispatchers.IO) {
-            try {
-                val doc = app.get(targetUrl, referer = referer ?: mainUrl).document
-                val iframeSrc = doc.selectFirst("iframe")?.attr("src")?.takeIf { it.isNotBlank() }
-                when {
-                    iframeSrc?.startsWith("//") == true -> "https:$iframeSrc"
-                    iframeSrc?.startsWith("http") == true -> iframeSrc
-                    iframeSrc != null -> "${mainUrl}${if (iframeSrc.startsWith("/")) "" else "/"}$iframeSrc"
-                    else -> targetUrl
-                }
-            } catch (_: Exception) {
-                targetUrl
-            }
-        }
-
         withContext(Dispatchers.Main) {
             webView = WebView(context).apply {
                 settings.apply {
@@ -210,6 +194,15 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                         super.onPageFinished(view, url)
                         val js = """
                             (function() {
+                                // If on abyss.to wrapper page, navigate directly to inner iframe player
+                                if (window.location.href.includes('abyss.to')) {
+                                    const iframe = document.querySelector('iframe');
+                                    if (iframe && iframe.src) {
+                                        window.location.href = iframe.src;
+                                        return;
+                                    }
+                                }
+
                                 // Poll JWPlayer instance thoroughly
                                 setInterval(function() {
                                     try {
@@ -282,7 +275,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     }
                 }
 
-                loadUrl(finalUrl)
+                loadUrl(targetUrl)
             }
         }
 
