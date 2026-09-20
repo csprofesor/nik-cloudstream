@@ -158,6 +158,12 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
             }
         }
 
+        val targetUrl = if (url.contains("cdn1.sinematv.az")) {
+            url.replace("cdn1.sinematv.az", "abyss.to")
+        } else {
+            url
+        }
+
         withContext(Dispatchers.Main) {
             webView = WebView(context).apply {
                 settings.apply {
@@ -244,7 +250,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     }
                 }
 
-                loadUrl(url)
+                loadUrl(targetUrl)
             }
         }
 
