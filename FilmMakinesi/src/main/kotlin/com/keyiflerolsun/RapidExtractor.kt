@@ -5,8 +5,7 @@ import android.util.Log
 import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 
-
-class RapidExtractor : ExtractorApi() {
+open class RapidExtractor : ExtractorApi() {
     override val mainUrl = "https://rapid.filmmakinesi.to"
     override val name = "Rapid"
     override val requiresReferer = true
@@ -73,17 +72,17 @@ class RapidExtractor : ExtractorApi() {
             return
         }
         parseSubtitles(rawHtml, subtitleCallback)
-        Log.d(name, "Master fetch ediliyor: $videoUrl")
-        val masterResponse = app.get(videoUrl, referer = url, headers = mapOf(
-            "Accept" to "*/*",
-            "Origin" to mainUrl
-        ))
-        Log.d(name, "Master status: ${masterResponse.code}")
-
-        if (masterResponse.code != 200) {
-            Log.e(name, "Master fetch başarısız: ${masterResponse.code}")
-            return
+        Log.d(name, "Master fetch deneniyor: $videoUrl")
+        try {
+            val masterResponse = app.get(videoUrl, referer = url, headers = mapOf(
+                "Accept" to "*/*",
+                "Origin" to mainUrl
+            ))
+            Log.d(name, "Master status: ${masterResponse.code}")
+        } catch (e: Exception) {
+            Log.w(name, "Master fetch hatası (önemsiz): ${e.message}")
         }
+
         callback.invoke(
             newExtractorLink(
                 source = name,
@@ -310,4 +309,24 @@ class RapidExtractor : ExtractorApi() {
             }
         }
     }
+}
+
+class RapidTo : RapidExtractor() {
+    override val mainUrl = "https://rapid.filmmakinesi.to"
+}
+
+class RapidFilm : RapidExtractor() {
+    override val mainUrl = "https://rapid.filmmakinesi.film"
+}
+
+class RapidDe : RapidExtractor() {
+    override val mainUrl = "https://rapid.filmmakinesi.de"
+}
+
+class RapidTv : RapidExtractor() {
+    override val mainUrl = "https://rapid.filmmakinesi.tv"
+}
+
+class RapidSh : RapidExtractor() {
+    override val mainUrl = "https://rapid.filmmakinesi.sh"
 }
