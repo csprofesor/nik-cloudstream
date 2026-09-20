@@ -4,6 +4,7 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.lagradost.cloudstream3.LoadResponse.Companion.addActors
 import com.lagradost.cloudstream3.LoadResponse.Companion.addTrailer
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 class SinemaTvAz : MainAPI() {
@@ -43,7 +44,7 @@ class SinemaTvAz : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val url = if (page == 1) request.data else "${request.data}page/$page/"
-        val document = app.get(url, headers = browserHeaders, referer = "$mainUrl/").document
+        val html = app.get(url, headers = browserHeaders, referer = "$mainUrl/").text
         
         val tvType = when {
             request.data.contains("/serial") -> TvType.TvSeries
@@ -52,7 +53,11 @@ class SinemaTvAz : MainAPI() {
             else -> TvType.Movie
         }
 
-        val home = document.select("div#dle-content a.poster-item").mapNotNull { it.toMainPageResult(tvType) }
+        // Only parse the items within the main content block, ignoring the popular sidebar
+        val contentBlock = Regex("""id="dle-content"[^>]*>(.*?)(?:<div class="pagination|<!-- dle_content -->)""", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1) ?: html
+        val document = Jsoup.parse(contentBlock)
+        
+        val home = document.select("a.poster-item").mapNotNull { it.toMainPageResult(tvType) }
         return newHomePageResponse(request.name, home)
     }
 
