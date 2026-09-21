@@ -182,12 +182,14 @@ class FilmMakinesi : MainAPI() {
                         newExtractorLink(
                             name,
                             name,
-                            sourceUrl
+                            sourceUrl,
+                            type = ExtractorLinkType.M3U8
                         ) {
                             this.referer = data
                             this.headers = mapOf(
                                 "Referer" to data,
-                                "Origin" to mainUrl
+                                "Origin" to mainUrl,
+                                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0"
                             )
                         }
                     )
