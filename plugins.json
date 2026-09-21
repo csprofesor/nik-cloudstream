@@ -265,7 +265,7 @@
     "fileHash": "sha256-9baca9e27e70d6966712b1e82d56050a00fb905c31c8207a1429b9a72bf9cdf9"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3?v=639725fc9d45daa491a68441a2cef50c505ab8057fe7ab3ff0e17d0840e29dbe",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3?v=6f0d38ac6872a9b51d6d558f560289474459d69b8f346c218e29f1d8a63070d9",
     "status": 1,
     "version": 58,
     "name": "DiziMom",
@@ -274,7 +274,7 @@
       "csprofesor"
     ],
     "description": "Binlerce yerli yabancı dizi arşivi, tüm sezonlar, kesintisiz bölümler. Sadece dizi izle, Dizimom heryerde seninle!",
-    "fileSize": 34844,
+    "fileSize": 34833,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -282,7 +282,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.plus&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-639725fc9d45daa491a68441a2cef50c505ab8057fe7ab3ff0e17d0840e29dbe"
+    "fileHash": "sha256-6f0d38ac6872a9b51d6d558f560289474459d69b8f346c218e29f1d8a63070d9"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3?v=960a1743d97b7b0d34fbadbe59f6a4a2d05f2505404bc8cfefafae2e1cf40e9d",
@@ -387,7 +387,7 @@
     "fileHash": "sha256-3e4a185d2f152f73496ead0a4b83ea47fba3f4b213ceb9c2111ab590abbc4a65"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3?v=b2372450ce71eaf6c3d84761174a4aaaf81d62240fbb61862622215357dc6ed2",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3?v=a84a23b93c4247e8919293dba50394e35c728e349c486cd9a0913ed21f7a807c",
     "status": 1,
     "version": 59,
     "name": "FilmMakinesi",
@@ -396,7 +396,7 @@
       "csprofesor"
     ],
     "description": "Film Makinesi, en yeni ve en güncel filmleri sitemizde full HD kalite farkı ile izleyebilirsiniz. HD film izle denildiğinde akla gelen en kaliteli film izleme sitesi.",
-    "fileSize": 44923,
+    "fileSize": 48809,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -404,7 +404,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=filmmakinesi.film&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-b2372450ce71eaf6c3d84761174a4aaaf81d62240fbb61862622215357dc6ed2"
+    "fileHash": "sha256-a84a23b93c4247e8919293dba50394e35c728e349c486cd9a0913ed21f7a807c"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmModu.cs3?v=3150a6212f052ad843a8b9e67d65c82b35078f502bb9f5032b1af808d87b862e",
