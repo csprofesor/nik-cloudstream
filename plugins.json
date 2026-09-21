@@ -777,7 +777,7 @@
     "fileHash": "sha256-835fd32012016c56acc786a48b2188899708212995931e48d602ef3f0f808b20"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=7d68082a8c875ede5c804dd243decbedb1d81e5d96abe702b1c61c8be6d02f09",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SetFilmIzle.cs3?v=89a5ceb5979fd2cac5795d48d6948324b59f79014127bd4005cc31d13e814c97",
     "status": 1,
     "version": 30,
     "name": "SetFilmIzle",
@@ -795,7 +795,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.setfilmizle.uk&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-7d68082a8c875ede5c804dd243decbedb1d81e5d96abe702b1c61c8be6d02f09"
+    "fileHash": "sha256-89a5ceb5979fd2cac5795d48d6948324b59f79014127bd4005cc31d13e814c97"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SezonlukDizi.cs3?v=d20e1936290d33d0aa1ea07a262b371bcfcd866e56363cc2dcf1c1abd60eb91a",
@@ -838,7 +838,7 @@
     "fileHash": "sha256-72a8d8da386d48becd4dca4a49dd47f8cbe87d5178e88ecda1101a719dbb3566"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaTvAz.cs3?v=513c1ff0a6cd7e51f8997a50efcf8b09791151231699faae02d36a647cca011a",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaTvAz.cs3?v=1876c4e25f42798b0b06ef247cac89dc6ef8fea7f2b6ebd92ab37751048da684",
     "status": 1,
     "version": 1,
     "name": "SinemaTvAz",
@@ -847,7 +847,7 @@
       "csprofesor"
     ],
     "description": "SinemaTvAz - Azərbaycan dilində filmlər və seriallar",
-    "fileSize": 31981,
+    "fileSize": 32121,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "az",
     "tvTypes": [
@@ -857,7 +857,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=sinematv.az&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-513c1ff0a6cd7e51f8997a50efcf8b09791151231699faae02d36a647cca011a"
+    "fileHash": "sha256-1876c4e25f42798b0b06ef247cac89dc6ef8fea7f2b6ebd92ab37751048da684"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SineWix.cs3?v=c1eb8c939d063e43ff8e8fd03eec66e73f4fb187fa638785d2cc3ed95eeb8e32",
