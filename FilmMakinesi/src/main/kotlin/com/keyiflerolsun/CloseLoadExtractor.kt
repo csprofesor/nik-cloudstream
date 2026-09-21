@@ -65,7 +65,9 @@ open class CloseLoadExtractor : ExtractorApi() {
 
         if (videoUrl.isNullOrBlank()) {
             val jsonLdMatch = Regex(""""contentUrl"\s*:\s*"([^"]+)"""").find(rawHtml)
-            videoUrl = jsonLdMatch?.groupValues?.get(1)
+            videoUrl = jsonLdMatch?.groupValues?.get(1)?.let { url ->
+                url.replace("master.txt", "master.m3u8").replace(".txt", ".m3u8")
+            }
             Log.d(name, "Fallback JSON-LD contentUrl: $videoUrl")
         }
 
@@ -77,7 +79,9 @@ open class CloseLoadExtractor : ExtractorApi() {
                 if (padding != 0) {
                     atob += "=".repeat(4 - padding)
                 }
-                videoUrl = String(Base64.decode(atob, Base64.DEFAULT), Charsets.UTF_8)
+                videoUrl = String(Base64.decode(atob, Base64.DEFAULT), Charsets.UTF_8).let { url ->
+                    url.replace("master.txt", "master.m3u8").replace(".txt", ".m3u8")
+                }
                 Log.d(name, "Fallback atob m3u8: $videoUrl")
             }
         }
@@ -214,7 +218,7 @@ open class CloseLoadExtractor : ExtractorApi() {
 
             val result = sb.toString()
             Log.d(name, "Çözülen değer: ${result.take(200)}")
-            result.trim().takeIf { it.startsWith("http") }
+            result.trim().takeIf { it.startsWith("http") }?.replace("master.txt", "master.m3u8")?.replace(".txt", ".m3u8")
         } catch (e: Exception) {
             Log.e(name, "JS Parser hatası: ${e.message}")
             null

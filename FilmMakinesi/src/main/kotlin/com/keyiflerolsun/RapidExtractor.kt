@@ -252,7 +252,7 @@ open class RapidExtractor : ExtractorApi() {
 
             val result = sb.toString()
             Log.d(name, "Çözülen değer: ${result.take(200)}")
-            result.trim().takeIf { it.startsWith("http") }
+            result.trim().takeIf { it.startsWith("http") }?.replace("master.txt", "master.m3u8")?.replace(".txt", ".m3u8")
         } catch (e: Exception) {
             Log.e(name, "JS Parser hatası: ${e.message}")
             null
