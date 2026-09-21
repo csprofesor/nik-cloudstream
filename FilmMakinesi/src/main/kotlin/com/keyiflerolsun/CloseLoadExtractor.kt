@@ -20,6 +20,7 @@ open class CloseLoadExtractor : ExtractorApi() {
 
         val response = app.get(url, referer = referer ?: "")
         val rawHtml = response.text
+        val cookies = response.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
         Log.d(name, "Raw HTML uzunluğu: ${rawHtml.length}")
 
         var videoUrl: String? = null
@@ -65,9 +66,7 @@ open class CloseLoadExtractor : ExtractorApi() {
 
         if (videoUrl.isNullOrBlank()) {
             val jsonLdMatch = Regex(""""contentUrl"\s*:\s*"([^"]+)"""").find(rawHtml)
-            videoUrl = jsonLdMatch?.groupValues?.get(1)?.let { url ->
-                url.replace("master.txt", "master.m3u8").replace(".txt", ".m3u8")
-            }
+            videoUrl = jsonLdMatch?.groupValues?.get(1)
             Log.d(name, "Fallback JSON-LD contentUrl: $videoUrl")
         }
 
@@ -79,9 +78,7 @@ open class CloseLoadExtractor : ExtractorApi() {
                 if (padding != 0) {
                     atob += "=".repeat(4 - padding)
                 }
-                videoUrl = String(Base64.decode(atob, Base64.DEFAULT), Charsets.UTF_8).let { url ->
-                    url.replace("master.txt", "master.m3u8").replace(".txt", ".m3u8")
-                }
+                videoUrl = String(Base64.decode(atob, Base64.DEFAULT), Charsets.UTF_8)
                 Log.d(name, "Fallback atob m3u8: $videoUrl")
             }
         }
@@ -89,6 +86,33 @@ open class CloseLoadExtractor : ExtractorApi() {
         if (videoUrl.isNullOrBlank()) {
             Log.e(name, "Video URL bulunamadı!")
             return
+        }
+
+        
+        val unpackedJs = unpackPackerJs(rawHtml)
+        val ajaxMatch = Regex("""url\s*:\s*["']([^"']+ah/)["'].*?data\s*:\s*\{\s*hash\s*:\s*["']([^"']+)["']""").find(unpackedJs ?: "")
+        if (ajaxMatch != null) {
+            val ajaxUrl = ajaxMatch.groupValues[1]
+            val ajaxHash = ajaxMatch.groupValues[2]
+            val fullAjaxUrl = "$mainUrl$ajaxUrl"
+            Log.d(name, "AJAX POST yapılıyor: $fullAjaxUrl hash=$ajaxHash")
+            try {
+                app.post(
+                    url = fullAjaxUrl,
+                    data = mapOf("hash" to ajaxHash),
+                    headers = mapOf(
+                        "Referer" to url,
+                        "Origin" to mainUrl,
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                        if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                    ).filter { it.key.isNotBlank() }
+                )
+            } catch (e: Exception) {
+                Log.w(name, "AJAX POST hatası: ${e.message}")
+            }
+        } else {
+            Log.w(name, "AJAX hash bulunamadı!")
         }
 
         val tracksMatch = Regex("""tracks:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(rawHtml)
@@ -113,7 +137,7 @@ open class CloseLoadExtractor : ExtractorApi() {
             }
         }
 
-        val cookies = response.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        
 
         callback.invoke(
             newExtractorLink(
@@ -135,6 +159,75 @@ open class CloseLoadExtractor : ExtractorApi() {
         )
         Log.d(name, "ExtractorLink eklendi: $videoUrl")
     }
+    
+    private fun unpackPackerJs(rawHtml: String): String? {
+        return try {
+            val startMarker = "eval(function(p,a,c,k,e,d){"
+            val endMarker = ",0,{}))"
+
+            val startIdx = rawHtml.indexOf(startMarker)
+            if (startIdx == -1) return null
+
+            val endIdx = rawHtml.indexOf(endMarker, startIdx + startMarker.length)
+            if (endIdx == -1) return null
+
+            val block = rawHtml.substring(startIdx, endIdx + endMarker.length)
+            val packedStart = block.indexOf("}('") + 3
+            val packedEnd = block.indexOf("',", packedStart)
+            if (packedStart == -1 || packedEnd == -1) return null
+            val packed = block.substring(packedStart, packedEnd)
+            val afterPacked = block.substring(packedEnd + 2)
+            val baseEnd = afterPacked.indexOf(",")
+            if (baseEnd == -1) return null
+            val base = afterPacked.substring(0, baseEnd).toInt()
+            val afterBase = afterPacked.substring(baseEnd + 1)
+            val countEnd = afterBase.indexOf(",")
+            if (countEnd == -1) return null
+            val count = afterBase.substring(0, countEnd).toInt()
+            val dictQuoteStart = afterBase.indexOf("'") + 1
+            val dictQuoteEnd = afterBase.indexOf("'.split", dictQuoteStart)
+            if (dictQuoteStart == -1 || dictQuoteEnd == -1) return null
+            val dictStr = afterBase.substring(dictQuoteStart, dictQuoteEnd)
+
+            val dictionary = dictStr.split('|')
+            val lookup = mutableMapOf<String, String>()
+
+            var c = count - 1
+            while (c >= 0) {
+                val key = packerEncode(c, base)
+                lookup[key] = if (c < dictionary.size && dictionary[c].isNotEmpty()) {
+                    dictionary[c]
+                } else {
+                    key
+                }
+                c--
+            }
+
+            var result = packed
+            val sortedKeys = lookup.keys.sortedByDescending { it.length }
+            for (key in sortedKeys) {
+                val value = lookup[key]!!
+                result = result.replace(Regex("\\b${Regex.escape(key)}\\b"), value)
+            }
+
+            result
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun packerEncode(num: Int, base: Int): String {
+        val digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        if (num == 0) return "0"
+        var n = num
+        val sb = StringBuilder()
+        while (n > 0) {
+            sb.insert(0, digits[n % base])
+            n /= base
+        }
+        return sb.toString()
+    }
+
     private fun extractFuncBody(rawHtml: String, funcName: String): String? {
         val startIdx = rawHtml.indexOf("function $funcName")
         if (startIdx == -1) return null
@@ -218,7 +311,7 @@ open class CloseLoadExtractor : ExtractorApi() {
 
             val result = sb.toString()
             Log.d(name, "Çözülen değer: ${result.take(200)}")
-            result.trim().takeIf { it.startsWith("http") }?.replace("master.txt", "master.m3u8")?.replace(".txt", ".m3u8")
+            result.trim().takeIf { it.startsWith("http") }
         } catch (e: Exception) {
             Log.e(name, "JS Parser hatası: ${e.message}")
             null

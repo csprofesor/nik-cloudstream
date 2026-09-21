@@ -20,6 +20,7 @@ open class RapidExtractor : ExtractorApi() {
 
         val response = app.get(url, referer = referer ?: mainUrl)
         val rawHtml = response.text
+        val cookies = response.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
         Log.d(name, "Raw HTML uzunluğu: ${rawHtml.length}")
 
         var videoUrl: String? = null
@@ -58,7 +59,7 @@ open class RapidExtractor : ExtractorApi() {
         }
         if (videoUrl.isNullOrBlank()) {
             val jsonLdMatch = Regex(""""contentUrl"\s*:\s*"([^"]+)"""").find(rawHtml)
-            videoUrl = jsonLdMatch?.groupValues?.get(1)?.replace(".txt", ".m3u8")
+            videoUrl = jsonLdMatch?.groupValues?.get(1)
             Log.d(name, "Fallback JSON-LD: $videoUrl")
         }
         if (videoUrl.isNullOrBlank()) {
@@ -85,6 +86,32 @@ open class RapidExtractor : ExtractorApi() {
             return
         }
 
+        
+        val ajaxMatch = Regex("""url\s*:\s*["']([^"']+ah/)["'].*?data\s*:\s*\{\s*hash\s*:\s*["']([^"']+)["']""").find(unpackedJs ?: "")
+        if (ajaxMatch != null) {
+            val ajaxUrl = ajaxMatch.groupValues[1]
+            val ajaxHash = ajaxMatch.groupValues[2]
+            val fullAjaxUrl = "$mainUrl$ajaxUrl"
+            Log.d(name, "AJAX POST yapılıyor: $fullAjaxUrl hash=$ajaxHash")
+            try {
+                app.post(
+                    url = fullAjaxUrl,
+                    data = mapOf("hash" to ajaxHash),
+                    headers = mapOf(
+                        "Referer" to url,
+                        "Origin" to mainUrl,
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                        if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                    ).filter { it.key.isNotBlank() }
+                )
+            } catch (e: Exception) {
+                Log.w(name, "AJAX POST hatası: ${e.message}")
+            }
+        } else {
+            Log.w(name, "AJAX hash bulunamadı!")
+        }
+
         parseSubtitles(rawHtml, subtitleCallback)
         Log.d(name, "Master fetch deneniyor: $videoUrl")
         try {
@@ -97,7 +124,7 @@ open class RapidExtractor : ExtractorApi() {
             Log.w(name, "Master fetch hatası (önemsiz): ${e.message}")
         }
 
-        val cookies = response.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        
 
         callback.invoke(
             newExtractorLink(
@@ -252,7 +279,7 @@ open class RapidExtractor : ExtractorApi() {
 
             val result = sb.toString()
             Log.d(name, "Çözülen değer: ${result.take(200)}")
-            result.trim().takeIf { it.startsWith("http") }?.replace("master.txt", "master.m3u8")?.replace(".txt", ".m3u8")
+            result.trim().takeIf { it.startsWith("http") }
         } catch (e: Exception) {
             Log.e(name, "JS Parser hatası: ${e.message}")
             null
