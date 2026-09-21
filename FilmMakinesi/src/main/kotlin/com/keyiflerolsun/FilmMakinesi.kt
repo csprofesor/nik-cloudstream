@@ -148,27 +148,39 @@ class FilmMakinesi : MainAPI() {
         val document = app.get(data, referer = mainUrl).document
         Log.d(name, "Sayfa yüklendi")
 
-        val videoParts = document.select(".video-parts a[data-video_url]")
-        Log.d(name, "Video part sayısı: ${videoParts.size}")
+        val sources = mutableSetOf<String>()
 
-        if (videoParts.isNotEmpty()) {
-            videoParts.forEachIndexed { index, part ->
-                val embedUrl = part.attr("data-video_url")
-                val label = part.text().trim()
-                Log.d(name, "Part #$index - label: '$label', url: '$embedUrl'")
-                if (embedUrl.isNotBlank()) {
-                    loadExtractor(embedUrl, data, subtitleCallback, callback)
-                }
-            }
-        } else {
-            val iframeSrc = document.selectFirst(".after-player iframe")?.attr("data-src")
-            Log.d(name, "Fallback iframe: $iframeSrc")
-            if (iframeSrc != null) {
-                loadExtractor(iframeSrc, data, subtitleCallback, callback)
+        // Tüm video partları, dublaj/altyazı seçenekleri ve alternatif sunucu butonlarını topla
+        document.select(".video-parts a, .video-options a, div#action-parts a, nav.player a, .player-options a").forEach { el ->
+            val url = el.attr("data-video_url").ifBlank { el.attr("href") }
+            if (url.isNotBlank() && !url.startsWith("#") && !url.contains("youtube.com") && !url.contains("youtu.be")) {
+                sources.add(fixUrl(url))
             }
         }
 
-        Log.d(name, "loadLinks tamamlandı")
-        return true
+        // Sayfadaki tüm iframe'leri topla (data-src, src)
+        document.select("iframe[data-src], iframe[src], .after-player iframe, div.player-div iframe").forEach { iframe ->
+            val src = iframe.attr("data-src").ifBlank { iframe.attr("src") }
+            if (src.isNotBlank() && !src.contains("youtube.com") && !src.contains("youtu.be")) {
+                sources.add(fixUrl(src))
+            }
+        }
+
+        Log.d(name, "Bulunan toplam alternatif kaynak sayısı: ${sources.size} -> $sources")
+
+        var foundAny = false
+        sources.forEach { sourceUrl ->
+            Log.d(name, "Extractor deneniyor: $sourceUrl")
+            try {
+                if (loadExtractor(sourceUrl, data, subtitleCallback, callback)) {
+                    foundAny = true
+                }
+            } catch (e: Exception) {
+                Log.e(name, "Extractor hatası ($sourceUrl): ${e.message}")
+            }
+        }
+
+        Log.d(name, "loadLinks tamamlandı, sonuç: $foundAny")
+        return foundAny
     }
 }
