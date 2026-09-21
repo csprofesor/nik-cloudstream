@@ -110,6 +110,7 @@ open class RapidExtractor : ExtractorApi() {
                 this.quality = Qualities.Unknown.value
                 this.headers = mapOf(
                     "Accept" to "*/*",
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
                     "Origin" to mainUrl,
                     if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
                 ).filter { it.key.isNotBlank() }
