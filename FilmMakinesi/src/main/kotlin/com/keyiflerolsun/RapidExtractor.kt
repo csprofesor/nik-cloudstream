@@ -126,24 +126,63 @@ open class RapidExtractor : ExtractorApi() {
 
         
 
-        callback.invoke(
-            newExtractorLink(
-                source = name,
-                name = name,
-                url = videoUrl,
-                type = ExtractorLinkType.M3U8
-            ) {
-                this.referer = referer ?: mainUrl
-                this.quality = Qualities.Unknown.value
-                this.headers = mapOf(
-                    "Accept" to "*/*",
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
-                    "Referer" to (referer ?: mainUrl),
-                    "Origin" to mainUrl,
-                    if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
-                ).filter { it.key.isNotBlank() }
+        
+        if (videoUrl.contains(".txt") || videoUrl.contains(".m3u8")) {
+            try {
+                M3u8Helper.generateM3u8(
+                    source = name,
+                    streamUrl = videoUrl,
+                    referer = referer ?: mainUrl,
+                    headers = mapOf(
+                        "Accept" to "*/*",
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                        "Origin" to mainUrl,
+                        if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                    ).filter { it.key.isNotBlank() }
+                ).forEach(callback)
+            } catch (e: Exception) {
+                Log.w(name, "M3u8 parse hatası: ${e.message}, direct link veriliyor")
+                callback.invoke(
+                    newExtractorLink(
+                        source = name,
+                        name = name,
+                        url = videoUrl,
+                        type = ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = referer ?: mainUrl
+                        this.quality = Qualities.Unknown.value
+                        this.headers = mapOf(
+                            "Accept" to "*/*",
+                            "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                            "Referer" to (referer ?: mainUrl),
+                            "Origin" to mainUrl,
+                            if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                        ).filter { it.key.isNotBlank() }
+                    }
+                )
             }
-        )
+        } else {
+            callback.invoke(
+                newExtractorLink(
+                    source = name,
+                    name = name,
+                    url = videoUrl,
+                    type = ExtractorLinkType.VIDEO
+                ) {
+                    this.referer = referer ?: mainUrl
+                    this.quality = Qualities.Unknown.value
+                    this.headers = mapOf(
+                        "Accept" to "*/*",
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                        "Referer" to (referer ?: mainUrl),
+                        "Origin" to mainUrl,
+                        if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                    ).filter { it.key.isNotBlank() }
+                }
+            )
+        }
+        Log.d(name, "ExtractorLink işlemi tamamlandı: $videoUrl")
+
         Log.d(name, "ExtractorLink eklendi: $videoUrl")
     }
     private fun unpackPackerJs(rawHtml: String): String? {
