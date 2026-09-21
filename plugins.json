@@ -838,7 +838,7 @@
         "fileHash": "sha256-72a8d8da386d48becd4dca4a49dd47f8cbe87d5178e88ecda1101a719dbb3566"
     },
     {
-        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaTvAz.cs3?v=37e144ca1fd37d83d8864db5aebde00e43f24eda2300332977b58860c1521e38",
+        "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaTvAz.cs3?v=442ed569a6c2af2dbbadba6fa5f27169e93d0593b7138f14b6609d593599a38e",
         "status": 1,
         "version": 1,
         "name": "SinemaTvAz",
@@ -847,7 +847,7 @@
             "csprofesor"
         ],
         "description": "SinemaTvAz - Azərbaycan dilində filmlər və seriallar",
-        "fileSize": 30668,
+        "fileSize": 30651,
         "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
         "language": "az",
         "tvTypes": [
@@ -857,7 +857,7 @@
         ],
         "iconUrl": "https://www.google.com/s2/favicons?domain=sinematv.az&sz=%size%",
         "apiVersion": 1,
-        "fileHash": "sha256-37e144ca1fd37d83d8864db5aebde00e43f24eda2300332977b58860c1521e38"
+        "fileHash": "sha256-442ed569a6c2af2dbbadba6fa5f27169e93d0593b7138f14b6609d593599a38e"
     },
     {
         "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SineWix.cs3",

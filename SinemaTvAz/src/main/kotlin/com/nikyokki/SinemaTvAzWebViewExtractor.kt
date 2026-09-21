@@ -78,8 +78,20 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                 CoroutineScope(Dispatchers.IO).launch {
                     if (fixStream.contains("parsed.json") || fixStream.contains("catalog-api/episodes")) {
                         try {
-                            val jsonStr = app.get(fixStream, referer = mainUrl).text
-                            if (fixStream.contains("parsed.json")) {
+                            if (fixStream.contains("catalog-api/episodes")) {
+                                val jsonStr = app.get(fixStream, referer = mainUrl).text
+                                val episodes = parseJson<List<CatalogEpisode>>(jsonStr)
+                                episodes.firstOrNull()?.let { ep ->
+                                    val masterPath = ep.m3u8MasterFilePath ?: ep.episodeVariants?.firstOrNull()?.filepath
+                                    if (masterPath != null) {
+                                        // Fetch masterPath inside WebView to inherit session/cookies and avoid 403 Forbidden
+                                        withContext(Dispatchers.Main) {
+                                            webView?.evaluateJavascript("fetch('$masterPath').then(r => r.text()).then(txt => window.AndroidBridge.onStreamFound(txt, '$masterPath'));", null)
+                                        }
+                                    }
+                                }
+                            } else {
+                                val jsonStr = app.get(fixStream, referer = mainUrl).text
                                 val parsed = parseJson<ParsedJson>(jsonStr)
                                 parsed.sources?.forEach { src ->
                                     src.link?.let { link ->
@@ -116,24 +128,6 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                                 }
                                             )
                                         }
-                                    }
-                                }
-                            } else {
-                                val episodes = parseJson<List<CatalogEpisode>>(jsonStr)
-                                episodes.firstOrNull()?.let { ep ->
-                                    val masterPath = ep.m3u8MasterFilePath ?: ep.episodeVariants?.firstOrNull()?.filepath
-                                    if (masterPath != null) {
-                                        callback.invoke(
-                                            newExtractorLink(
-                                                source = "SinemaTvAzWebView",
-                                                name = "SinemaTvAz",
-                                                url = masterPath,
-                                                type = if (masterPath.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO,
-                                            ) {
-                                                this.quality = Qualities.Unknown.value
-                                                this.headers = mapOf("Referer" to mainUrl)
-                                            }
-                                        )
                                     }
                                 }
                             }
