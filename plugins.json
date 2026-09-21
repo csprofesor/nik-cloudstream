@@ -265,7 +265,7 @@
     "fileHash": "sha256-9baca9e27e70d6966712b1e82d56050a00fb905c31c8207a1429b9a72bf9cdf9"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3?v=6f0d38ac6872a9b51d6d558f560289474459d69b8f346c218e29f1d8a63070d9",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3?v=639725fc9d45daa491a68441a2cef50c505ab8057fe7ab3ff0e17d0840e29dbe",
     "status": 1,
     "version": 58,
     "name": "DiziMom",
@@ -274,7 +274,7 @@
       "csprofesor"
     ],
     "description": "Binlerce yerli yabancı dizi arşivi, tüm sezonlar, kesintisiz bölümler. Sadece dizi izle, Dizimom heryerde seninle!",
-    "fileSize": 34833,
+    "fileSize": 34844,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -282,7 +282,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.plus&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-6f0d38ac6872a9b51d6d558f560289474459d69b8f346c218e29f1d8a63070d9"
+    "fileHash": "sha256-639725fc9d45daa491a68441a2cef50c505ab8057fe7ab3ff0e17d0840e29dbe"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3?v=960a1743d97b7b0d34fbadbe59f6a4a2d05f2505404bc8cfefafae2e1cf40e9d",
@@ -714,7 +714,7 @@
     "fileHash": "sha256-715efe42845a6e956970b7662aa406bfa7b3b7e1035914c8cc47ee3b1a05547f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/RecTV.cs3?v=6626a02465838ea1ead5e90672d9cbe4b2e47547974dda1cb0575a24e5d83eb5",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/RecTV.cs3?v=00241eaa278d4d42710df1938ea9bce1fed0e5254d31083324add77aaa0c99b4",
     "status": 1,
     "version": 113,
     "name": "RecTV",
@@ -723,7 +723,7 @@
       "csprofesor"
     ],
     "description": "RecTv APK, Türkiye’deki en popüler Çevrimiçi Medya Akış platformlarından biridir. Filmlerin, Canlı Sporların, Web Dizilerinin ve çok daha fazlasının keyfini ücretsiz çıkarın.",
-    "fileSize": 28846,
+    "fileSize": 28843,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -733,7 +733,7 @@
     ],
     "iconUrl": "https://rectv.org.tr/wp-content/uploads/2024/11/rectv-modified.webp",
     "apiVersion": 1,
-    "fileHash": "sha256-6626a02465838ea1ead5e90672d9cbe4b2e47547974dda1cb0575a24e5d83eb5"
+    "fileHash": "sha256-00241eaa278d4d42710df1938ea9bce1fed0e5254d31083324add77aaa0c99b4"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/RoketDizi.cs3?v=45f139faa782c5fd56ae0677b050dc1fc4ab849c95ace67ad3ece7a7e3f113ee",
@@ -838,7 +838,7 @@
     "fileHash": "sha256-72a8d8da386d48becd4dca4a49dd47f8cbe87d5178e88ecda1101a719dbb3566"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaTvAz.cs3?v=4ba727235558667e2fa999b8a09ad9ce252156391b89ba5cd461a02f373aeb1b",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SinemaTvAz.cs3?v=93ae46972527786bf8b61ee75abc55d88d063d2d51956eeb808bc559a055c8c1",
     "status": 1,
     "version": 1,
     "name": "SinemaTvAz",
@@ -847,7 +847,7 @@
       "csprofesor"
     ],
     "description": "SinemaTvAz - Azərbaycan dilində filmlər və seriallar",
-    "fileSize": 32651,
+    "fileSize": 32439,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "az",
     "tvTypes": [
@@ -857,7 +857,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=sinematv.az&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-4ba727235558667e2fa999b8a09ad9ce252156391b89ba5cd461a02f373aeb1b"
+    "fileHash": "sha256-93ae46972527786bf8b61ee75abc55d88d063d2d51956eeb808bc559a055c8c1"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/SineWix.cs3?v=c1eb8c939d063e43ff8e8fd03eec66e73f4fb187fa638785d2cc3ed95eeb8e32",
