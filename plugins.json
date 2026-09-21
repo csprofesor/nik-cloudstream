@@ -387,7 +387,7 @@
     "fileHash": "sha256-3e4a185d2f152f73496ead0a4b83ea47fba3f4b213ceb9c2111ab590abbc4a65"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3?v=4a83335568a92cc68282f89f319c1a92a470d0e85aa5d62207772d696ccc1cb2",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3?v=aa4e505c05dd37094a4fa7d738359e8b90744e10c4717c96e8e7224e7a7442cb",
     "status": 1,
     "version": 59,
     "name": "FilmMakinesi",
@@ -396,7 +396,7 @@
       "csprofesor"
     ],
     "description": "Film Makinesi, en yeni ve en güncel filmleri sitemizde full HD kalite farkı ile izleyebilirsiniz. HD film izle denildiğinde akla gelen en kaliteli film izleme sitesi.",
-    "fileSize": 40599,
+    "fileSize": 40756,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -404,7 +404,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=filmmakinesi.film&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-4a83335568a92cc68282f89f319c1a92a470d0e85aa5d62207772d696ccc1cb2"
+    "fileHash": "sha256-aa4e505c05dd37094a4fa7d738359e8b90744e10c4717c96e8e7224e7a7442cb"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmModu.cs3?v=3150a6212f052ad843a8b9e67d65c82b35078f502bb9f5032b1af808d87b862e",
