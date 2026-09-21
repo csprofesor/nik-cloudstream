@@ -280,7 +280,22 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     }
                 }
 
-                loadUrl(finalUrl)
+                val htmlWrapper = """
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset="utf-8">
+                        <style>
+                            body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+                            iframe { width: 100%; height: 100%; border: none; }
+                        </style>
+                    </head>
+                    <body>
+                        <iframe src="$finalUrl" allowfullscreen></iframe>
+                    </body>
+                    </html>
+                """.trimIndent()
+                loadDataWithBaseURL(referer ?: mainUrl, htmlWrapper, "text/html", "UTF-8", null)
             }
         }
 
