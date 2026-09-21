@@ -208,7 +208,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                     Object.defineProperty(window, 'top', { get: function() { return window; } });
                                 } catch(e) {}
 
-                                // Poll JWPlayer instance thoroughly
+                                // Poll players and DOM thoroughly
                                 setInterval(function() {
                                     try {
                                         if (typeof jwplayer !== 'undefined') {
@@ -234,8 +234,24 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                                 }
                                             }
                                         }
+
+                                        if (typeof player !== 'undefined' && player.config) {
+                                            if (player.config.url) window.AndroidBridge.onStreamFound(player.config.url, player.config.url);
+                                            if (player.config.manifestUrl) window.AndroidBridge.onStreamFound(player.config.manifestUrl, player.config.manifestUrl);
+                                        }
+
+                                        if (typeof hls !== 'undefined' && hls.url) {
+                                            window.AndroidBridge.onStreamFound(hls.url, hls.url);
+                                        }
+
+                                        // Scan body HTML for any m3u8/mp4 links
+                                        const html = document.documentElement.innerHTML;
+                                        const matches = html.match(/https?:\/\/[^\"'\s<>]+?\.(?:m3u8|mp4)(?:\?[^\"'\s<>]*)?/gi);
+                                        if (matches) {
+                                            matches.forEach(m => window.AndroidBridge.onStreamFound(m, m));
+                                        }
                                     } catch(e) {}
-                                }, 200);
+                                }, 300);
 
                                 const originalFetch = window.fetch;
                                 window.fetch = async function(...args) {
@@ -243,7 +259,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                     try {
                                         const clone = response.clone();
                                         const text = await clone.text();
-                                        if (text.includes('m3u8') || text.includes('mp4') || text.includes('parsed.json') || response.url.includes('parsed.json') || response.url.includes('catalog-api/episodes')) {
+                                        if (text.includes('m3u8') || text.includes('mp4') || text.includes('json') || response.url.includes('api') || response.url.includes('playlist')) {
                                             window.AndroidBridge.onStreamFound(text, response.url);
                                         }
                                     } catch(e) {}
@@ -254,7 +270,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                                 window.XMLHttpRequest.prototype.open = function(method, url, ...args) {
                                     this.addEventListener('load', function() {
                                         try {
-                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('mp4') || this.responseText.includes('parsed.json') || url.includes('parsed.json') || url.includes('catalog-api/episodes'))) {
+                                            if (this.responseText && (this.responseText.includes('m3u8') || this.responseText.includes('mp4') || this.responseText.includes('json') || url.includes('api') || url.includes('playlist'))) {
                                                 window.AndroidBridge.onStreamFound(this.responseText, url);
                                             }
                                         } catch(e) {}
@@ -272,7 +288,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
 
-                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("parsed.json") || reqUrl.contains("catalog-api/episodes") || reqUrl.contains("balancer-api") || reqUrl.contains("playlist")) {
+                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("m3u") || reqUrl.contains("manifest") || reqUrl.contains("playlist") || reqUrl.contains("master") || reqUrl.contains("json") || reqUrl.contains("api") || reqUrl.contains("proxy") || reqUrl.contains("token")) {
                             emitStream(reqUrl)
                         }
 
