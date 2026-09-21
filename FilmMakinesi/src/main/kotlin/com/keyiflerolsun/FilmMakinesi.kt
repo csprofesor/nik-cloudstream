@@ -170,13 +170,33 @@ class FilmMakinesi : MainAPI() {
 
         var foundAny = false
         sources.forEach { sourceUrl ->
-            Log.d(name, "Extractor deneniyor: $sourceUrl")
+            Log.d(name, "Kaynak deneniyor: $sourceUrl")
             try {
-                if (loadExtractor(sourceUrl, data, subtitleCallback, callback)) {
+                val lowerUrl = sourceUrl.lowercase()
+
+                // Bazı sunucular doğrudan m3u8/mp4 döndürüyor.
+                // Bu durumda loadExtractor() kullanmak yerine kaynağı
+                // doğrudan player'a verip FilmMakinesi sayfasını Referer olarak gönder.
+                if (lowerUrl.contains(".m3u8") || lowerUrl.contains(".mp4")) {
+                    callback(
+                        newExtractorLink(
+                            name,
+                            name,
+                            sourceUrl
+                        ) {
+                            this.referer = data
+                            this.headers = mapOf(
+                                "Referer" to data,
+                                "Origin" to mainUrl
+                            )
+                        }
+                    )
+                    foundAny = true
+                } else if (loadExtractor(sourceUrl, data, subtitleCallback, callback)) {
                     foundAny = true
                 }
             } catch (e: Exception) {
-                Log.e(name, "Extractor hatası ($sourceUrl): ${e.message}")
+                Log.e(name, "Kaynak/extractor hatası ($sourceUrl): ${e.message}")
             }
         }
 
