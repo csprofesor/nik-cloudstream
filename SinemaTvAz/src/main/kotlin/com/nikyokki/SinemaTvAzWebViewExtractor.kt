@@ -272,7 +272,7 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     ): WebResourceResponse? {
                         val reqUrl = request?.url?.toString() ?: ""
 
-                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("parsed.json") || reqUrl.contains("catalog-api/episodes")) {
+                        if (reqUrl.contains(".mp4") || reqUrl.contains(".m3u8") || reqUrl.contains("parsed.json") || reqUrl.contains("catalog-api/episodes") || reqUrl.contains("balancer-api") || reqUrl.contains("playlist")) {
                             emitStream(reqUrl)
                         }
 
@@ -280,22 +280,27 @@ class SinemaTvAzWebViewExtractor(private val context: Context) : ExtractorApi() 
                     }
                 }
 
-                val htmlWrapper = """
-                    <!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset="utf-8">
-                        <style>
-                            body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-                            iframe { width: 100%; height: 100%; border: none; }
-                        </style>
-                    </head>
-                    <body>
-                        <iframe src="$finalUrl" allowfullscreen></iframe>
-                    </body>
-                    </html>
-                """.trimIndent()
-                loadDataWithBaseURL(referer ?: mainUrl, htmlWrapper, "text/html", "UTF-8", null)
+                val needsIframeWrapper = finalUrl.contains("cdn2") || finalUrl.contains("token_movie") || finalUrl.contains("stloadi") || finalUrl.contains("allarknow") || finalUrl.contains("vv-player.php")
+                if (needsIframeWrapper) {
+                    val htmlWrapper = """
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta charset="utf-8">
+                            <style>
+                                body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
+                                iframe { width: 100%; height: 100%; border: none; }
+                            </style>
+                        </head>
+                        <body>
+                            <iframe src="$finalUrl" allowfullscreen></iframe>
+                        </body>
+                        </html>
+                    """.trimIndent()
+                    loadDataWithBaseURL(referer ?: mainUrl, htmlWrapper, "text/html", "UTF-8", null)
+                } else {
+                    loadUrl(finalUrl)
+                }
             }
         }
 
