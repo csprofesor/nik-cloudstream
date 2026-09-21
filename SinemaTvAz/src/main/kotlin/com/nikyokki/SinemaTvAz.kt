@@ -191,6 +191,11 @@ class SinemaTvAz : MainAPI() {
 
         document.select("div.video-inside iframe, div.tabs-block__content iframe").forEach { iframe ->
             val src = iframe.attr("data-src").ifEmpty { iframe.attr("src") }
+            val title = iframe.attr("title")
+            if (title.contains("Трейлер", ignoreCase = true) || title.contains("Trailer", ignoreCase = true)) {
+                return@forEach
+            }
+
             if (src.isNotEmpty()) {
                 val playerUrl = fixUrl(src) ?: return@forEach
                 val context = SinemaTvAzPlugin.pluginContext
