@@ -70,6 +70,19 @@ open class CloseLoadExtractor : ExtractorApi() {
         }
 
         if (videoUrl.isNullOrBlank()) {
+            val atobMatch = Regex("""aHR0[0-9a-zA-Z+\/=]+""").find(rawHtml)
+            if (atobMatch != null) {
+                var atob = atobMatch.value
+                val padding = atob.length % 4
+                if (padding != 0) {
+                    atob += "=".repeat(4 - padding)
+                }
+                videoUrl = String(Base64.decode(atob, Base64.DEFAULT), Charsets.UTF_8)
+                Log.d(name, "Fallback atob m3u8: $videoUrl")
+            }
+        }
+
+        if (videoUrl.isNullOrBlank()) {
             Log.e(name, "Video URL bulunamadı!")
             return
         }
