@@ -97,6 +97,8 @@ open class RapidExtractor : ExtractorApi() {
             Log.w(name, "Master fetch hatası (önemsiz): ${e.message}")
         }
 
+        val cookies = response.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+
         callback.invoke(
             newExtractorLink(
                 source = name,
@@ -108,8 +110,9 @@ open class RapidExtractor : ExtractorApi() {
                 this.quality = Qualities.Unknown.value
                 this.headers = mapOf(
                     "Accept" to "*/*",
-                    "Origin" to mainUrl
-                )
+                    "Origin" to mainUrl,
+                    if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                ).filter { it.key.isNotBlank() }
             }
         )
         Log.d(name, "ExtractorLink eklendi: $videoUrl")
