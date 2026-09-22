@@ -356,30 +356,49 @@ override suspend fun loadLinks(
     val document = app.get(data, interceptor = interceptor).document
 
     document.select("div.alternative-links").map { element ->
-        element to element.attr("data-lang").uppercase()
+        element to (element.attr("data-lang").takeIf { it.isNotBlank() }?.uppercase() ?: "")
     }.forEach { (element, langCode) ->
-        element.select("button.alternative-link").map { button ->
-            button.text().replace("(HDrip Xbet)", "").trim() + " $langCode" to button.attr("data-video")
-        }.forEach { (source, videoID) ->
-            val apiGet = app.get(
-                "${mainUrl}/video/$videoID/", interceptor = interceptor,
-                headers = mapOf(
-                    "Content-Type" to "application/json",
-                    "X-Requested-With" to "fetch"
-                ),
-                referer = data
-            ).text
-            Log.d("HDCH", "Found videoID: $videoID")
-            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-            Log.d("HDCH", "$iframe » $iframe")
-            if (iframe.contains("rapidrame")) {
-                iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
-            } else if (iframe.contains("mobi")) {
-                val iframeDoc = Jsoup.parse(apiGet)
-                iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
+        element.select("button.alternative-link").forEach { button ->
+            val source = button.text().replace("(HDrip Xbet)", "").trim() + (if(langCode.isNotBlank()) " $langCode" else "")
+            val videoID = button.attr("data-video")
+            if (videoID.isBlank()) return@forEach
+            
+            var iframe: String? = null
+            try {
+                val apiGet = app.get(
+                    "${mainUrl}/video/$videoID/", interceptor = interceptor,
+                    headers = mapOf(
+                        "Content-Type" to "application/json",
+                        "X-Requested-With" to "fetch"
+                    ),
+                    referer = data
+                ).text
+                Log.d("HDCH", "Found videoID: $videoID")
+                iframe = Regex("""(?:data-)?src=\\?['"]([^'"]+)""").find(apiGet)?.groupValues?.get(1)
+            } catch (e: Exception) {
+                Log.d("HDCH", "Fetch failed for videoID: $videoID - ${e.message}")
             }
-            Log.d("HDCH", "$source » $videoID » $iframe")
-            invokeLocalSource(source, iframe, subtitleCallback, callback)
+            
+            if (iframe.isNullOrBlank() && button.attr("data-active") == "1") {
+                iframe = document.select("iframe[data-src], iframe[src]").firstOrNull()?.let { elementNode ->
+                    elementNode.attr("data-src").takeIf { it.isNotBlank() } ?: elementNode.attr("src")
+                }
+            }
+
+            val finalIframe = iframe?.replace("\\", "")
+            if (finalIframe.isNullOrBlank()) {
+                Log.d("HDCH", "Could not find iframe for source: $source")
+                return@forEach
+            }
+            
+            var processedIframe = finalIframe
+            Log.d("HDCH", "$processedIframe » $processedIframe")
+            if (processedIframe.contains("rapidrame")) {
+                processedIframe = "${mainUrl}/rplayer/" + processedIframe.substringAfter("?rapidrame_id=")
+            }
+
+            Log.d("HDCH", "$source » $videoID » $processedIframe")
+            invokeLocalSource(source, processedIframe, subtitleCallback, callback)
         }
     }
     return true
