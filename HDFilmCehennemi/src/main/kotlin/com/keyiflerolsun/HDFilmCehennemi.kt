@@ -208,62 +208,89 @@ class HDFilmCehennemi : MainAPI() {
 
     private fun decryptLocalUrl(unpackedScript: String): String? {
         try {
-            fun decode(parts: List<String>): String? {
-                if (parts.isEmpty()) return null
-                var value = parts.joinToString("")
-                val candidates = mutableListOf<String>()
-                candidates.add(value)
-                candidates.add(value.reversed())
+            fun isUrl(value: String): Boolean =
+                value.startsWith("http://", true) ||
+                value.startsWith("https://", true) ||
+                value.contains(".m3u8", true) ||
+                value.contains(".mp4", true)
 
-                val expanded = mutableListOf<String>()
-                candidates.forEach { item ->
-                    expanded.add(item)
-                    expanded.add(
-                        item.map { c ->
-                            when {
-                                c in 'a'..'z' -> ((c.code - 97 + 13) % 26 + 97).toChar()
-                                c in 'A'..'Z' -> ((c.code - 65 + 13) % 26 + 65).toChar()
-                                else -> c
-                            }
-                        }.joinToString("")
-                    )
+            fun unmix(value: String): String {
+                val out = StringBuilder(value.length)
+                value.forEachIndexed { i, c ->
+                    val n = (c.code - (399756995L % (i + 5)) + 256) % 256
+                    out.append(n.toChar())
                 }
+                return out.toString()
+            }
 
-                for (candidate in expanded) {
-                    try {
-                        var input = candidate
-                        while (input.length % 4 != 0) input += "="
-                        var decoded = String(
-                            android.util.Base64.decode(input, android.util.Base64.DEFAULT),
-                            Charsets.ISO_8859_1
-                        )
+            fun rot13(value: String): String = value.map { c ->
+                when {
+                    c in 'a'..'z' -> ((c.code - 97 + 13) % 26 + 97).toChar()
+                    c in 'A'..'Z' -> ((c.code - 65 + 13) % 26 + 65).toChar()
+                    else -> c
+                }
+            }.joinToString("")
 
-                        val second = try {
-                            var s = decoded
-                            while (s.length % 4 != 0) s += "="
-                            String(android.util.Base64.decode(s, android.util.Base64.DEFAULT), Charsets.ISO_8859_1)
-                        } catch (_: Exception) {
-                            null
+            fun b64(value: String): String? = try {
+                var input = value
+                while (input.length % 4 != 0) input += "="
+                String(android.util.Base64.decode(input, android.util.Base64.DEFAULT), Charsets.ISO_8859_1)
+            } catch (_: Exception) {
+                null
+            }
+
+            fun tryDecode(parts: List<String>): String? {
+                if (parts.isEmpty()) return null
+                val joined = parts.joinToString("")
+                val inputs = listOf(
+                    joined,
+                    joined.reversed(),
+                    rot13(joined),
+                    rot13(joined.reversed())
+                )
+                for (input in inputs) {
+                    val decoded = b64(input) ?: continue
+                    val candidates = listOf(decoded, b64(decoded)).filterNotNull()
+                    for (candidate in candidates) {
+                        val values = listOf(candidate, candidate.reversed(), rot13(candidate), rot13(candidate.reversed()))
+                        for (value in values) {
+                            val result = unmix(value)
+                            if (isUrl(result)) return result
                         }
-
-                        val values = listOfNotNull(decoded, second)
-                        for (text in values) {
-                            val unmix = StringBuilder()
-                            text.forEachIndexed { i, c ->
-                                val n = (c.code - (399756995L % (i + 5)) + 256) % 256
-                                unmix.append(n.toChar())
-                            }
-                            val result = unmix.toString()
-                            if (result.startsWith("http://", true) ||
-                                result.startsWith("https://", true) ||
-                                result.contains(".m3u8", true) ||
-                                result.contains(".mp4", true)
-                            ) return result
-                        }
-                    } catch (_: Exception) {
                     }
                 }
+                return null
             }
+
+            fun extractParts(source: String): List<String> {
+                return Regex("""["']([^"']*)["']""").findAll(source)
+                    .map { it.groupValues[1].replace("\\/","/") }
+                    .toList()
+            }
+
+            val fileLink = Regex("""file_link\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                .find(unpackedScript)?.groupValues?.get(1)
+            if (fileLink != null) {
+                tryDecode(extractParts(fileLink))?.let { return it }
+            }
+
+            val sourceVar = Regex(
+                """sources\s*:\s*\[\s*\{\s*file\s*:\s*([A-Za-z0-9_]+)""",
+                RegexOption.IGNORE_CASE
+            ).find(unpackedScript)?.groupValues?.get(1)
+
+            if (sourceVar != null) {
+                val call = Regex(
+                    """$sourceVar\s*=\s*[A-Za-z0-9_]+\s*\(\s*\[([\s\S]*?)\]\s*\)"""
+                ).find(unpackedScript)?.groupValues?.get(1)
+                if (call != null) {
+                    tryDecode(extractParts(call))?.let { return it }
+                }
+            }
+
+            Regex("""https?://[^"'\s]+(?:m3u8|mp4)[^"'\s]*""", RegexOption.IGNORE_CASE)
+                .find(unpackedScript)?.value?.let { return it }
+
             return null
         } catch (e: Exception) {
             Log.e("HDCH", "decryptLocalUrl Error: ${e.message}")
