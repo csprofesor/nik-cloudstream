@@ -100,11 +100,15 @@ class HDFilmCehennemi : MainAPI() {
         val doc = app.get(url, headers = headers, referer = mainUrl, interceptor = interceptor)
         val home: List<SearchResponse>?
         if (!doc.toString().contains("Sayfa Bulunamadı")) {
-            val aa: HDFC = objectMapper.readValue(doc.toString())
-            val document = Jsoup.parse(aa.html)
+            try {
+                val aa: HDFC = objectMapper.readValue(doc.toString())
+                val document = Jsoup.parse(aa.html)
 
-            home = document.select("a").mapNotNull { it.toSearchResult() }
-            return newHomePageResponse(request.name, home)
+                home = document.select("a").mapNotNull { it.toSearchResult() }
+                return newHomePageResponse(request.name, home)
+            } catch (e: Exception) {
+                Log.e("HDCH", "Failed to parse JSON for main page", e)
+            }
         }
         return newHomePageResponse(request.name, emptyList())
     }
@@ -150,8 +154,9 @@ class HDFilmCehennemi : MainAPI() {
         val year        = document.selectFirst("div.post-info-year-country a")?.text()?.trim()?.toIntOrNull()
         val tvType      = if (document.select("div.seasons").isEmpty()) TvType.Movie else TvType.TvSeries
         val description = document.selectFirst("article.post-info-content > p")?.text()?.trim()
-        val actors      = document.select("div.post-info-cast a").map {
-            Actor(it.selectFirst("strong")!!.text(), it.select("img").attr("data-src"))
+        val actors      = document.select("div.post-info-cast a").mapNotNull {
+            val name = it.selectFirst("strong")?.text() ?: return@mapNotNull null
+            Actor(name, it.select("img").attr("data-src"))
         }
 
         val recommendations = document.select("div.section-slider-container div.slider-slide").mapNotNull {
@@ -356,30 +361,49 @@ override suspend fun loadLinks(
     val document = app.get(data, interceptor = interceptor).document
 
     document.select("div.alternative-links").map { element ->
-        element to element.attr("data-lang").uppercase()
+        element to (element.attr("data-lang").takeIf { it.isNotBlank() }?.uppercase() ?: "")
     }.forEach { (element, langCode) ->
-        element.select("button.alternative-link").map { button ->
-            button.text().replace("(HDrip Xbet)", "").trim() + " $langCode" to button.attr("data-video")
-        }.forEach { (source, videoID) ->
-            val apiGet = app.get(
-                "${mainUrl}/video/$videoID/", interceptor = interceptor,
-                headers = mapOf(
-                    "Content-Type" to "application/json",
-                    "X-Requested-With" to "fetch"
-                ),
-                referer = data
-            ).text
-            Log.d("HDCH", "Found videoID: $videoID")
-            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-            Log.d("HDCH", "$iframe » $iframe")
-            if (iframe.contains("rapidrame")) {
-                iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
-            } else if (iframe.contains("mobi")) {
-                val iframeDoc = Jsoup.parse(apiGet)
-                iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
+        element.select("button.alternative-link").forEach { button ->
+            val source = button.text().replace("(HDrip Xbet)", "").trim() + (if(langCode.isNotBlank()) " $langCode" else "")
+            val videoID = button.attr("data-video")
+            if (videoID.isBlank()) return@forEach
+            
+            var iframe: String? = null
+            try {
+                val apiGet = app.get(
+                    "${mainUrl}/video/$videoID/", interceptor = interceptor,
+                    headers = mapOf(
+                        "Content-Type" to "application/json",
+                        "X-Requested-With" to "fetch"
+                    ),
+                    referer = data
+                ).text
+                Log.d("HDCH", "Found videoID: $videoID")
+                iframe = Regex("""(?:data-)?src=\\?['"]([^\\'"]+)""").find(apiGet)?.groupValues?.get(1)
+            } catch (e: Exception) {
+                Log.d("HDCH", "Fetch failed for videoID: $videoID - ${e.message}")
             }
-            Log.d("HDCH", "$source » $videoID » $iframe")
-            invokeLocalSource(source, iframe, subtitleCallback, callback)
+            
+            if (iframe.isNullOrBlank() && button.attr("data-active") == "1") {
+                iframe = document.select("iframe[data-src], iframe[src]").firstOrNull()?.let { element ->
+                    element.attr("data-src").takeIf { it.isNotBlank() } ?: element.attr("src")
+                }
+            }
+
+            val finalIframe = iframe?.replace("\\", "")
+            if (finalIframe.isNullOrBlank()) {
+                Log.d("HDCH", "Could not find iframe for source: $source")
+                return@forEach
+            }
+            
+            var processedIframe = finalIframe
+            Log.d("HDCH", "$processedIframe » $processedIframe")
+            if (processedIframe.contains("rapidrame")) {
+                processedIframe = "${mainUrl}/rplayer/" + processedIframe.substringAfter("?rapidrame_id=")
+            }
+
+            Log.d("HDCH", "$source » $videoID » $processedIframe")
+            invokeLocalSource(source, processedIframe, subtitleCallback, callback)
         }
     }
     return true
