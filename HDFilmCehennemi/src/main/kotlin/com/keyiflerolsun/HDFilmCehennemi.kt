@@ -208,101 +208,63 @@ class HDFilmCehennemi : MainAPI() {
 
     private fun decryptLocalUrl(unpackedScript: String): String? {
         try {
-            // 1. Extract parts array
-            val partsMatch = """\(\[\s*((?:['"][^'"]+['"]\s*,?\s*)+)\]\)""".toRegex().find(unpackedScript)
-            val parts = partsMatch?.groupValues?.get(1)?.split(",")?.map { 
-                it.trim().trim('\'', '"').replace("\\/", "/") 
-            } ?: return null
+            fun decode(parts: List<String>): String? {
+                if (parts.isEmpty()) return null
+                var value = parts.joinToString("")
+                val candidates = mutableListOf<String>()
+                candidates.add(value)
+                candidates.add(value.reversed())
 
-            // 2. Extract magicNum and magicOffset
-            val moduloMatch = """(\d+)\s*%\s*\(i\s*\+\s*(\d+)\)""".toRegex().find(unpackedScript)
-            val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
-            val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
-
-            // 3. Isolate function body
-            val funcBody = unpackedScript.substringAfter("function dc_").substringBefore("function d1x")
-
-            // 4. Extract operations and their shift values in execution order
-            val operations = mutableListOf<Pair<Int, DecOp>>()
-
-            var index = funcBody.indexOf("atob(")
-            while (index >= 0) {
-                operations.add(Pair(index, DecOp("atob")))
-                index = funcBody.indexOf("atob(", index + 1)
-            }
-
-            index = funcBody.indexOf("reverse")
-            while (index >= 0) {
-                operations.add(Pair(index, DecOp("reverse")))
-                index = funcBody.indexOf("reverse", index + 1)
-            }
-
-            index = funcBody.indexOf("replace")
-            while (index >= 0) {
-                val block = funcBody.substring(index, minOf(index + 300, funcBody.length))
-                var shift = 13
-                val rotShiftMatch = """charCodeAt\(0\)\s*\+\s*(\d+)""".toRegex().find(block)
-                if (rotShiftMatch != null) {
-                    shift = rotShiftMatch.groupValues[1].toInt()
-                } else {
-                    val rotShiftMatch2 = """o\s*-\s*base\s*([+-])\s*(\d+)""".toRegex().find(block)
-                    if (rotShiftMatch2 != null) {
-                        val sign = rotShiftMatch2.groupValues[1]
-                        val num = rotShiftMatch2.groupValues[2].toInt()
-                        shift = if (sign == "-") (26 - num) % 26 else num
-                    }
-                }
-                operations.add(Pair(index, DecOp("rot", shift)))
-                index = funcBody.indexOf("replace", index + 1)
-            }
-
-            operations.sortBy { it.first }
-
-            var result = parts.joinToString("")
-
-            // Execute operations in order
-            for (op in operations) {
-                val action = op.second
-                when (action.name) {
-                    "reverse" -> {
-                        result = result.reversed()
-                    }
-                    "atob" -> {
-                        var paddedResult = result
-                        while (paddedResult.length % 4 != 0) {
-                            paddedResult += "="
-                        }
-                        result = String(android.util.Base64.decode(paddedResult, android.util.Base64.NO_WRAP), Charsets.ISO_8859_1)
-                    }
-                    "rot" -> {
-                        val rotShift = action.rotShift
-                        val rot = StringBuilder()
-                        for (c in result) {
-                            if (c in 'a'..'z') {
-                                val shifted = c.code + rotShift
-                                rot.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
-                            } else if (c in 'A'..'Z') {
-                                val shifted = c.code + rotShift
-                                rot.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
-                            } else {
-                                rot.append(c)
+                val expanded = mutableListOf<String>()
+                candidates.forEach { item ->
+                    expanded.add(item)
+                    expanded.add(
+                        item.map { c ->
+                            when {
+                                c in 'a'..'z' -> ((c.code - 97 + 13) % 26 + 97).toChar()
+                                c in 'A'..'Z' -> ((c.code - 65 + 13) % 26 + 65).toChar()
+                                else -> c
                             }
+                        }.joinToString("")
+                    )
+                }
+
+                for (candidate in expanded) {
+                    try {
+                        var input = candidate
+                        while (input.length % 4 != 0) input += "="
+                        var decoded = String(
+                            android.util.Base64.decode(input, android.util.Base64.DEFAULT),
+                            Charsets.ISO_8859_1
+                        )
+
+                        val second = try {
+                            var s = decoded
+                            while (s.length % 4 != 0) s += "="
+                            String(android.util.Base64.decode(s, android.util.Base64.DEFAULT), Charsets.ISO_8859_1)
+                        } catch (_: Exception) {
+                            null
                         }
-                        result = rot.toString()
+
+                        val values = listOfNotNull(decoded, second)
+                        for (text in values) {
+                            val unmix = StringBuilder()
+                            text.forEachIndexed { i, c ->
+                                val n = (c.code - (399756995L % (i + 5)) + 256) % 256
+                                unmix.append(n.toChar())
+                            }
+                            val result = unmix.toString()
+                            if (result.startsWith("http://", true) ||
+                                result.startsWith("https://", true) ||
+                                result.contains(".m3u8", true) ||
+                                result.contains(".mp4", true)
+                            ) return result
+                        }
+                    } catch (_: Exception) {
                     }
                 }
             }
-
-            // 5. Modulo Unmix
-            val unmix = StringBuilder()
-            for (i in result.indices) {
-                val charCode = result[i].code.toLong()
-                val decryptedCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
-                unmix.append(decryptedCode.toInt().toChar())
-            }
-
-            return unmix.toString()
-
+            return null
         } catch (e: Exception) {
             Log.e("HDCH", "decryptLocalUrl Error: ${e.message}")
             return null
