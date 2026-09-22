@@ -208,101 +208,104 @@ class HDFilmCehennemi : MainAPI() {
 
     private fun decryptLocalUrl(unpackedScript: String): String? {
         try {
-            // 1. Extract parts array
-            val partsMatch = """\(\[\s*((?:['"][^'"]+['"]\s*,?\s*)+)\]\)""".toRegex().find(unpackedScript)
-            val parts = partsMatch?.groupValues?.get(1)?.split(",")?.map { 
-                it.trim().trim('\'', '"').replace("\\/", "/") 
-            } ?: return null
-
-            // 2. Extract magicNum and magicOffset
-            val moduloMatch = """(\d+)\s*%\s*\(i\s*\+\s*(\d+)\)""".toRegex().find(unpackedScript)
-            val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
-            val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
-
-            // 3. Isolate function body
-            val funcBody = unpackedScript.substringAfter("function dc_").substringBefore("function d1x")
-
-            // 4. Extract operations and their shift values in execution order
-            val operations = mutableListOf<Pair<Int, DecOp>>()
-
-            var index = funcBody.indexOf("atob(")
-            while (index >= 0) {
-                operations.add(Pair(index, DecOp("atob")))
-                index = funcBody.indexOf("atob(", index + 1)
+            fun quotedParts(source: String): List<String> {
+                val result = mutableListOf<String>()
+                Regex("""["']([^"']*)["']""").findAll(source).forEach {
+                    result.add(it.groupValues[1].replace("\\/","/"))
+                }
+                return result
             }
 
-            index = funcBody.indexOf("reverse")
-            while (index >= 0) {
-                operations.add(Pair(index, DecOp("reverse")))
-                index = funcBody.indexOf("reverse", index + 1)
+            fun b64(value: String): String? = try {
+                var input = value
+                while (input.length % 4 != 0) input += "="
+                String(android.util.Base64.decode(input, android.util.Base64.DEFAULT), Charsets.ISO_8859_1)
+            } catch (_: Exception) {
+                null
             }
 
-            index = funcBody.indexOf("replace")
-            while (index >= 0) {
-                val block = funcBody.substring(index, minOf(index + 300, funcBody.length))
-                var shift = 13
-                val rotShiftMatch = """charCodeAt\(0\)\s*\+\s*(\d+)""".toRegex().find(block)
-                if (rotShiftMatch != null) {
-                    shift = rotShiftMatch.groupValues[1].toInt()
-                } else {
-                    val rotShiftMatch2 = """o\s*-\s*base\s*([+-])\s*(\d+)""".toRegex().find(block)
-                    if (rotShiftMatch2 != null) {
-                        val sign = rotShiftMatch2.groupValues[1]
-                        val num = rotShiftMatch2.groupValues[2].toInt()
-                        shift = if (sign == "-") (26 - num) % 26 else num
+            fun rot13(value: String): String = value.map { c ->
+                when (c) {
+                    in 'a'..'z' -> ((c.code - 'a'.code + 13) % 26 + 'a'.code).toChar()
+                    in 'A'..'Z' -> ((c.code - 'A'.code + 13) % 26 + 'A'.code).toChar()
+                    else -> c
+                }
+            }.joinToString("")
+
+            fun unmix(value: String, magic: Long = 399756995L, offset: Int = 5): String {
+                val out = StringBuilder(value.length)
+                value.forEachIndexed { i, c ->
+                    val decoded = (c.code - (magic % (i + offset)) + 256) % 256
+                    out.append(decoded.toChar())
+                }
+                return out.toString()
+            }
+
+            fun valid(value: String?): Boolean {
+                if (value.isNullOrBlank() || value.length < 10) return false
+                if (value.any { it.code in 0..8 || it.code in 14..31 }) return false
+                return value.startsWith("http://", true) ||
+                    value.startsWith("https://", true) ||
+                    value.contains("m3u8", true) ||
+                    value.contains("mp4", true)
+            }
+
+            fun tryStrategies(parts: List<String>): String? {
+                if (parts.isEmpty()) return null
+                val joined = parts.joinToString("")
+
+                val candidates: List<() -> String> = listOf(
+                    { val b = b64(rot13(joined)) ?: return@listOf ""; unmix(b.reversed()) },
+                    { val b1 = b64(joined.reversed()) ?: return@listOf ""; val b2 = b64(b1) ?: return@listOf ""; unmix(b2) },
+                    { val b = b64(rot13(joined.reversed())) ?: return@listOf ""; unmix(b) },
+                    { val b = b64(joined.reversed()) ?: return@listOf ""; unmix(rot13(b)) },
+                    { val b = b64(rot13(joined)) ?: return@listOf ""; unmix(b) },
+                    { val b = b64(joined) ?: return@listOf ""; unmix(rot13(b.reversed())) },
+                    { val b = b64(joined) ?: return@listOf ""; unmix(rot13(b.reversed())) },
+                    { val b = b64(rot13(joined.reversed())) ?: return@listOf ""; val b2 = b64(b) ?: return@listOf ""; unmix(b2) }
+                )
+
+                candidates.forEach { candidate ->
+                    try {
+                        val result = candidate()
+                        if (valid(result)) return result
+                    } catch (_: Exception) {
                     }
                 }
-                operations.add(Pair(index, DecOp("rot", shift)))
-                index = funcBody.indexOf("replace", index + 1)
+                return null
             }
 
-            operations.sortBy { it.first }
+            val fileLink = Regex("""file_link\s*=\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+                .find(unpackedScript)?.groupValues?.get(1)
 
-            var result = parts.joinToString("")
+            if (!fileLink.isNullOrBlank()) {
+                tryStrategies(quotedParts(fileLink))?.let { if (valid(it)) return it }
+            }
 
-            // Execute operations in order
-            for (op in operations) {
-                val action = op.second
-                when (action.name) {
-                    "reverse" -> {
-                        result = result.reversed()
-                    }
-                    "atob" -> {
-                        var paddedResult = result
-                        while (paddedResult.length % 4 != 0) {
-                            paddedResult += "="
-                        }
-                        result = String(android.util.Base64.decode(paddedResult, android.util.Base64.NO_WRAP), Charsets.ISO_8859_1)
-                    }
-                    "rot" -> {
-                        val rotShift = action.rotShift
-                        val rot = StringBuilder()
-                        for (c in result) {
-                            if (c in 'a'..'z') {
-                                val shifted = c.code + rotShift
-                                rot.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
-                            } else if (c in 'A'..'Z') {
-                                val shifted = c.code + rotShift
-                                rot.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
-                            } else {
-                                rot.append(c)
-                            }
-                        }
-                        result = rot.toString()
-                    }
+            val sourceVar = Regex(
+                """sources\s*:\s*\[\s*\{\s*file\s*:\s*([A-Za-z0-9_]+)""",
+                RegexOption.IGNORE_CASE
+            ).find(unpackedScript)?.groupValues?.get(1)
+
+            if (!sourceVar.isNullOrBlank()) {
+                val variableRegex = Regex(
+                    """(?:var|let|const)\s+$sourceVar\s*=\s*[A-Za-z0-9_]+\s*\(\s*\[([\s\S]*?)\]\s*\)""",
+                    RegexOption.IGNORE_CASE
+                )
+                variableRegex.find(unpackedScript)?.groupValues?.get(1)?.let {
+                    tryStrategies(quotedParts(it))?.let { decoded -> if (valid(decoded)) return decoded }
                 }
             }
 
-            // 5. Modulo Unmix
-            val unmix = StringBuilder()
-            for (i in result.indices) {
-                val charCode = result[i].code.toLong()
-                val decryptedCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
-                unmix.append(decryptedCode.toInt().toChar())
-            }
+            Regex("""\(\[\s*((?:['"][^'"]+['"]\s*,?\s*)+)\]\)""")
+                .find(unpackedScript)?.groupValues?.get(1)?.let {
+                    tryStrategies(quotedParts(it))?.let { decoded -> if (valid(decoded)) return decoded }
+                }
 
-            return unmix.toString()
+            Regex("""https?://[^"'\s]+(?:m3u8|mp4)[^"'\s]*""", RegexOption.IGNORE_CASE)
+                .find(unpackedScript)?.value?.let { if (valid(it)) return it }
 
+            return null
         } catch (e: Exception) {
             Log.e("HDCH", "decryptLocalUrl Error: ${e.message}")
             return null
