@@ -333,6 +333,17 @@ class HDFilmCehennemi : MainAPI() {
                 Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
             }
         }
+
+        Log.d("HDCH", "Master fetch deneniyor: $lastUrl")
+        try {
+            app.get(lastUrl, referer = "$mainUrl/", headers = mapOf(
+                "Accept" to "*/*",
+                "Origin" to mainUrl
+            ))
+        } catch (e: Exception) {
+            Log.w("HDCH", "Master fetch hatası (önemsiz): ${e.message}")
+        }
+
         callback.invoke(
             newExtractorLink(
                 source  = source,
@@ -340,7 +351,12 @@ class HDFilmCehennemi : MainAPI() {
                 url     = lastUrl,
                 type    = ExtractorLinkType.M3U8
             ) {
-                headers = mapOf("Referer" to "${mainUrl}/", "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0")
+                headers = mapOf(
+                    "Accept" to "*/*",
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                    "Referer" to "${mainUrl}/",
+                    "Origin" to mainUrl
+                )
                 quality = Qualities.Unknown.value
             }
         )
