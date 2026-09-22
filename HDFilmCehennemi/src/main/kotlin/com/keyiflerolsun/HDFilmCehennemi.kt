@@ -2,7 +2,6 @@
 
 package com.keyiflerolsun
 
-import android.util.Base64
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.DeserializationFeature
@@ -205,370 +204,146 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
-    private fun unpackPackerJs(rawHtml: String): String? {
-        return try {
-            val startMarker = "eval(function(p,a,c,k,e,d){"
-            val endMarker = ",0,{}))"
+    data class DecOp(val name: String, val rotShift: Int = 0)
 
-            val startIdx = rawHtml.indexOf(startMarker)
-            if (startIdx == -1) return null
+    private fun decryptLocalUrl(unpackedScript: String): String? {
+        try {
+            // 1. Extract parts array
+            val partsMatch = """\(\[\s*((?:['"][^'"]+['"]\s*,?\s*)+)\]\)""".toRegex().find(unpackedScript)
+            val parts = partsMatch?.groupValues?.get(1)?.split(",")?.map { 
+                it.trim().trim('\'', '"').replace("\\/", "/") 
+            } ?: return null
 
-            val endIdx = rawHtml.indexOf(endMarker, startIdx + startMarker.length)
-            if (endIdx == -1) return null
+            // 2. Extract magicNum and magicOffset
+            val moduloMatch = """(\d+)\s*%\s*\(i\s*\+\s*(\d+)\)""".toRegex().find(unpackedScript)
+            val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
+            val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
 
-            val block = rawHtml.substring(startIdx, endIdx + endMarker.length)
-            val packedStart = block.indexOf("}('") + 3
-            val packedEnd = block.indexOf("',", packedStart)
-            if (packedStart == -1 || packedEnd == -1) return null
-            val packed = block.substring(packedStart, packedEnd)
-            val afterPacked = block.substring(packedEnd + 2)
-            val baseEnd = afterPacked.indexOf(",")
-            if (baseEnd == -1) return null
-            val base = afterPacked.substring(0, baseEnd).toInt()
-            val afterBase = afterPacked.substring(baseEnd + 1)
-            val countEnd = afterBase.indexOf(",")
-            if (countEnd == -1) return null
-            val count = afterBase.substring(0, countEnd).toInt()
-            val dictQuoteStart = afterBase.indexOf("'") + 1
-            val dictQuoteEnd = afterBase.indexOf("'.split", dictQuoteStart)
-            if (dictQuoteStart == -1 || dictQuoteEnd == -1) return null
-            val dictStr = afterBase.substring(dictQuoteStart, dictQuoteEnd)
+            // 3. Isolate function body
+            val funcBody = unpackedScript.substringAfter("function dc_").substringBefore("function d1x")
 
-            val dictionary = dictStr.split('|')
-            val lookup = mutableMapOf<String, String>()
+            // 4. Extract operations and their shift values in execution order
+            val operations = mutableListOf<Pair<Int, DecOp>>()
 
-            var c = count - 1
-            while (c >= 0) {
-                val key = packerEncode(c, base)
-                lookup[key] = if (c < dictionary.size && dictionary[c].isNotEmpty()) {
-                    dictionary[c]
+            var index = funcBody.indexOf("atob(")
+            while (index >= 0) {
+                operations.add(Pair(index, DecOp("atob")))
+                index = funcBody.indexOf("atob(", index + 1)
+            }
+
+            index = funcBody.indexOf("reverse")
+            while (index >= 0) {
+                operations.add(Pair(index, DecOp("reverse")))
+                index = funcBody.indexOf("reverse", index + 1)
+            }
+
+            index = funcBody.indexOf("replace")
+            while (index >= 0) {
+                val block = funcBody.substring(index, minOf(index + 300, funcBody.length))
+                var shift = 13
+                val rotShiftMatch = """charCodeAt\(0\)\s*\+\s*(\d+)""".toRegex().find(block)
+                if (rotShiftMatch != null) {
+                    shift = rotShiftMatch.groupValues[1].toInt()
                 } else {
-                    key
+                    val rotShiftMatch2 = """o\s*-\s*base\s*([+-])\s*(\d+)""".toRegex().find(block)
+                    if (rotShiftMatch2 != null) {
+                        val sign = rotShiftMatch2.groupValues[1]
+                        val num = rotShiftMatch2.groupValues[2].toInt()
+                        shift = if (sign == "-") (26 - num) % 26 else num
+                    }
                 }
-                c--
+                operations.add(Pair(index, DecOp("rot", shift)))
+                index = funcBody.indexOf("replace", index + 1)
             }
 
-            var result = packed
-            val sortedKeys = lookup.keys.sortedByDescending { key -> key.length }
-            for (key in sortedKeys) {
-                val value = lookup[key]!!
-                result = result.replace(Regex("\\b${Regex.escape(key)}\\b"), value)
-            }
+            operations.sortBy { it.first }
 
-            result
-        } catch (e: Exception) {
-            null
-        }
-    }
+            var result = parts.joinToString("")
 
-    private fun packerEncode(num: Int, base: Int): String {
-        val digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-        if (num == 0) return "0"
-        var n = num
-        val sb = StringBuilder()
-        while (n > 0) {
-            sb.insert(0, digits[n % base])
-            n /= base
-        }
-        return sb.toString()
-    }
-
-    private fun extractFuncBody(rawHtml: String, funcName: String): String? {
-        val startIdx = rawHtml.indexOf("function $funcName")
-        if (startIdx == -1) return null
-
-        val braceIdx = rawHtml.indexOf('{', startIdx)
-        if (braceIdx == -1) return null
-
-        var braceCount = 1
-        var i = braceIdx + 1
-        while (braceCount > 0 && i < rawHtml.length) {
-            when (rawHtml[i]) {
-                '{' -> braceCount++
-                '}' -> braceCount--
-            }
-            i++
-        }
-        return if (braceCount == 0) rawHtml.substring(braceIdx + 1, i - 1) else null
-    }
-
-    private fun parseAndExecuteJs(funcBody: String, parts: List<String>): String? {
-        return try {
-            val seedMatch = Regex(
-                """var\s+(\w+)\s*=\s*"([^"]+)"\s*;\s*var\s+(\w+)\s*=\s*"([^"]+)""""
-            ).find(funcBody) ?: run {
-                Log.d("HDCH", "Seed/ops string'leri bulunamadı")
-                return null
-            }
-            val seedStr = seedMatch.groupValues[2]
-            val opsStr = seedMatch.groupValues[4]
-            Log.d("HDCH", "Seed: '$seedStr', Ops: '$opsStr'")
-
-            var la8q = parts.joinToString("")
-            var m1l = 0
-            var rfdgf = 0
-            for (i in seedStr.indices) {
-                val ioz = seedStr[i].code
-                m1l = (m1l * 31 + ioz) % 251
-                rfdgf = (rfdgf xor (ioz + i)) and 255
-            }
-            val ucv = (m1l + rfdgf) % 256
-            val h52gx = (m1l % 13) + 3
-            var ws7g = ((m1l * 256 + rfdgf) % 65521) + 1
-            Log.d("HDCH", "ucv=$ucv, h52gx=$h52gx, ws7g=$ws7g")
-            for (i in opsStr.length - 1 downTo 0) {
-                val ch = opsStr[i]
-                la8q = when (ch) {
-                    'b' -> atob(la8q)
-                    'v' -> la8q.reversed()
-                    else -> {
-                        val tcxa = (26 - ((ch.code - 64) % 26)) % 26
-                        caesarShift(la8q, tcxa)
+            // Execute operations in order
+            for (op in operations) {
+                val action = op.second
+                when (action.name) {
+                    "reverse" -> {
+                        result = result.reversed()
+                    }
+                    "atob" -> {
+                        var paddedResult = result
+                        while (paddedResult.length % 4 != 0) {
+                            paddedResult += "="
+                        }
+                        result = String(android.util.Base64.decode(paddedResult, android.util.Base64.NO_WRAP), Charsets.ISO_8859_1)
+                    }
+                    "rot" -> {
+                        val rotShift = action.rotShift
+                        val rot = StringBuilder()
+                        for (c in result) {
+                            if (c in 'a'..'z') {
+                                val shifted = c.code + rotShift
+                                rot.append(if (shifted > 'z'.code) (shifted - 26).toChar() else shifted.toChar())
+                            } else if (c in 'A'..'Z') {
+                                val shifted = c.code + rotShift
+                                rot.append(if (shifted > 'Z'.code) (shifted - 26).toChar() else shifted.toChar())
+                            } else {
+                                rot.append(c)
+                            }
+                        }
+                        result = rot.toString()
                     }
                 }
             }
-            if (opsStr.length > 4096) la8q = la8q.reversed()
 
-            Log.d("HDCH", "Operasyonlar sonrası uzunluk: ${la8q.length}")
-            val tmzq = la8q.length
-            if (tmzq > 1) {
-                val gtwld = IntArray(tmzq)
-                for (xfm8 in tmzq - 1 downTo 1) {
-                    ws7g = (ws7g * 75 + 74) % 65537
-                    gtwld[xfm8] = ws7g % (xfm8 + 1)
-                }
-                val onw = la8q.toCharArray()
-                for (xfm8 in 1 until tmzq) {
-                    val j = gtwld[xfm8]
-                    val tmp = onw[xfm8]
-                    onw[xfm8] = onw[j]
-                    onw[j] = tmp
-                }
-                la8q = String(onw)
-            }
-            val sb = StringBuilder(tmzq)
-            var ew0 = ucv
-            for (c in la8q) {
-                val ioz = c.code
-                ew0 = (ew0 + h52gx) % 256
-                sb.append((ioz xor ew0).toChar())
-                ew0 = (ew0 + ioz) % 256
+            // 5. Modulo Unmix
+            val unmix = StringBuilder()
+            for (i in result.indices) {
+                val charCode = result[i].code.toLong()
+                val decryptedCode = (charCode - (magicNum % (i + magicOffset)) + 256) % 256
+                unmix.append(decryptedCode.toInt().toChar())
             }
 
-            val result = sb.toString()
-            Log.d("HDCH", "Çözülen değer: ${result.take(200)}")
-            result.trim().takeIf { it.startsWith("http") }
+            return unmix.toString()
+
         } catch (e: Exception) {
-            Log.e("HDCH", "JS Parser hatası: ${e.message}")
-            null
+            Log.e("HDCH", "decryptLocalUrl Error: ${e.message}")
+            return null
         }
-    }
-
-    private fun atob(s: String): String {
-        var str = s.trim()
-        val padding = 4 - str.length % 4
-        if (padding != 4) str += "=".repeat(padding)
-        return Base64.decode(str, Base64.DEFAULT).toString(Charsets.ISO_8859_1)
-    }
-
-    private fun btoa(s: String): String {
-        return Base64.encodeToString(s.toByteArray(Charsets.ISO_8859_1), Base64.DEFAULT).trim()
-    }
-
-    private fun caesarShift(text: String, shift: Int): String {
-        return text.map { c ->
-            when {
-                c in 'A'..'Z' -> ((c.code - 'A'.code + shift) % 26 + 'A'.code).toChar()
-                c in 'a'..'z' -> ((c.code - 'a'.code + shift) % 26 + 'a'.code).toChar()
-                else -> c
-            }
-        }.joinToString("")
-    }
-
-    private fun xorUnmix(text: String, accStart: Int, increment: Int): String {
-        var acc = accStart
-        val unmix = StringBuilder()
-        for (i in text.indices) {
-            val b = text[i].code
-            acc = (acc + increment) % 256
-            val plain = b xor acc
-            acc = (acc + b) % 256
-            unmix.append(plain.toChar())
-        }
-        return unmix.toString()
-    }
-
-    private fun tryAllDecryptors(parts: List<String>): String? {
-        val decryptors = listOf(::decryptV1, ::decryptV2, ::decryptV3, ::decryptV4)
-        for ((index, decryptor) in decryptors.withIndex()) {
-            try {
-                val result = decryptor(parts)
-                if (!result.isNullOrBlank() && result.contains("http")) {
-                    Log.d("HDCH", "Fallback decryptor v${index + 1} başarılı!")
-                    return result
-                }
-            } catch (e: Exception) {
-                Log.d("HDCH", "Fallback decryptor v${index + 1} başarısız: ${e.message}")
-            }
-        }
-        return null
-    }
-
-    private fun decryptV1(valueParts: List<String>): String? {
-        var value = valueParts.joinToString("")
-        value = caesarShift(value, 9); value = caesarShift(value, 16)
-        value = value.reversed()
-        var decoded = atob(value); decoded = atob(decoded)
-        return xorUnmix(decoded, 241, 11)
-    }
-
-    private fun decryptV2(valueParts: List<String>): String? {
-        var value = valueParts.joinToString("")
-        value = value.reversed(); value = caesarShift(value, 15)
-        var decoded = atob(value); decoded = decoded.reversed(); decoded = atob(decoded)
-        return xorUnmix(decoded, 185, 12)
-    }
-
-    private fun decryptV3(valueParts: List<String>): String? {
-        var value = valueParts.joinToString("")
-        var decoded = atob(value); decoded = atob(decoded)
-        decoded = decoded.reversed(); decoded = caesarShift(decoded, 25); decoded = atob(decoded)
-        return xorUnmix(decoded, 77, 9)
-    }
-
-    private fun decryptV4(valueParts: List<String>): String? {
-        var value = valueParts.joinToString("")
-        var decoded = atob(value); decoded = decoded.reversed(); decoded = atob(decoded)
-        return xorUnmix(decoded, 130, 10)
     }
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
-        val response = app.get(url, referer = "${mainUrl}/", interceptor = interceptor)
-        val rawHtml = response.text
-        val cookies = response.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
-        Log.d("HDCH", "rplayer rawHtml length: ${rawHtml.length}")
+        val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
+        Log.d("HDCH", "script » $script")
+        val unpackedScript = getAndUnpack(script)
+        val decryptedUrl = decryptLocalUrl(unpackedScript) ?: return
+        val lastUrl = decryptedUrl.substringAfter("https").let { "https$it" }
+        val subData   = script.substringAfter("tracks: [").substringBefore("]")
+        Log.d("HDCH", "subData » $subData")
+        AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.forEach {
+            val subtitleUrl = "${mainUrl}${it.file}/"
 
-        val unpackedScript = unpackPackerJs(rawHtml) ?: rawHtml
-
-        var videoUrl: String? = null
-
-        val varPattern = Regex("""var\s+(\w+)\s*=\s*(\w+)\s*\(\s*\[(.*?)\]\s*\)""", RegexOption.DOT_MATCHES_ALL)
-        val varMatch = varPattern.find(unpackedScript) ?: varPattern.find(rawHtml)
-
-        if (varMatch != null) {
-            val funcName = varMatch.groupValues[2]
-            val partsStr = varMatch.groupValues[3]
-            val parts = Regex(""""([^"]*)"""").findAll(partsStr).map {
-                it.groupValues[1].replace("\\/", "/").replace("\\\"", "\"")
-            }.toList()
-
-            val funcBody = extractFuncBody(unpackedScript, funcName) ?: extractFuncBody(rawHtml, funcName)
-            if (funcBody != null) {
-                videoUrl = parseAndExecuteJs(funcBody, parts)
-            }
-            if (videoUrl.isNullOrBlank()) {
-                videoUrl = tryAllDecryptors(parts)
+            val headers = mapOf(
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+                "Referer" to "subtitleUrl"
+            )
+            val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
+            if (subtitleResponse.isSuccessful) {
+                subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
+                Log.d("HDCH", "Subtitle added: $subtitleUrl")
+            } else {
+                Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
             }
         }
-
-        if (videoUrl.isNullOrBlank()) {
-            val pipePattern = Regex("""var\s+(\w+)\s*=\s*(\w+)\s*\(\s*["']([^"']+)["']\.split\(['"]\|['"]\)\s*\)""", RegexOption.DOT_MATCHES_ALL)
-            val pipeMatch = pipePattern.find(unpackedScript) ?: pipePattern.find(rawHtml)
-            if (pipeMatch != null) {
-                val funcName = pipeMatch.groupValues[2]
-                val partsStr = pipeMatch.groupValues[3]
-                val parts = partsStr.split("|")
-                val funcBody = extractFuncBody(unpackedScript, funcName) ?: extractFuncBody(rawHtml, funcName)
-                if (funcBody != null) {
-                    videoUrl = parseAndExecuteJs(funcBody, parts)
-                }
-                if (videoUrl.isNullOrBlank()) {
-                    videoUrl = tryAllDecryptors(parts)
-                }
-            }
-        }
-
-        if (videoUrl.isNullOrBlank()) {
-            val jsonLdMatch = Regex(""""contentUrl"\s*:\s*"([^"]+)"""").find(rawHtml)
-            videoUrl = jsonLdMatch?.groupValues?.get(1)
-        }
-
-        if (videoUrl.isNullOrBlank()) {
-            Log.e("HDCH", "Video URL bulunamadı for $url")
-            return
-        }
-
-        if (videoUrl.contains("https")) {
-            videoUrl = "https" + videoUrl.substringAfter("https")
-        }
-
-        Log.d("HDCH", "Çözülen videoUrl: $videoUrl")
-
-        val ajaxMatch = Regex("""url\s*:\s*["']([^"']+ah/)["'].*?data\s*:\s*\{\s*hash\s*:\s*["']([^"']+)["']""").find(unpackedScript)
-            ?: Regex("""url\s*:\s*["']([^"']+ah/)["'].*?data\s*:\s*\{\s*hash\s*:\s*["']([^"']+)["']""").find(rawHtml)
-        if (ajaxMatch != null) {
-            val ajaxUrl = ajaxMatch.groupValues[1]
-            val ajaxHash = ajaxMatch.groupValues[2]
-            val fullAjaxUrl = if (ajaxUrl.startsWith("http")) ajaxUrl else "$mainUrl$ajaxUrl"
-            Log.d("HDCH", "AJAX POST yapılıyor: $fullAjaxUrl hash=$ajaxHash")
-            try {
-                app.post(
-                    url = fullAjaxUrl,
-                    data = mapOf("hash" to ajaxHash),
-                    headers = mapOf(
-                        "Referer" to url,
-                        "Origin" to mainUrl,
-                        "X-Requested-With" to "XMLHttpRequest",
-                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
-                        if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
-                    ).filter { it.key.isNotBlank() }
-                )
-            } catch (e: Exception) {
-                Log.w("HDCH", "AJAX POST hatası: ${e.message}")
-            }
-        }
-
-        val tracksMatch = Regex("""tracks:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(rawHtml)
-            ?: Regex("""tracks:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL).find(unpackedScript)
-        val tracksStr = tracksMatch?.groupValues?.get(1)
-
-        tracksStr?.let { str ->
-            val matches = Regex(""""file"\s*:\s*"([^"]+)".*?"label"\s*:\s*"([^"]+)"""", RegexOption.DOT_MATCHES_ALL)
-                .findAll(str).toList()
-            matches.forEach { match ->
-                val subUrl = match.groupValues[1].replace("\\/", "/")
-                val subLabel = match.groupValues[2]
-                val lang = when {
-                    subLabel.contains("Turkish", ignoreCase = true) -> "Türkçe"
-                    subLabel.contains("Forced", ignoreCase = true) -> "Forced"
-                    subLabel.contains("English", ignoreCase = true) -> "İngilizce"
-                    else -> subLabel
-                }
-                val finalSubUrl = if (subUrl.startsWith("http")) subUrl else "$mainUrl$subUrl"
-                subtitleCallback.invoke(SubtitleFile(lang, finalSubUrl))
-                Log.d("HDCH", "Altyazı eklendi: $lang -> $finalSubUrl")
-            }
-        }
-
         callback.invoke(
             newExtractorLink(
-                source = source,
-                name = source,
-                url = videoUrl,
-                type = if (videoUrl.contains(".txt") || videoUrl.contains(".m3u8")) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
+                source  = source,
+                name    = source,
+                url     = lastUrl,
+                type    = ExtractorLinkType.M3U8
             ) {
-                this.referer = url
-                this.quality = Qualities.Unknown.value
-                this.headers = mapOf(
-                    "Accept" to "*/*",
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
-                    "Referer" to url,
-                    "Origin" to mainUrl,
-                    if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
-                ).filter { it.key.isNotBlank() }
+                headers = mapOf("Referer" to "${mainUrl}/", "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0")
+                quality = Qualities.Unknown.value
             }
         )
-        Log.d("HDCH", "ExtractorLink eklendi: $videoUrl")
     }
 
 override suspend fun loadLinks(
