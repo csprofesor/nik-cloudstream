@@ -310,33 +310,29 @@ class HDFilmCehennemi : MainAPI() {
     }
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
-        val response = app.get(url, referer = "${mainUrl}/", interceptor = interceptor)
-        val rawHtml = response.text
-        val decryptedUrl = decryptLocalUrl(rawHtml) ?: return
+        val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
+        Log.d("HDCH", "script » $script")
+        val unpackedScript = getAndUnpack(script)
+        val decryptedUrl = decryptLocalUrl(unpackedScript) ?: return
         val lastUrl = decryptedUrl.substringAfter("https").let { "https$it" }
-        
-        val scriptWithTracks = Jsoup.parse(rawHtml).select("script").find { it.data().contains("tracks: [") }?.data()
-        if (scriptWithTracks != null) {
-            val subData = scriptWithTracks.substringAfter("tracks: [").substringBefore("]")
-            Log.d("HDCH", "subData » $subData")
-            AppUtils.tryParseJson<List<SubSource>>("[$subData]")?.filter { it.kind == "captions"}?.forEach {
-                val subtitleUrl = "${mainUrl}${it.file}/"
+        val subData   = script.substringAfter("tracks: [").substringBefore("]")
+        Log.d("HDCH", "subData » $subData")
+        AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.forEach {
+            val subtitleUrl = "${mainUrl}${it.file}/"
 
-                val headers = mapOf(
-                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
-                    "Referer" to subtitleUrl
-                )
-                val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
-                if (subtitleResponse.isSuccessful) {
-                    subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
-                    Log.d("HDCH", "Subtitle added: $subtitleUrl")
-                } else {
-                    Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
-                }
+            val headers = mapOf(
+                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+                "Referer" to "subtitleUrl"
+            )
+            val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
+            if (subtitleResponse.isSuccessful) {
+                subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
+                Log.d("HDCH", "Subtitle added: $subtitleUrl")
+            } else {
+                Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
             }
         }
-
         callback.invoke(
             newExtractorLink(
                 source  = source,
