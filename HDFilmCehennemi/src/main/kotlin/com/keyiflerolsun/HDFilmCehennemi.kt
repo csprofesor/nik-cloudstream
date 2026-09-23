@@ -39,6 +39,7 @@ import okhttp3.Interceptor
 import okhttp3.Response
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
+import java.net.URI
 
 class HDFilmCehennemi : MainAPI() {
     override var mainUrl              = "https://www.hdfilmcehennemi.nl"
@@ -310,29 +311,62 @@ class HDFilmCehennemi : MainAPI() {
     }
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
-        val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
-        Log.d("HDCH", "script » $script")
-        val unpackedScript = getAndUnpack(script)
-        val decryptedUrl = decryptLocalUrl(unpackedScript) ?: return
+        val response = app.get(url, referer = "${mainUrl}/", interceptor = interceptor)
+        val rawHtml = response.text
+        val decryptedUrl = decryptLocalUrl(rawHtml) ?: return
         val lastUrl = decryptedUrl.substringAfter("https").let { "https$it" }
-        val subData   = script.substringAfter("tracks: [").substringBefore("]")
-        Log.d("HDCH", "subData » $subData")
-        AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.forEach {
-            val subtitleUrl = "${mainUrl}${it.file}/"
+        
+        val cookies = response.cookies.entries.joinToString("; ") { "${it.key}=${it.value}" }
+        val unpackedJs = unpackPackerJs(rawHtml)
+        val iframeDomain = "https://" + URI(url).host
+        val ajaxMatch = Regex("""url\s*:\s*["']([^"']+ah/)["'].*?data\s*:\s*\{\s*hash\s*:\s*["']([^"']+)["']""").find(unpackedJs ?: "")
+        if (ajaxMatch != null) {
+            val ajaxUrl = ajaxMatch.groupValues[1]
+            val ajaxHash = ajaxMatch.groupValues[2]
+            val fullAjaxUrl = "$iframeDomain$ajaxUrl"
+            Log.d("HDCH", "AJAX POST yapılıyor: $fullAjaxUrl hash=$ajaxHash")
+            try {
+                app.post(
+                    url = fullAjaxUrl,
+                    data = mapOf("hash" to ajaxHash),
+                    headers = mapOf(
+                        "Referer" to url,
+                        "Origin" to iframeDomain,
+                        "X-Requested-With" to "XMLHttpRequest",
+                        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                        if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                    ).filter { it.key.isNotBlank() },
+                    interceptor = interceptor
+                )
+            } catch (e: Exception) {
+                Log.w("HDCH", "AJAX POST hatası: ${e.message}")
+            }
+        } else {
+            Log.w("HDCH", "AJAX hash bulunamadı!")
+        }
 
-            val headers = mapOf(
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
-                "Referer" to "subtitleUrl"
-            )
-            val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
-            if (subtitleResponse.isSuccessful) {
-                subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
-                Log.d("HDCH", "Subtitle added: $subtitleUrl")
-            } else {
-                Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
+        val scriptWithTracks = Jsoup.parse(rawHtml).select("script").find { it.data().contains("tracks: [") }?.data()
+        if (scriptWithTracks != null) {
+            val subData = scriptWithTracks.substringAfter("tracks: [").substringBefore("]")
+            Log.d("HDCH", "subData » $subData")
+            AppUtils.tryParseJson<List<SubSource>>("[$subData]")?.filter { it.kind == "captions"}?.forEach {
+                val subtitleUrl = "${mainUrl}${it.file}/"
+
+                val headers = mapOf(
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+                    "Referer" to subtitleUrl
+                )
+                val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
+                if (subtitleResponse.isSuccessful) {
+                    subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
+                    Log.d("HDCH", "Subtitle added: $subtitleUrl")
+                } else {
+                    Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
+                }
             }
         }
+
         callback.invoke(
             newExtractorLink(
                 source  = source,
@@ -340,10 +374,83 @@ class HDFilmCehennemi : MainAPI() {
                 url     = lastUrl,
                 type    = ExtractorLinkType.M3U8
             ) {
-                headers = mapOf("Referer" to "${mainUrl}/", "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0")
+                headers = mapOf(
+                    "Referer" to url,
+                    "Origin" to iframeDomain,
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                    if (cookies.isNotBlank()) "Cookie" to cookies else "" to ""
+                ).filter { it.key.isNotBlank() }
                 quality = Qualities.Unknown.value
             }
         )
+    }
+
+    private fun unpackPackerJs(rawHtml: String): String? {
+        return try {
+            val startMarker = "eval(function(p,a,c,k,e,d){"
+            val endMarker = ",0,{}))"
+
+            val startIdx = rawHtml.indexOf(startMarker)
+            if (startIdx == -1) return null
+
+            val endIdx = rawHtml.indexOf(endMarker, startIdx + startMarker.length)
+            if (endIdx == -1) return null
+
+            val block = rawHtml.substring(startIdx, endIdx + endMarker.length)
+            val packedStart = block.indexOf("}('") + 3
+            val packedEnd = block.indexOf("',", packedStart)
+            if (packedStart == -1 || packedEnd == -1) return null
+            val packed = block.substring(packedStart, packedEnd)
+            val afterPacked = block.substring(packedEnd + 2)
+            val baseEnd = afterPacked.indexOf(",")
+            if (baseEnd == -1) return null
+            val base = afterPacked.substring(0, baseEnd).toInt()
+            val afterBase = afterPacked.substring(baseEnd + 1)
+            val countEnd = afterBase.indexOf(",")
+            if (countEnd == -1) return null
+            val count = afterBase.substring(0, countEnd).toInt()
+            val dictQuoteStart = afterBase.indexOf("'") + 1
+            val dictQuoteEnd = afterBase.indexOf("'.split", dictQuoteStart)
+            if (dictQuoteStart == -1 || dictQuoteEnd == -1) return null
+            val dictStr = afterBase.substring(dictQuoteStart, dictQuoteEnd)
+
+            val dictionary = dictStr.split('|')
+            val lookup = mutableMapOf<String, String>()
+
+            var c = count - 1
+            while (c >= 0) {
+                val key = packerEncode(c, base)
+                lookup[key] = if (c < dictionary.size && dictionary[c].isNotEmpty()) {
+                    dictionary[c]
+                } else {
+                    key
+                }
+                c--
+            }
+
+            var result = packed
+            val sortedKeys = lookup.keys.sortedByDescending { it.length }
+            for (key in sortedKeys) {
+                val value = lookup[key]!!
+                result = result.replace(Regex("\\b${Regex.escape(key)}\\b"), value)
+            }
+
+            result
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun packerEncode(num: Int, base: Int): String {
+        val digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        if (num == 0) return "0"
+        var n = num
+        val sb = StringBuilder()
+        while (n > 0) {
+            sb.insert(0, digits[n % base])
+            n /= base
+        }
+        return sb.toString()
     }
 
 override suspend fun loadLinks(
