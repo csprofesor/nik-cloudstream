@@ -2,6 +2,7 @@
 
 package com.keyiflerolsun
 
+import android.util.Base64
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.DeserializationFeature
@@ -206,23 +207,88 @@ class HDFilmCehennemi : MainAPI() {
 
     data class DecOp(val name: String, val rotShift: Int = 0)
 
-    private fun decryptLocalUrl(unpackedScript: String): String? {
+    private fun decryptLocalUrl(script: String): String? {
         try {
-            // 1. Extract parts array
+            // 1. Yeni Şifreleme Algoritması Kontrolü (Açık fonksiyon ve array üzerinden)
+            val newAlgoMatch = """var\s+(\w+)\s*=\s*(\w+)\(\[\s*((?:['"][^'"]+['"]\s*,?\s*)+)\]\);""".toRegex().find(script)
+            if (newAlgoMatch != null) {
+                val funcName = newAlgoMatch.groupValues[2]
+                val arrayContent = newAlgoMatch.groupValues[3]
+                
+                val parts = arrayContent.split(",").map { 
+                    it.trim().trim('\'', '"').replace("\\/", "/") 
+                }
+                var result = parts.joinToString("")
+
+                val funcBodyMatch = """function $funcName\([^)]+\)\s*\{([\s\S]*?return\s+[^;]+;)\s*\}""".toRegex().find(script)
+                if (funcBodyMatch != null) {
+                    val funcBody = funcBodyMatch.groupValues[1]
+                    val stringsMatch = """var\s+\w+\s*=\s*["']([^"']+)["'];\s*var\s+\w+\s*=\s*["']([^"']+)["'];""".toRegex().find(funcBody)
+                    if (stringsMatch != null) {
+                        val key1 = stringsMatch.groupValues[1]
+                        val ops = stringsMatch.groupValues[2]
+
+                        var lsv2 = 0
+                        var jaj04 = 0
+                        for (i in key1.indices) {
+                            val qx97l = key1[i].code
+                            lsv2 = (lsv2 * 31 + qx97l) % 251
+                            jaj04 = (jaj04 xor (qx97l + i)) and 255
+                        }
+                        val r9q = (lsv2 + jaj04) % 256
+
+                        for (op in ops.reversed()) {
+                            if (op == 'b') {
+                                var paddedResult = result
+                                while (paddedResult.length % 4 != 0) {
+                                    paddedResult += "="
+                                }
+                                result = String(Base64.decode(paddedResult, Base64.NO_WRAP), Charsets.ISO_8859_1)
+                            } else if (op == 'v') {
+                                result = result.reversed()
+                            } else {
+                                val g31 = (26 - ((op.code - 64) % 26)) % 26
+                                val rot = java.lang.StringBuilder()
+                                for (c in result) {
+                                    if (c in 'a'..'z') {
+                                        val shifted = c.code - 97 + g31
+                                        rot.append((shifted % 26 + 97).toChar())
+                                    } else if (c in 'A'..'Z') {
+                                        val shifted = c.code - 65 + g31
+                                        rot.append((shifted % 26 + 65).toChar())
+                                    } else {
+                                        rot.append(c)
+                                    }
+                                }
+                                result = rot.toString()
+                            }
+                        }
+
+                        val finalResult = java.lang.StringBuilder()
+                        for (c in result) {
+                            finalResult.append((c.code xor r9q).toChar())
+                        }
+                        return finalResult.toString()
+                    }
+                }
+            }
+
+            // 2. Eski Şifreleme Algoritması (Packer çözümü ile)
+            val unpackedScript = unpackPackerJs(script) ?: script
             val partsMatch = """\(\[\s*((?:['"][^'"]+['"]\s*,?\s*)+)\]\)""".toRegex().find(unpackedScript)
             val parts = partsMatch?.groupValues?.get(1)?.split(",")?.map { 
                 it.trim().trim('\'', '"').replace("\\/", "/") 
             } ?: return null
 
-            // 2. Extract magicNum and magicOffset
+            // Extract magicNum and magicOffset
             val moduloMatch = """(\d+)\s*%\s*\(i\s*\+\s*(\d+)\)""".toRegex().find(unpackedScript)
             val magicNum = moduloMatch?.groupValues?.get(1)?.toLongOrNull() ?: 399756995L
             val magicOffset = moduloMatch?.groupValues?.get(2)?.toIntOrNull() ?: 5
 
-            // 3. Isolate function body
+            // Isolate function body
             val funcBody = unpackedScript.substringAfter("function dc_").substringBefore("function d1x")
 
-            // 4. Extract operations and their shift values in execution order
+            // Extract operations and their shift values in execution order
             val operations = mutableListOf<Pair<Int, DecOp>>()
 
             var index = funcBody.indexOf("atob(")
@@ -293,7 +359,7 @@ class HDFilmCehennemi : MainAPI() {
                 }
             }
 
-            // 5. Modulo Unmix
+            // Modulo Unmix
             val unmix = StringBuilder()
             for (i in result.indices) {
                 val charCode = result[i].code.toLong()
