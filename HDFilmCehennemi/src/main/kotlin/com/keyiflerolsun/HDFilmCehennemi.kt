@@ -310,29 +310,45 @@ class HDFilmCehennemi : MainAPI() {
     }
 
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
-        val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
-        Log.d("HDCH", "script » $script")
+        val doc = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document
+        val script = doc.select("script").find { it.data().contains("sources:") }?.data()
+            ?: doc.select("script").map { it.data() }.firstOrNull { it.contains("eval(") }
+            ?: return
+        Log.d("HDCH", "script found length » ${script.length}")
         val unpackedScript = getAndUnpack(script)
-        val decryptedUrl = decryptLocalUrl(unpackedScript) ?: return
+        val decryptedUrl = decryptLocalUrl(unpackedScript) ?: decryptLocalUrl(script) ?: return
         val lastUrl = decryptedUrl.substringAfter("https").let { "https$it" }
-        val subData   = script.substringAfter("tracks: [").substringBefore("]")
-        Log.d("HDCH", "subData » $subData")
-        AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.forEach {
-            val subtitleUrl = "${mainUrl}${it.file}/"
+        val subData   = script.substringAfter("tracks: [", "").substringBefore("]", "")
+        if (subData.isNotBlank()) {
+            Log.d("HDCH", "subData » $subData")
+            AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.forEach {
+                val subtitleUrl = "${mainUrl}${it.file}/"
 
-            val headers = mapOf(
-                "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-                "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
-                "Referer" to "subtitleUrl"
-            )
-            val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
-            if (subtitleResponse.isSuccessful) {
-                subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
-                Log.d("HDCH", "Subtitle added: $subtitleUrl")
-            } else {
-                Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
+                val headers = mapOf(
+                    "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
+                    "Referer" to subtitleUrl
+                )
+                val subtitleResponse = app.get(subtitleUrl, headers = headers, allowRedirects=true, interceptor = interceptor)
+                if (subtitleResponse.isSuccessful) {
+                    subtitleCallback(newSubtitleFile(it.language.toString(), subtitleUrl))
+                    Log.d("HDCH", "Subtitle added: $subtitleUrl")
+                } else {
+                    Log.d("HDCH", "Subtitle URL inaccessible: ${subtitleResponse.code}")
+                }
             }
         }
+
+        Log.d("HDCH", "Master fetch deneniyor: $lastUrl")
+        try {
+            app.get(lastUrl, referer = "$mainUrl/", headers = mapOf(
+                "Accept" to "*/*",
+                "Origin" to mainUrl
+            ))
+        } catch (e: Exception) {
+            Log.w("HDCH", "Master fetch hatası (önemsiz): ${e.message}")
+        }
+
         callback.invoke(
             newExtractorLink(
                 source  = source,
@@ -340,7 +356,12 @@ class HDFilmCehennemi : MainAPI() {
                 url     = lastUrl,
                 type    = ExtractorLinkType.M3U8
             ) {
-                headers = mapOf("Referer" to "${mainUrl}/", "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0")
+                headers = mapOf(
+                    "Accept" to "*/*",
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Norton/124.0.0.0",
+                    "Referer" to "${mainUrl}/",
+                    "Origin" to mainUrl
+                )
                 quality = Qualities.Unknown.value
             }
         )
@@ -370,13 +391,17 @@ override suspend fun loadLinks(
                 referer = data
             ).text
             Log.d("HDCH", "Found videoID: $videoID")
-            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-            Log.d("HDCH", "$iframe » $iframe")
+            val iframeDoc = Jsoup.parse(apiGet)
+            var iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")?.ifBlank { iframeDoc.selectFirst("iframe")?.attr("src") })
+                ?: Regex("""data-src=\\?["']([^"']+)["']""").find(apiGet)?.groupValues?.get(1)?.replace("\\", "")
+                ?: Regex("""src=\\?["']([^"']+)["']""").find(apiGet)?.groupValues?.get(1)?.replace("\\", "")
+                ?: return@forEach
+            Log.d("HDCH", "Raw iframe » $iframe")
             if (iframe.contains("rapidrame")) {
                 iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
             } else if (iframe.contains("mobi")) {
-                val iframeDoc = Jsoup.parse(apiGet)
-                iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
+                val mobiDoc = Jsoup.parse(apiGet)
+                iframe = fixUrlNull(mobiDoc.selectFirst("iframe")?.attr("data-src")?.ifBlank { mobiDoc.selectFirst("iframe")?.attr("src") }) ?: return@forEach
             }
             Log.d("HDCH", "$source » $videoID » $iframe")
             invokeLocalSource(source, iframe, subtitleCallback, callback)
