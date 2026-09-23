@@ -309,6 +309,75 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
+    
+    private fun unpackPackerJs(rawHtml: String): String? {
+        return try {
+            val startMarker = "eval(function(p,a,c,k,e,d){"
+            val endMarker = ",0,{}))"
+
+            val startIdx = rawHtml.indexOf(startMarker)
+            if (startIdx == -1) return null
+
+            val endIdx = rawHtml.indexOf(endMarker, startIdx + startMarker.length)
+            if (endIdx == -1) return null
+
+            val block = rawHtml.substring(startIdx, endIdx + endMarker.length)
+            val packedStart = block.indexOf("}('") + 3
+            val packedEnd = block.indexOf("',", packedStart)
+            if (packedStart == -1 || packedEnd == -1) return null
+            val packed = block.substring(packedStart, packedEnd)
+            val afterPacked = block.substring(packedEnd + 2)
+            val baseEnd = afterPacked.indexOf(",")
+            if (baseEnd == -1) return null
+            val base = afterPacked.substring(0, baseEnd).toInt()
+            val afterBase = afterPacked.substring(baseEnd + 1)
+            val countEnd = afterBase.indexOf(",")
+            if (countEnd == -1) return null
+            val count = afterBase.substring(0, countEnd).toInt()
+            val dictQuoteStart = afterBase.indexOf("'") + 1
+            val dictQuoteEnd = afterBase.indexOf("'.split", dictQuoteStart)
+            if (dictQuoteStart == -1 || dictQuoteEnd == -1) return null
+            val dictStr = afterBase.substring(dictQuoteStart, dictQuoteEnd)
+
+            val dictionary = dictStr.split('|')
+            val lookup = mutableMapOf<String, String>()
+
+            var c = count - 1
+            while (c >= 0) {
+                val key = packerEncode(c, base)
+                lookup[key] = if (c < dictionary.size && dictionary[c].isNotEmpty()) {
+                    dictionary[c]
+                } else {
+                    key
+                }
+                c--
+            }
+
+            var result = packed
+            val sortedKeys = lookup.keys.sortedByDescending { it.length }
+            for (key in sortedKeys) {
+                val value = lookup[key]!!
+                result = result.replace(Regex("\\b${Regex.escape(key)}\\b"), value)
+            }
+
+            result
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun packerEncode(num: Int, base: Int): String {
+        val digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        if (num == 0) return "0"
+        var n = num
+        val sb = StringBuilder()
+        while (n > 0) {
+            sb.insert(0, digits[n % base])
+            n /= base
+        }
+        return sb.toString()
+    }
+
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
         Log.d("HDCH", "script » $script")
