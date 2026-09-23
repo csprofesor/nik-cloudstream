@@ -309,7 +309,6 @@ class HDFilmCehennemi : MainAPI() {
         }
     }
 
-    
     private suspend fun invokeLocalSource(source: String, url: String, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit ) {
         val script    = app.get(url, referer = "${mainUrl}/", interceptor = interceptor).document.select("script").find { it.data().contains("sources:") }?.data() ?: return
         Log.d("HDCH", "script » $script")
@@ -347,47 +346,45 @@ class HDFilmCehennemi : MainAPI() {
         )
     }
 
-    override suspend fun loadLinks(
-        data: String,
-        isCasting: Boolean,
-        subtitleCallback: (SubtitleFile) -> Unit,
-        callback: (ExtractorLink) -> Unit
-    ): Boolean {
-        Log.d("HDCH", "data » $data")
-        val document = app.get(data, interceptor = interceptor).document
+override suspend fun loadLinks(
+    data: String,
+    isCasting: Boolean,
+    subtitleCallback: (SubtitleFile) -> Unit,
+    callback: (ExtractorLink) -> Unit
+): Boolean {
+    Log.d("HDCH", "data » $data")
+    val document = app.get(data, interceptor = interceptor).document
 
-        document.select("div.alternative-links").map { element ->
-            element to element.attr("data-lang").uppercase()
-        }.forEach { (element, langCode) ->
-            element.select("button.alternative-link").map { button ->
-                button.text().replace("(HDrip Xbet)", "").trim() + " $langCode" to button.attr("data-video")
-            }.forEach { (source, videoID) ->
-                val apiGet = app.get(
-                    "${mainUrl}/video/$videoID/", interceptor = interceptor,
-                    headers = mapOf(
-                        "Content-Type" to "application/json",
-                        "X-Requested-With" to "fetch"
-                    ),
-                    referer = data
-                ).text
-                Log.d("HDCH", "Found videoID: $videoID")
-                var iframe = Regex("""data-src=\\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-                Log.d("HDCH", "$iframe » $iframe")
-                if (iframe.contains("rapidrame")) {
-                    iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
-                } else if (iframe.contains("mobi")) {
-                    val iframeDoc = Jsoup.parse(apiGet)
-                    iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
-                }
-                Log.d("HDCH", "$source » $videoID » $iframe")
-                
-                invokeLocalSource(source, iframe, subtitleCallback, callback)
+    document.select("div.alternative-links").map { element ->
+        element to element.attr("data-lang").uppercase()
+    }.forEach { (element, langCode) ->
+        element.select("button.alternative-link").map { button ->
+            button.text().replace("(HDrip Xbet)", "").trim() + " $langCode" to button.attr("data-video")
+        }.forEach { (source, videoID) ->
+            val apiGet = app.get(
+                "${mainUrl}/video/$videoID/", interceptor = interceptor,
+                headers = mapOf(
+                    "Content-Type" to "application/json",
+                    "X-Requested-With" to "fetch"
+                ),
+                referer = data
+            ).text
+            Log.d("HDCH", "Found videoID: $videoID")
+            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
+            Log.d("HDCH", "$iframe » $iframe")
+            if (iframe.contains("rapidrame")) {
+                iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
+            } else if (iframe.contains("mobi")) {
+                val iframeDoc = Jsoup.parse(apiGet)
+                iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
             }
+            Log.d("HDCH", "$source » $videoID » $iframe")
+            invokeLocalSource(source, iframe, subtitleCallback, callback)
         }
-        return true
     }
-
-private data class SubSource(
+    return true
+}
+    private data class SubSource(
         @JsonProperty("file")    val file: String?  = null,
         @JsonProperty("label")   val label: String? = null,
         @JsonProperty("language") val language: String? = null,
