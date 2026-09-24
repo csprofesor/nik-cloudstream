@@ -97,7 +97,8 @@ class DiziGom : MainAPI() {
                 !url.startsWith("data:image/", true) &&
                     !url.equals("about:blank", true) &&
                     !url.contains("placeholder", true) &&
-                    !url.contains("placehold", true)
+                    !url.contains("placehold", true) &&
+                    !url.contains("lazy", true)
             }
     }
 
