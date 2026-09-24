@@ -350,17 +350,10 @@ class DiziGom : MainAPI() {
                 runCatching { loadExtractor(src, data, subtitleCallback, wrappedCallback) }
             }
         }
+        if (linkCount > 0) return true
 
         val playerUrl = extractPlayerUrl(document)
         if (!playerUrl.isNullOrBlank()) {
-            val ctx = DiziGomPlugin.pluginContext
-            if (ctx != null) {
-                runCatching {
-                    DiziGomWebViewExtractor(ctx, name).getUrl(playerUrl, data, subtitleCallback, wrappedCallback)
-                }
-            }
-            if (linkCount > 0) return true
-
             val playerResponse = runCatching { app.get(playerUrl, referer = data) }.getOrNull()
             val playerHtml = playerResponse?.text.orEmpty()
             val streamUrl = extractPlayerStream(playerHtml)
@@ -388,7 +381,7 @@ class DiziGom : MainAPI() {
             }
 
             if (!streamUrl.isNullOrBlank()) {
-                Log.d("DiziGom", "PilayerPlay stream bulundu")
+                Log.d("DiziGom", "PilayerPlay HTTP stream bulundu")
                 wrappedCallback(
                     newExtractorLink(
                         source = name,
@@ -400,8 +393,16 @@ class DiziGom : MainAPI() {
                         quality = 1080
                     }
                 )
-                if (linkCount > 0) return true
+                return true
             }
+
+            val ctx = DiziGomPlugin.pluginContext
+            if (ctx != null && linkCount == 0) {
+                runCatching {
+                    DiziGomWebViewExtractor(ctx, name).getUrl(playerUrl, data, subtitleCallback, wrappedCallback)
+                }
+            }
+            if (linkCount > 0) return true
 
             val directPlayerUrl = Regex(
                 "https?://[^\\\"'\\s<>]+(?:\\.m3u8(?:\\?[^\\\"'\\s<>]*)?|\\.mp4(?:\\?[^\\\"'\\s<>]*)?)",
