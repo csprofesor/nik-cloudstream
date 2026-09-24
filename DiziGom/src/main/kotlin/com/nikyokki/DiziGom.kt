@@ -166,7 +166,7 @@ class DiziGom : MainAPI() {
         )
 
         if (page == 1) {
-            val results = document.select("div.episode-box")
+            val results = document.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat")
                 .mapNotNull { it.toMainPageResult() }
                 .distinctBy { it.url }
 
@@ -213,7 +213,7 @@ class DiziGom : MainAPI() {
             hasNext = false
         )
 
-        val results = pageDocument.select("div.episode-box")
+        val results = pageDocument.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat")
             .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
 
