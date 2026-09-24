@@ -144,7 +144,7 @@
     "fileHash": "sha256-03f8f6c63b88f23b62a434397562777594398e592da90d17be3f011432086294"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=94048b32ca712165d4ae2203b1cef870868bed0cae5432658d74ef2a76f5885b",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=360acd71813e9e750480516d4a6264d1a308c82e2bc2399667006ad833da7952",
     "status": 1,
     "version": 1,
     "name": "DDizi",
@@ -153,7 +153,7 @@
       "csprofesor"
     ],
     "description": "Ddizi, dizi izle, dizi seyret, ddizi.im - Güncel ve eski dizileri en iyi görüntü kalitesiyle bulabileceğiniz dizi izleme sitesi.",
-    "fileSize": 30714,
+    "fileSize": 30656,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -161,7 +161,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=ddizi.im&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-94048b32ca712165d4ae2203b1cef870868bed0cae5432658d74ef2a76f5885b"
+    "fileHash": "sha256-360acd71813e9e750480516d4a6264d1a308c82e2bc2399667006ad833da7952"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziBox.cs3?v=8ab5957d93c8fd9545179085605a9398d96d10209606aab5808e9efbcadb774f",
