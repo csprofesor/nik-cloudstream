@@ -441,7 +441,7 @@ class DDiziProvider : MainAPI() {
                                         type = if (fileType == "hls") ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                                     ) {
                                         if (fileType == "hls") {
-                                            this.referer = ogVideo
+                                            this.referer = if (fileUrl.contains("twimg.com")) "" else ogVideo
                                         }
                                         this.quality = getQualityFromName(quality)
                                         this.headers = videoHeaders
@@ -454,7 +454,7 @@ class DDiziProvider : MainAPI() {
                                         M3u8Helper.generateM3u8(
                                             name,
                                             fileUrl,
-                                            ogVideo, // Player URL'sini referrer olarak kullan
+                                            if (fileUrl.contains("twimg.com")) "" else ogVideo, // Player URL'sini referrer olarak kullan
                                             headers = videoHeaders
                                         ).forEach(callback)
                                     } catch (e: Exception) {
@@ -491,7 +491,7 @@ class DDiziProvider : MainAPI() {
                                                             url = m3u8Url,
                                                             type = ExtractorLinkType.M3U8
                                                         ) {
-                                                            this.referer = ogVideo
+                                                            this.referer = if (m3u8Url.contains("twimg.com")) "" else ogVideo
                                                             this.quality = getQualityFromName(m3u8Quality)
                                                             this.headers = videoHeaders
                                                         }
