@@ -195,7 +195,7 @@ class DiziGom : MainAPI() {
         val pageDocument = runCatching {
             app.post(
                 "$mainUrl/wp-admin/admin-ajax.php",
-                headers = mapOf(
+                cookies = mapOf(
                     "X-Requested-With" to "XMLHttpRequest",
                     "Referer" to request.data
                 ),
