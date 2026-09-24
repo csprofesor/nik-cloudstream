@@ -332,7 +332,7 @@ class DDiziProvider : MainAPI() {
         }
 
         // Aynı URL'ye sahip bölümleri temizle (dizi-boxpost yüzünden yinelenen/sahte bölümleri önlemek için)
-        val uniqueEpisodes = allEpisodes.distinctBy { it.url }
+        val uniqueEpisodes = allEpisodes.distinctBy { it.data }
 
         return newTvSeriesLoadResponse(title, url, TvType.TvSeries, uniqueEpisodes) {
             this.posterUrl = poster
