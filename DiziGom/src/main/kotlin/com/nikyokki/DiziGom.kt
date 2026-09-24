@@ -35,7 +35,8 @@ class DiziGom : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        mainUrl to "Ana Sayfa"
+        mainUrl to "Ana Sayfa",
+        "$mainUrl/tum-bolumler/" to "Son Bölümler"
     )
 
     private fun cleanUrl(value: String?): String? = value
