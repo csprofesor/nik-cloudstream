@@ -505,6 +505,7 @@ class HintFilmIzle : MainAPI() {
 
         val ctx = HintFilmIzlePlugin.pluginContext
         for(p in players){
+            if (linkCount > 0) break
             val isKine = p.contains("kinescope", true) || p.contains("kinescopecdn", true) || p.contains("player.hintfilmizle.com", true)
             if (isKine) {
                 if (ctx != null) {
@@ -512,18 +513,22 @@ class HintFilmIzle : MainAPI() {
                         HintFilmIzleWebViewExtractor(ctx, name).getUrl(p, data, subtitleCallback, wrappedCallback)
                     }
                 }
+                if (linkCount > 0) break
                 runCatching {
                     kinescope(p, data, subtitleCallback, wrappedCallback)
                 }
+                if (linkCount > 0) break
             } else {
                 runCatching {
                     loadExtractor(p, data, subtitleCallback, wrappedCallback)
                 }
+                if (linkCount > 0) break
             }
         }
 
         if (linkCount == 0) {
             doc.select("iframe").forEach { iframe ->
+                if (linkCount > 0) return@forEach
                 val src = fix(iframe.attr("src").ifBlank { iframe.attr("data-src") }, data)
                 if (!src.isNullOrBlank()) {
                     runCatching { loadExtractor(src, data, subtitleCallback, wrappedCallback) }

@@ -147,7 +147,11 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
             }
         }
 
-        delay(20_000)
+        var elapsed = 0L
+        while (!foundStream.get() && elapsed < 8000L) {
+            delay(200L)
+            elapsed += 200L
+        }
 
         withContext(Dispatchers.Main) {
             try {
