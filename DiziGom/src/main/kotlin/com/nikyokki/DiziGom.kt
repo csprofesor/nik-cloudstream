@@ -127,10 +127,8 @@ class DiziGom : MainAPI() {
 
         val href = sequenceOf(
             card.selectFirst("a[href*='/diziler/']")?.attr("href"),
-            card.selectFirst("a[href*='/dizi/']")?.attr("href"),
-            card.selectFirst("a")?.attr("href"),
-            attr("href")
-        ).mapNotNull { cleanUrl(it) }.firstOrNull() ?: return null
+            card.selectFirst("a[href*='/dizi/']")?.attr("href")
+        ).mapNotNull { cleanUrl(it) }.firstOrNull { it.contains("/diziler/") || it.contains("/dizi/") } ?: return null
 
         val poster = card.posterUrl()
         Log.d("DiziGom", "Home item: $title poster=$poster")
