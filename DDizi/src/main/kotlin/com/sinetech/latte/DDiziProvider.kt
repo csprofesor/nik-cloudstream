@@ -215,8 +215,9 @@ class DDiziProvider : MainAPI() {
             val pageDocument = if (currentPage == 0) document else app.get(pageUrl, headers = getHeaders(mainUrl)).document
             Log.d("DDizi:", "Loading page: $pageUrl")
 
-            val pageEpisodes = pageDocument.select("div.bolumler a, div.sezonlar a, div.dizi-arsiv a, div.dizi-boxpost-cat a").map { ep ->
+            val pageEpisodes = pageDocument.select("div.bolumler a, div.sezonlar a, div.dizi-arsiv a, div.dizi-boxpost-cat a, div.dizi-boxpost a").mapNotNull { ep ->
                 val name = ep.text().trim()
+                if (name.isEmpty() || !name.contains("Bölüm", ignoreCase = true)) return@mapNotNull null
                 val href = fixUrl(ep.attr("href"))
                 
                 val epSeasonMatch = seasonRegex.find(name)
@@ -283,8 +284,9 @@ class DDiziProvider : MainAPI() {
             try {
                 if (url.contains("/dizi/") || url.contains("/diziler/")) {
                     // Dizi ana sayfasındayız, tüm bölümleri listele
-                    val eps = document.select("div.bolumler a, div.sezonlar a, div.dizi-arsiv a, div.dizi-boxpost-cat a").map { ep ->
+                    val eps = document.select("div.bolumler a, div.sezonlar a, div.dizi-arsiv a, div.dizi-boxpost-cat a, div.dizi-boxpost a").mapNotNull { ep ->
                         val name = ep.text().trim()
+                        if (name.isEmpty() || !name.contains("Bölüm", ignoreCase = true)) return@mapNotNull null
                         val href = fixUrl(ep.attr("href"))
                         
                         // Bölüm adından bilgileri çıkar
@@ -329,7 +331,10 @@ class DDiziProvider : MainAPI() {
             }
         }
 
-        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, allEpisodes) {
+        // Aynı URL'ye sahip bölümleri temizle (dizi-boxpost yüzünden yinelenen/sahte bölümleri önlemek için)
+        val uniqueEpisodes = allEpisodes.distinctBy { it.url }
+
+        return newTvSeriesLoadResponse(title, url, TvType.TvSeries, uniqueEpisodes) {
             this.posterUrl = poster
             this.plot = plot
             this.year = null
