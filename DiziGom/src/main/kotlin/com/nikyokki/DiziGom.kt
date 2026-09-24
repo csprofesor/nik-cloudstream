@@ -34,17 +34,8 @@ class DiziGom : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    private val genreRoutes = linkedMapOf(
-        "Aile" to "aile", "Aksiyon" to "aksiyon", "Animasyon" to "animasyon",
-        "Belgesel" to "belgesel", "Bilim Kurgu" to "bilim-kurgu", "Biyografi" to "biyografi",
-        "Dram" to "dram", "Fantastik" to "fantastik", "Gençlik" to "genclik",
-        "Gerilim" to "gerilim", "Gizem" to "gizem", "Komedi" to "komedi",
-        "Korku" to "korku", "Macera" to "macera", "Polisiye" to "polisiye",
-        "Romantik" to "romantik", "Savaş" to "savas", "Suç" to "suc", "Tarih" to "tarih"
-    )
-
     override val mainPage = mainPageOf(
-        *genreRoutes.map { (genre, slug) -> "$mainUrl/tur/$slug/" to genre }.toTypedArray()
+        mainUrl to "Ana Sayfa"
     )
 
     private fun cleanUrl(value: String?): String? = value
