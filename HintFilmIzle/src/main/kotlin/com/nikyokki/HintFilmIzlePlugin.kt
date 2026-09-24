@@ -124,7 +124,8 @@ class HintFilmIzle : MainAPI() {
         card.selectFirst("h1")?.text(), card.selectFirst(".film-title")?.text(), card.selectFirst(".movie-title")?.text(),
         card.selectFirst(".entry-title")?.text(), card.selectFirst(".single-title")?.text(), card.selectFirst(".post-title")?.text(),
         card.selectFirst(".card-title")?.text(), card.selectFirst("h2")?.text(), card.selectFirst("h3")?.text(),
-        card.selectFirst(".title")?.text(), card.selectFirst(".name")?.text(), card.selectFirst("img")?.attr("alt"), card.attr("title")
+        card.selectFirst(".title")?.text(), card.selectFirst(".name")?.text(), card.selectFirst("img")?.attr("alt"), card.attr("title"),
+        card.text()
     ).mapNotNull(::cleanTitle).firstOrNull()
 
     private fun detailTitle(doc: Document, url: String): String? {
@@ -156,7 +157,7 @@ class HintFilmIzle : MainAPI() {
     private fun cardFor(anchor: Element): Element = anchor.parents().firstOrNull { p -> p.select("img").isNotEmpty() && p.select("a[href*='/film/'],a[href*='/dizi/']").size <= 4 } ?: anchor
     private fun categorySlug(data: String): String? = data.substringBefore("?").trimEnd('/').substringAfter("/tur/", "").takeIf { it.isNotBlank() }
     private fun categoryMatches(card: Element, slug: String): Boolean = card.select("a[href*='/tur/']").any { a -> val href = fix(a.attr("href")) ?: return@any false; href.substringBefore("?").trimEnd('/').equals("$mainUrl/tur/$slug", ignoreCase = true) }
-    private fun results(doc: Document, slug: String? = null): List<SearchResponse> = doc.select("a[href*='/film/'],a[href*='/dizi/']").mapNotNull { a -> val card = cardFor(a); if (slug != null && !categoryMatches(card, slug)) null else a.toResult(card) }.distinctBy { it.url }
+    private fun results(doc: Document, slug: String? = null): List<SearchResponse> = doc.select("a[href*='/film/'],a[href*='/dizi/'], .film-box a, .movie-item a, .item a, .film-item a").mapNotNull { a -> val card = cardFor(a); if (slug != null && !categoryMatches(card, slug)) null else a.toResult(card) }.distinctBy { it.url }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val base = request.data.substringBefore("?").trimEnd('/'); val q = request.data.substringAfter("?", "").takeIf { it.isNotBlank() }
@@ -220,7 +221,21 @@ class HintFilmIzle : MainAPI() {
         val rec = results(doc).ifEmpty { listOf(newMovieSearchResponse("Hint Filmleri", "$mainUrl/film", TvType.Movie) {}) }
         val p = plot(doc, text)
         if (url.contains("/dizi/", true) || doc.selectFirst(".episodes,.episode-list,.seasons") != null) {
-            val eps = doc.select("a[href*='/dizi/'],a[href*='sezon'],a[href*='bolum'],.episode a,.episodes a,.episode-list a").mapNotNull { a -> val u = fix(a.attr("href")) ?: return@mapNotNull null; val t = "${a.text()} ${a.attr("title")}"; val ss = Regex("(?:s|sezon[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull(); val ee = Regex("(?:e|bölüm[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull(); if (ss == null || ee == null || u == url) null else newEpisode(u) { name = a.text().trim(); season = ss; episode = ee } }.distinctBy { it.data }
+            val eps = doc.select("a[href*='/dizi/'],a[href*='sezon'],a[href*='bolum'],.episode a,.episodes a,.episode-list a").mapIndexedNotNull { index, a ->
+                val u = fix(a.attr("href")) ?: return@mapIndexedNotNull null
+                val t = "${a.text()} ${a.attr("title")}"
+                val ss = Regex("(?:s|sezon[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    ?: Regex("(\\d+)\\s*[.,]?\\s*Sezon", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                val ee = Regex("(?:e|bölüm[\\s._-]*)(\\d+)", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    ?: Regex("(\\d+)\\s*[.,]?\\s*Bölüm", RegexOption.IGNORE_CASE).find(t)?.groupValues?.getOrNull(1)?.toIntOrNull()
+                    ?: Regex("\\b(\\d+)\\b").find(a.text())?.value?.toIntOrNull()
+                if (u == url) return@mapIndexedNotNull null
+                newEpisode(u) {
+                    name = a.text().trim().ifBlank { "Bölüm ${index + 1}" }
+                    season = ss ?: 1
+                    episode = ee ?: (index + 1)
+                }
+            }.distinctBy { it.data }
             return newTvSeriesLoadResponse(title, url, TvType.TvSeries, eps) { posterUrl=poster; this.year=year; plot=p; tags=tag; score=Score.from10(imdb); this.duration=duration; addActors(cast); recommendations=rec }
         }
         return newMovieLoadResponse(title, url, TvType.Movie, url) { posterUrl=poster; this.year=year; plot=p; tags=tag; score=Score.from10(imdb); this.duration=duration; addActors(cast); recommendations=rec }
