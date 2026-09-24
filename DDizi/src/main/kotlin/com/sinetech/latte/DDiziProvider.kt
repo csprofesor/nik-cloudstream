@@ -413,7 +413,10 @@ class DDiziProvider : MainAPI() {
                                         "referer" to ogVideo // Player URL'sini referrer olarak kullan
                                     )
                                 } else {
-                                    getHeaders(ogVideo)
+                                    mapOf(
+                                        "user-agent" to USER_AGENT,
+                                        "accept" to "*/*"
+                                    )
                                 }
                                 
                                 Log.d("DDizi:", "Using headers for video source: ${videoHeaders.keys.joinToString()}")
@@ -426,7 +429,9 @@ class DDiziProvider : MainAPI() {
                                         url = fileUrl,
                                         type = if (fileType == "hls") ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO
                                     ) {
-                                        this.referer = ogVideo
+                                        if (fileType == "hls") {
+                                            this.referer = ogVideo
+                                        }
                                         this.quality = getQualityFromName(quality)
                                         this.headers = videoHeaders
                                     }
