@@ -41,7 +41,6 @@ class DiziGom : MainAPI() {
     )
 
     override val mainPage = mainPageOf(
-        mainUrl to "Ana Sayfa",
         "$mainUrl/tum-bolumler/" to "Son Bölümler",
         *genreRoutes.map { (genre, query) -> "search:$query" to genre }.toTypedArray()
     )
@@ -162,7 +161,7 @@ class DiziGom : MainAPI() {
             "$mainUrl/?s=${query.trim().replace(" ", "+")}",
             referer = "$mainUrl/"
         ).document
-        return document.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat, a[href*='/diziler/'], a[href*='/dizi/']")
+        return document.select("div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat")
             .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
     }
