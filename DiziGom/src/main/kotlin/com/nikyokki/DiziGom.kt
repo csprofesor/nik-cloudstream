@@ -35,7 +35,25 @@ class DiziGom : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        "$mainUrl/dizi-izle/" to "Diziler"
+        "$mainUrl/dizi-izle/" to "Tüm Diziler",
+        "$mainUrl/dizi-izle/?tur=Aksiyon" to "Aksiyon",
+        "$mainUrl/dizi-izle/?tur=Animasyon" to "Animasyon",
+        "$mainUrl/dizi-izle/?tur=Belgesel" to "Belgesel",
+        "$mainUrl/dizi-izle/?tur=Bilim%20Kurgu" to "Bilim Kurgu",
+        "$mainUrl/dizi-izle/?tur=Biyografi" to "Biyografi",
+        "$mainUrl/dizi-izle/?tur=Dram" to "Dram",
+        "$mainUrl/dizi-izle/?tur=Fantazi" to "Fantazi",
+        "$mainUrl/dizi-izle/?tur=Gençlik" to "Gençlik",
+        "$mainUrl/dizi-izle/?tur=Gerilim" to "Gerilim",
+        "$mainUrl/dizi-izle/?tur=Gizem" to "Gizem",
+        "$mainUrl/dizi-izle/?tur=Komedi" to "Komedi",
+        "$mainUrl/dizi-izle/?tur=Korku" to "Korku",
+        "$mainUrl/dizi-izle/?tur=Macera" to "Macera",
+        "$mainUrl/dizi-izle/?tur=Polisiye" to "Polisiye",
+        "$mainUrl/dizi-izle/?tur=Romantik" to "Romantik",
+        "$mainUrl/dizi-izle/?tur=Savaş" to "Savaş",
+        "$mainUrl/dizi-izle/?tur=Suç" to "Suç",
+        "$mainUrl/dizi-izle/?tur=Tarih" to "Tarih"
     )
 
     private fun cleanUrl(value: String?): String? = value
