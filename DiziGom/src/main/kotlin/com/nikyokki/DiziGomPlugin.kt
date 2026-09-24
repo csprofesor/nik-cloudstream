@@ -6,7 +6,12 @@ import android.content.Context
 
 @CloudstreamPlugin
 class DiziGomPlugin: Plugin() {
+    companion object {
+        var pluginContext: Context? = null
+    }
+
     override fun load(context: Context) {
+        pluginContext = context
         registerMainAPI(DiziGom())
     }
 }

@@ -337,15 +337,30 @@ class DiziGom : MainAPI() {
         Log.d("DiziGom", "Resolving episode: $data")
         val document = runCatching { app.get(data, referer = "$mainUrl/").document }.getOrNull() ?: return false
 
+        var linkCount = 0
+        val wrappedCallback: (ExtractorLink) -> Unit = { link ->
+            linkCount++
+            callback(link)
+        }
+
         document.select("iframe[src], frame[src]").mapNotNull { it.attr("src") }.forEach {
+            if (linkCount > 0) return@forEach
             val src = cleanUrl(it) ?: return@forEach
             if (!src.contains("s.php", true) && !src.contains("pilavyerplay", true) && !src.contains("youtube", true) && !src.contains("pilayerplay", true)) {
-                loadExtractor(src, data, subtitleCallback, callback)
+                runCatching { loadExtractor(src, data, subtitleCallback, wrappedCallback) }
             }
         }
 
         val playerUrl = extractPlayerUrl(document)
         if (!playerUrl.isNullOrBlank()) {
+            val ctx = DiziGomPlugin.pluginContext
+            if (ctx != null) {
+                runCatching {
+                    DiziGomWebViewExtractor(ctx, name).getUrl(playerUrl, data, subtitleCallback, wrappedCallback)
+                }
+            }
+            if (linkCount > 0) return true
+
             val playerResponse = runCatching { app.get(playerUrl, referer = data) }.getOrNull()
             val playerHtml = playerResponse?.text.orEmpty()
             val streamUrl = extractPlayerStream(playerHtml)
@@ -374,7 +389,7 @@ class DiziGom : MainAPI() {
 
             if (!streamUrl.isNullOrBlank()) {
                 Log.d("DiziGom", "PilayerPlay stream bulundu")
-                callback(
+                wrappedCallback(
                     newExtractorLink(
                         source = name,
                         name = "DiziGom 1080p",
@@ -385,7 +400,7 @@ class DiziGom : MainAPI() {
                         quality = 1080
                     }
                 )
-                return true
+                if (linkCount > 0) return true
             }
 
             val directPlayerUrl = Regex(
@@ -394,7 +409,8 @@ class DiziGom : MainAPI() {
             ).findAll(playerHtml).map { cleanUrl(it.value) }.filterNotNull().distinct().toList()
 
             for (stream in directPlayerUrl) {
-                callback(
+                if (linkCount > 0) break
+                wrappedCallback(
                     newExtractorLink(source = name, name = "DiziGom", url = stream,
                         type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO) {
                         referer = playerUrl
@@ -402,7 +418,7 @@ class DiziGom : MainAPI() {
                     }
                 )
             }
-            if (directPlayerUrl.isNotEmpty()) return true
+            if (linkCount > 0) return true
         }
 
         val directUrls = Regex(
@@ -411,7 +427,8 @@ class DiziGom : MainAPI() {
         ).findAll(document.html()).map { cleanUrl(it.value) }.filterNotNull().distinct().toList()
 
         for (stream in directUrls) {
-            callback(
+            if (linkCount > 0) break
+            wrappedCallback(
                 newExtractorLink(source = name, name = "DiziGom", url = stream,
                     type = if (stream.contains(".m3u8", true)) ExtractorLinkType.M3U8 else ExtractorLinkType.VIDEO) {
                     referer = data
@@ -419,6 +436,6 @@ class DiziGom : MainAPI() {
                 }
             )
         }
-        return directUrls.isNotEmpty()
+        return linkCount > 0
     }
 }
