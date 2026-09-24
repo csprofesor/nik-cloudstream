@@ -35,8 +35,7 @@ class DiziGom : MainAPI() {
     override val supportedTypes = setOf(TvType.TvSeries)
 
     override val mainPage = mainPageOf(
-        mainUrl to "Ana Sayfa",
-        "$mainUrl/tum-bolumler/" to "Son Bölümler"
+        "$mainUrl/dizi-izle/" to "Diziler"
     )
 
     private fun cleanUrl(value: String?): String? = value
@@ -108,23 +107,30 @@ class DiziGom : MainAPI() {
     }
 
     private fun Element.toMainPageResult(): SearchResponse? {
-        val card = findCard()
-        val title = sequenceOf(
-            card.selectFirst("div.serie-name a")?.text(),
-            card.selectFirst(".serie-name")?.text(),
-            card.selectFirst("a[title]")?.attr("title"),
-            card.selectFirst("img")?.attr("alt"),
-            card.selectFirst("img")?.attr("title"),
-            card.attr("title")
-        ).mapNotNull { it?.trim()?.takeIf { value -> value.isNotBlank() } }.firstOrNull() ?: return null
+        // Güncel Dizigom kart yapısı: div.single-item
+        val titleEl = selectFirst("div.categorytitle a")
+            ?: selectFirst(".categorytitle a")
+            ?: selectFirst("a[href]")
 
-        val href = sequenceOf(
-            card.selectFirst("a[href*='/diziler/']")?.attr("href"),
-            card.selectFirst("a[href*='/dizi/']")?.attr("href")
-        ).mapNotNull { cleanUrl(it) }.firstOrNull { it.contains("/diziler/") || it.contains("/dizi/") } ?: return null
+        val href = titleEl?.attr("href")?.let { cleanUrl(it) } ?: return null
+        val title = titleEl.text().trim().takeIf { it.isNotBlank() } ?: return null
 
-        val poster = card.posterUrl()
-        Log.d("DiziGom", "Home item: $title poster=$poster")
+        val poster = selectFirst("div.cat-img img")?.let { img ->
+            listOf(
+                img.attr("src"),
+                img.attr("data-src"),
+                img.attr("data-lazy-src"),
+                img.attr("data-original"),
+                img.attr("srcset")
+            ).asSequence()
+                .filter { it.isNotBlank() }
+                .flatMap { raw -> raw.split(",").asSequence().map { it.trim().substringBefore(" ") } }
+                .mapNotNull { cleanUrl(it) }
+                .firstOrNull {
+                    !it.startsWith("data:image/", true) &&
+                    !it.contains("placeholder", true)
+                }
+        } ?: posterUrl()
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
             posterUrl = poster
@@ -132,16 +138,28 @@ class DiziGom : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val pageUrl = if (page <= 1) request.data else request.data.trimEnd('/') + "/page/$page/"
-        val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
-            ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
+        val pageUrl = if (page <= 1) request.data
+        else "${request.data.trimEnd('/')}/page/$page/"
 
-        val results = document.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat")
+        val document = runCatching {
+            app.get(pageUrl, referer = "$mainUrl/").document
+        }.getOrNull() ?: return newHomePageResponse(
+            request.name,
+            emptyList(),
+            hasNext = false
+        )
+
+        val results = document.select("div.single-item")
             .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
 
         Log.d("DiziGom", "${request.name}: page=$page count=${results.size} url=$pageUrl")
-        return newHomePageResponse(request.name, results, hasNext = results.isNotEmpty())
+
+        return newHomePageResponse(
+            request.name,
+            results,
+            hasNext = results.isNotEmpty()
+        )
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
