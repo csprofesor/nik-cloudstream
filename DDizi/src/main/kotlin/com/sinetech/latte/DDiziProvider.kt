@@ -366,29 +366,33 @@ class DDiziProvider : MainAPI() {
                         Log.d("DDizi:", "Found jwplayer configuration")
                         
                         // sources kısmını regex ile çıkar
-                        val sourcesRegex = Regex("""sources:\s*\[\s*\{(.*?)\}\s*,?\s*\]""", RegexOption.DOT_MATCHES_ALL)
+                        val sourcesRegex = Regex("""sources:\s*\[(.*?)\]""", RegexOption.DOT_MATCHES_ALL)
                         val sourcesMatch = sourcesRegex.find(content)
                         
                         if (sourcesMatch != null) {
-                            // file parametresini bul
-                            val fileRegex = Regex("""file:\s*["'](.*?)["']""")
-                            val fileMatch = fileRegex.find(sourcesMatch.groupValues[1])
-                            
-                            if (fileMatch != null) {
-                                val fileUrl = fileMatch.groupValues[1]
-                                Log.d("DDizi:", "Found video source: $fileUrl")
+                            val sourcesText = sourcesMatch.groupValues[1]
+                            val blockRegex = Regex("""\{(.*?)\}""", RegexOption.DOT_MATCHES_ALL)
+                            blockRegex.findAll(sourcesText).forEach { blockMatch ->
+                                val block = blockMatch.groupValues[1]
+                                // file parametresini bul
+                                val fileRegex = Regex("""file:\s*["'](.*?)["']""")
+                                val fileMatch = fileRegex.find(block)
                                 
-                                // Dosya türünü belirle
-                                val fileType = when {
-                                    fileUrl.contains(".m3u8") || fileUrl.contains("hls") -> "hls"
-                                    fileUrl.contains(".mp4") -> "mp4"
-                                    else -> "hls" // Varsayılan olarak hls kabul et
-                                }
-                                
-                                // Kalite bilgisini belirle
-                                val qualityRegex = Regex("""label:\s*["'](.*?)["']""")
-                                val qualityMatch = qualityRegex.find(sourcesMatch.groupValues[1])
-                                val quality = qualityMatch?.groupValues?.get(1) ?: "Auto"
+                                if (fileMatch != null) {
+                                    val fileUrl = fileMatch.groupValues[1].replace("\\/", "/")
+                                    Log.d("DDizi:", "Found video source: $fileUrl")
+                                    
+                                    // Dosya türünü belirle
+                                    val fileType = when {
+                                        fileUrl.contains(".m3u8") || fileUrl.contains("hls") -> "hls"
+                                        fileUrl.contains(".mp4") -> "mp4"
+                                        else -> "hls" // Varsayılan olarak hls kabul et
+                                    }
+                                    
+                                    // Kalite bilgisini belirle
+                                    val qualityRegex = Regex("""label:\s*["'](.*?)["']""")
+                                    val qualityMatch = qualityRegex.find(block)
+                                    val quality = qualityMatch?.groupValues?.get(1) ?: "Auto"
                                 
                                 Log.d("DDizi:", "Video type: $fileType, quality: $quality")
                                 
@@ -483,6 +487,7 @@ class DDiziProvider : MainAPI() {
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                     }
