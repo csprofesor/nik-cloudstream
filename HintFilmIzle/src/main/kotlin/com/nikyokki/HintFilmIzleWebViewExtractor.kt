@@ -38,6 +38,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
     ) {
         Log.d("HintFilmIzleWebView", "WEBVIEW_EXTRACTOR_START=$url")
         val foundStream = AtomicBoolean(false)
+        val targetUrl = if (url.contains("?")) "$url&autoplay=1&muted=1&playsinline=1" else "$url?autoplay=1&muted=1&playsinline=1"
 
         withContext(Dispatchers.Main) {
             webView = WebView(context).apply {
@@ -70,7 +71,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                                         type = ExtractorLinkType.M3U8
                                     ) {
                                         this.quality = Qualities.P1080.value
-                                        this.headers = mapOf("Referer" to mainUrl, "Origin" to "https://kinescope.io")
+                                        this.headers = mapOf("Referer" to "https://kinescope.io/", "Origin" to "https://kinescope.io")
                                     }
                                 )
                             }
@@ -83,6 +84,15 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                         super.onPageFinished(view, url)
                         val js = """
                             (function() {
+                                setInterval(() => {
+                                    try {
+                                        const v = document.querySelector('video');
+                                        if (v && v.paused) { v.muted = true; v.play(); }
+                                        const btn = document.querySelector('[role="button"], .kinescope-player button, .play-button');
+                                        if (btn) btn.click();
+                                    } catch(e) {}
+                                }, 300);
+
                                 const originalFetch = window.fetch;
                                 window.fetch = async function(...args) {
                                     const response = await originalFetch.apply(this, args);
@@ -107,6 +117,18 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                                     });
                                     return originalXHR.apply(this, [method, url, ...args]);
                                 };
+
+                                function scanRes() {
+                                    try {
+                                        const entries = performance.getEntriesByType('resource');
+                                        for (let e of entries) {
+                                            if (e.name && (e.name.includes('.m3u8') || e.name.includes('playlist') || e.name.includes('manifest'))) {
+                                                window.AndroidBridge.onStreamFound(e.name, e.name);
+                                            }
+                                        }
+                                    } catch(e) {}
+                                }
+                                setInterval(scanRes, 1000);
                             })();
                         """.trimIndent()
                         view?.evaluateJavascript(js, null)
@@ -133,7 +155,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                                             type = ExtractorLinkType.M3U8
                                         ) {
                                             this.quality = Qualities.P1080.value
-                                            this.headers = mapOf("Referer" to mainUrl, "Origin" to "https://kinescope.io")
+                                            this.headers = mapOf("Referer" to "https://kinescope.io/", "Origin" to "https://kinescope.io")
                                         }
                                     )
                                 }
@@ -143,7 +165,7 @@ class HintFilmIzleWebViewExtractor(private val context: Context, private val plu
                     }
                 }
 
-                loadUrl(url, mapOf("Referer" to "$mainUrl/"))
+                loadUrl(targetUrl, mapOf("Referer" to "$mainUrl/"))
             }
         }
 
