@@ -354,7 +354,17 @@ class DiziGom : MainAPI() {
 
         val playerUrl = extractPlayerUrl(document)
         if (!playerUrl.isNullOrBlank()) {
-            val playerResponse = runCatching { app.get(playerUrl, referer = data) }.getOrNull()
+            val playerResponse = runCatching {
+                app.get(
+                    playerUrl,
+                    referer = data,
+                    headers = mapOf(
+                        "Origin" to "https://www.dizigom.icu",
+                        "X-Requested-With" to "XMLHttpRequest"
+                    )
+                )
+            }.getOrNull()
+            Log.d("DiziGom", "playerUrl: $playerUrl, html length: ${playerResponse?.text?.length}")
             val playerHtml = playerResponse?.text.orEmpty()
             val streamUrl = extractPlayerStream(playerHtml)
 
