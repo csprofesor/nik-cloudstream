@@ -383,10 +383,16 @@ class DDiziProvider : MainAPI() {
                                     Log.d("DDizi:", "Found video source: $fileUrl")
                                     
                                     // Dosya türünü belirle
+                                    val typeRegex = Regex("""type:\s*["'](.*?)["']""")
+                                    val typeMatch = typeRegex.find(block)
+                                    val extractedType = typeMatch?.groupValues?.get(1)
+                                    
                                     val fileType = when {
-                                        fileUrl.contains(".m3u8") || fileUrl.contains("hls") -> "hls"
-                                        fileUrl.contains(".mp4") -> "mp4"
-                                        else -> "hls" // Varsayılan olarak hls kabul et
+                                        extractedType == "mp4" -> "mp4"
+                                        extractedType == "hls" || extractedType == "m3u8" -> "hls"
+                                        fileUrl.contains(".m3u8") || fileUrl.contains("hls") || fileUrl.contains("master.txt") -> "hls"
+                                        fileUrl.contains(".mp4") || fileUrl.contains("video/mp4") || fileUrl.contains("googlevideo.com") -> "mp4"
+                                        else -> "mp4" // Varsayılan olarak mp4 kabul et, çünkü 3002 hatası genelde mp4'ün m3u8 sanılmasından kaynaklanır
                                     }
                                     
                                     // Kalite bilgisini belirle
