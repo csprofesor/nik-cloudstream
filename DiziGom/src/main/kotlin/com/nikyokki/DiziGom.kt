@@ -156,28 +156,106 @@ class DiziGom : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val pageUrl = if (page <= 1) request.data
-        else "${request.data.trimEnd('/')}/page/$page/"
-
         val document = runCatching {
-            app.get(pageUrl, referer = "$mainUrl/").document
+            app.get("${request.data}#p=$page", referer = "$mainUrl/").document
         }.getOrNull() ?: return newHomePageResponse(
             request.name,
             emptyList(),
             hasNext = false
         )
 
-        val results = document.select("div.single-item")
+        if (page == 1) {
+            val results = document.select("div.episode-box")
+                .mapNotNull { it.toMainPageResult() }
+                .distinctBy { it.url }
+
+            Log.d("DiziGom", "${request.name}: page=1 count=${results.size}")
+            return newHomePageResponse(
+                request.name,
+                results,
+                hasNext = results.isNotEmpty()
+            )
+        }
+
+        val form = document.selectFirst("form.dizigom_advenced_search")
+        val nonce = form?.selectFirst("input[name=_wpnonce]")?.attr("value")
+            ?: document.selectFirst("input[name=_wpnonce]")?.attr("value")
+
+        val taxInput = form?.select("input[name]")
+            ?.firstOrNull { it.attr("name") != "_wpnonce" }
+
+        val tax = taxInput?.attr("name")
+        val value = taxInput?.attr("value")
+
+        if (tax.isNullOrBlank() || value.isNullOrBlank() || nonce.isNullOrBlank()) {
+            Log.d("DiziGom", "${request.name}: AJAX form bilgisi bulunamadı")
+            return newHomePageResponse(request.name, emptyList(), hasNext = false)
+        }
+
+        val pageDocument = runCatching {
+            app.post(
+                "$mainUrl/wp-admin/admin-ajax.php",
+                headers = mapOf(
+                    "X-Requested-With" to "XMLHttpRequest",
+                    "Referer" to request.data
+                ),
+                data = mapOf(
+                    "action" to "dizigom_search_action",
+                    "formData" to "$tax=$value",
+                    "paged" to page.toString(),
+                    "_wpnonce" to nonce
+                )
+            ).document
+        }.getOrNull() ?: return newHomePageResponse(
+            request.name,
+            emptyList(),
+            hasNext = false
+        )
+
+        val results = pageDocument.select("div.episode-box")
             .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
 
-        Log.d("DiziGom", "${request.name}: page=$page count=${results.size} url=$pageUrl")
+        Log.d("DiziGom", "${request.name}: page=$page count=${results.size}")
 
         return newHomePageResponse(
             request.name,
             results,
             hasNext = results.isNotEmpty()
         )
+    }
+
+    private fun Element.toMainPageResult(): SearchResponse? {
+        val titleEl = selectFirst("div.serie-name a")
+            ?: selectFirst("div.categorytitle a")
+            ?: selectFirst("a[href]")
+
+        val href = titleEl?.attr("href")?.let { cleanUrl(it) } ?: return null
+        val title = titleEl.text().trim().takeIf { it.isNotBlank() } ?: return null
+
+        val poster = selectFirst("img")?.let { img ->
+            listOf(
+                img.attr("src"),
+                img.attr("data-src"),
+                img.attr("data-lazy-src"),
+                img.attr("data-original"),
+                img.attr("srcset")
+            ).asSequence()
+                .filter { it.isNotBlank() }
+                .flatMap { raw ->
+                    raw.split(",").asSequence().map { it.trim().substringBefore(" ") }
+                }
+                .mapNotNull { cleanUrl(it) }
+                .firstOrNull {
+                    !it.startsWith("data:image/", true) &&
+                    !it.contains("placeholder", true) &&
+                    !it.contains("lazy", true)
+                }
+        } ?: posterUrl()
+
+        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+            posterUrl = poster
+        }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
