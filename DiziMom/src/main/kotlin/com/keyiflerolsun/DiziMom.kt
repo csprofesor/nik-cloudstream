@@ -72,7 +72,11 @@ class DiziMom : MainAPI() {
         val epDoc    = app.get(epHref).document
         val href     = epDoc.selectFirst("div#benzerli a")?.attr("href") ?: return null
 
-        val posterUrl = fixUrlNull(this.selectFirst("a img")?.attr("data-src"))
+        val posterUrl = fixUrlNull(
+            this.selectFirst("a img")?.let { element ->
+                element.attr("data-src").takeIf { it.isNotBlank() } ?: element.attr("src")
+            }
+        )
 
         return newTvSeriesSearchResponse(title, href, TvType.TvSeries) { this.posterUrl = posterUrl }
     }
@@ -101,7 +105,11 @@ class DiziMom : MainAPI() {
         val document = app.get(url, interceptor = interceptor).document
 
         val title       = document.selectFirst("div.title h1")?.text()?.substringBefore(" izle") ?: return null
-        val poster      = fixUrlNull(document.selectFirst("div.category_image img")?.attr("data-src")) ?: return null
+        val poster      = fixUrlNull(
+            document.selectFirst("div.category_image img")?.let { element ->
+                element.attr("data-src").takeIf { it.isNotBlank() } ?: element.attr("src")
+            }
+        ) ?: return null
         val year        = document.selectXpath("//div[span[contains(text(), 'Yapım Yılı')]]").text().substringAfter("Yapım Yılı : ").trim().toIntOrNull()
         val description = document.selectFirst("div.category_desc")?.text()?.trim()
         val tags        = document.select("div.genres a").mapNotNull { it.text().trim() }
@@ -136,29 +144,31 @@ class DiziMom : MainAPI() {
 
         val ua = mapOf("User-Agent" to "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36")
 
-        app.post(
-            "${mainUrl}/wp-login.php",
-            headers = ua,
-            referer = "${mainUrl}/",
-            data    = mapOf(
-                "log"         to "keyiflerolsun",
-                "pwd"         to "12345",
-                "rememberme"  to "forever",
-                "redirect_to" to mainUrl,
-            )
-        )
+        val document = app.get(data, headers = ua, interceptor = interceptor).document
 
-        val document = app.get(data, headers=ua, interceptor = interceptor).document
+        val iframes = mutableListOf<String>()
+        document.selectFirst("div.video iframe, div.video p iframe, iframe")?.let { iframe ->
+            val src = iframe.attr("data-src").takeIf { it.isNotBlank() && it != "about:blank" } ?: iframe.attr("src")
+            if (src.isNotBlank() && src != "about:blank") {
+                iframes.add(src)
+            }
+        }
 
-        val iframes     = mutableListOf<String>()
-        val mainIframe = document.selectFirst("div.video p iframe")?.attr("src") ?: return false
-        iframes.add(mainIframe)
-
-        document.select("div.sources a").forEach {
-            val subDocument = app.get(it.attr("href"), headers=ua, interceptor = interceptor).document
-            val subIframe   = subDocument.selectFirst("div.video p iframe")?.attr("src") ?: return@forEach
-
-            iframes.add(subIframe)
+        document.select("div.sources a, div.diziplus_sources a").forEach {
+            val href = it.attr("href")
+            if (href.isNotBlank() && href != "#") {
+                try {
+                    val subDocument = app.get(href, headers = ua, interceptor = interceptor).document
+                    subDocument.selectFirst("div.video iframe, div.video p iframe, iframe")?.let { iframe ->
+                        val subSrc = iframe.attr("data-src").takeIf { it.isNotBlank() && it != "about:blank" } ?: iframe.attr("src")
+                        if (subSrc.isNotBlank() && subSrc != "about:blank") {
+                            iframes.add(subSrc)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.d("DZM", "Error in source: ${e.message}")
+                }
+            }
         }
 
         for (iframe in iframes) {
@@ -166,6 +176,6 @@ class DiziMom : MainAPI() {
             loadExtractor(iframe, "${mainUrl}/", subtitleCallback, callback)
         }
 
-        return true
+        return iframes.isNotEmpty()
     }
 }
