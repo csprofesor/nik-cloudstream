@@ -447,8 +447,8 @@ class DDiziProvider : MainAPI() {
                                         this.headers = videoHeaders
                                     }
                                 )
-                                // Eğer dosya türü hls ise, M3u8Helper ile işle
-                                if (fileType == "hls") {
+                                // Eğer dosya türü hls ise ve twimg.com değilse, M3u8Helper ile işle (twimg master playlist ses ve videoyu ayrı tuttuğu için M3u8Helper sessiz video akışı üretir)
+                                if (fileType == "hls" && !fileUrl.contains("twimg.com")) {
                                     try {
                                         Log.d("DDizi:", "Generating M3u8 for: $fileUrl")
                                         M3u8Helper.generateM3u8(
