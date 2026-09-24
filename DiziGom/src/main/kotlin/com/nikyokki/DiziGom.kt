@@ -126,7 +126,8 @@ class DiziGom : MainAPI() {
 
     private fun Element.toMainPageResult(): SearchResponse? {
         // Güncel Dizigom kart yapısı: div.single-item
-        val titleEl = selectFirst("div.categorytitle a")
+        val titleEl = selectFirst("div.serie-name a")
+            ?: selectFirst("div.categorytitle a")
             ?: selectFirst(".categorytitle a")
             ?: selectFirst("a[href]")
 
@@ -225,38 +226,7 @@ class DiziGom : MainAPI() {
         )
     }
 
-    private fun Element.toMainPageResult(): SearchResponse? {
-        val titleEl = selectFirst("div.serie-name a")
-            ?: selectFirst("div.categorytitle a")
-            ?: selectFirst("a[href]")
 
-        val href = titleEl?.attr("href")?.let { cleanUrl(it) } ?: return null
-        val title = titleEl.text().trim().takeIf { it.isNotBlank() } ?: return null
-
-        val poster = selectFirst("img")?.let { img ->
-            listOf(
-                img.attr("src"),
-                img.attr("data-src"),
-                img.attr("data-lazy-src"),
-                img.attr("data-original"),
-                img.attr("srcset")
-            ).asSequence()
-                .filter { it.isNotBlank() }
-                .flatMap { raw ->
-                    raw.split(",").asSequence().map { it.trim().substringBefore(" ") }
-                }
-                .mapNotNull { cleanUrl(it) }
-                .firstOrNull {
-                    !it.startsWith("data:image/", true) &&
-                    !it.contains("placeholder", true) &&
-                    !it.contains("lazy", true)
-                }
-        } ?: posterUrl()
-
-        return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
-            posterUrl = poster
-        }
-    }
 
     override suspend fun search(query: String): List<SearchResponse> {
         val document = app.get(
