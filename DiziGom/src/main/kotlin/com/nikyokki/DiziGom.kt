@@ -20,6 +20,7 @@ import com.lagradost.cloudstream3.newTvSeriesSearchResponse
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.getQualityFromName
+import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
 import org.jsoup.nodes.Element
 
@@ -144,7 +145,7 @@ class DiziGom : MainAPI() {
         val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
             ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
 
-        val results = document.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat, a[href*='/diziler/'], a[href*='/dizi/']")
+        val results = document.select("div.episode-box, div.single-item, div.dizi-boxpost, div.dizi-boxpost-cat")
             .mapNotNull { it.toMainPageResult() }
             .distinctBy { it.url }
 
@@ -234,14 +235,14 @@ class DiziGom : MainAPI() {
     private fun extractPlayerUrl(document: org.jsoup.nodes.Document): String? {
         return document.select("iframe[src], frame[src]")
             .mapNotNull { cleanUrl(it.attr("src")) }
-            .firstOrNull { it.contains("s.php", true) || it.contains("pilayerplay", true) }
+            .firstOrNull { it.contains("s.php", true) || it.contains("pilavyerplay", true) || it.contains("pilayerplay", true) }
             ?: Regex("https?://[^\\\"'\\s<>]+/s\\.php\\?[^\\\"'\\s<>]+", RegexOption.IGNORE_CASE)
                 .find(document.html())?.value?.let { cleanUrl(it) }
     }
 
     private fun extractPlayerStream(html: String): String? {
         val stream = Regex(
-            "[\\\"']stream[\\\"']\\s*:\\s*[\\\"']([^\\\"']+)[\\\"']",
+            "\"stream\"\\s*:\\s*\"([^\"]+)\"",
             RegexOption.IGNORE_CASE
         ).find(html)?.groupValues?.getOrNull(1)
         if (!stream.isNullOrBlank()) return cleanUrl(stream)
@@ -261,11 +262,40 @@ class DiziGom : MainAPI() {
         Log.d("DiziGom", "Resolving episode: $data")
         val document = runCatching { app.get(data, referer = "$mainUrl/").document }.getOrNull() ?: return false
 
+        document.select("iframe[src], frame[src]").mapNotNull { it.attr("src") }.forEach {
+            val src = cleanUrl(it) ?: return@forEach
+            if (!src.contains("s.php", true) && !src.contains("pilavyerplay", true) && !src.contains("youtube", true) && !src.contains("pilayerplay", true)) {
+                loadExtractor(src, data, subtitleCallback, callback)
+            }
+        }
+
         val playerUrl = extractPlayerUrl(document)
         if (!playerUrl.isNullOrBlank()) {
             val playerResponse = runCatching { app.get(playerUrl, referer = data) }.getOrNull()
             val playerHtml = playerResponse?.text.orEmpty()
             val streamUrl = extractPlayerStream(playerHtml)
+
+            val subs = Regex(
+                "\"subs\"\\s*:\\s*\\[(.*?)]",
+                RegexOption.IGNORE_CASE
+            ).find(playerHtml)?.groupValues?.getOrNull(1)
+
+            if (!subs.isNullOrBlank()) {
+                val subItems = Regex(
+                    "\\{[^}]*\\}",
+                    RegexOption.IGNORE_CASE
+                ).findAll(subs)
+                for (item in subItems) {
+                    val lang = Regex("\"label\"\\s*:\\s*\"([^\"]+)\"").find(item.value)?.groupValues?.getOrNull(1) ?: "Turkce"
+                    val src = Regex("\"src\"\\s*:\\s*\"([^\"]+)\"").find(item.value)?.groupValues?.getOrNull(1)
+                    if (src != null) {
+                        val subUrl = cleanUrl(src)
+                        if (subUrl != null) {
+                            subtitleCallback(SubtitleFile(lang, subUrl))
+                        }
+                    }
+                }
+            }
 
             if (!streamUrl.isNullOrBlank()) {
                 Log.d("DiziGom", "PilayerPlay stream bulundu")
