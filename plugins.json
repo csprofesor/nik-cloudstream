@@ -144,7 +144,7 @@
     "fileHash": "sha256-03f8f6c63b88f23b62a434397562777594398e592da90d17be3f011432086294"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=a98c6195f60f63a31f4712686aeafb1bdc7a4fa51943d301b3ed30c6feaa79de",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=dcadeacc5408893b4b43b73ecd56bc8a552433abaa61c62c5477f7362d63f988",
     "status": 1,
     "version": 1,
     "name": "DDizi",
@@ -153,7 +153,7 @@
       "csprofesor"
     ],
     "description": "Ddizi, dizi izle, dizi seyret, ddizi.im - Güncel ve eski dizileri en iyi görüntü kalitesiyle bulabileceğiniz dizi izleme sitesi.",
-    "fileSize": 31750,
+    "fileSize": 31646,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -161,7 +161,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=ddizi.im&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-a98c6195f60f63a31f4712686aeafb1bdc7a4fa51943d301b3ed30c6feaa79de"
+    "fileHash": "sha256-dcadeacc5408893b4b43b73ecd56bc8a552433abaa61c62c5477f7362d63f988"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziBox.cs3?v=8ab5957d93c8fd9545179085605a9398d96d10209606aab5808e9efbcadb774f",
@@ -184,7 +184,7 @@
     "fileHash": "sha256-8ab5957d93c8fd9545179085605a9398d96d10209606aab5808e9efbcadb774f"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=6e8da0a0882758ce03d70a71c0265e690976e69b4a0b5e28574f018ae9e631b7",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziGom.cs3?v=4af23953d44996169aeb31a35e69131d73fdbe8c17ba1edf41ca3d465f129372",
     "status": 1,
     "version": 16,
     "name": "DiziGom",
@@ -193,7 +193,7 @@
       "csprofesor"
     ],
     "description": "Türkçe altyazılı yabancı dizi izle, Tüm yabancı, kore, netflix dizilerin yeni ve eski sezonlarını orijinal dilinde dizigom1 alt yazılı film izleyebilir, sadece türkçe altyazılı en iyi yabancı diziler ve filmler hakkında yorum yapabilirsiniz.",
-    "fileSize": 25102,
+    "fileSize": 27033,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -201,7 +201,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizigom.love&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-6e8da0a0882758ce03d70a71c0265e690976e69b4a0b5e28574f018ae9e631b7"
+    "fileHash": "sha256-4af23953d44996169aeb31a35e69131d73fdbe8c17ba1edf41ca3d465f129372"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziKorea.cs3?v=1958c66dd0c32ab436adc333504c1183322653afa048425509a7dfc4898ba0da",
