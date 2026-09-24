@@ -550,7 +550,7 @@
     "fileHash": "sha256-1e42cb2ba862c2324ee5084f3f5399880d9a57e2d8db41d0f5089fa148c8467c"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=86d8caa96d6e85bf77394cda243d81f1aa5f8fb827c3b71e069c0a4f28a3b1e6",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HintFilmIzle.cs3?v=ea08bbaf77e2966f02150d281a081519d99978eac08a25aa96484040e8fe080a",
     "status": 1,
     "version": 41,
     "name": "HintFilmIzle",
@@ -559,7 +559,7 @@
       "csprofesor"
     ],
     "description": "HintFilmizle.com Hint filmleri, yabancı filmler ve diziler",
-    "fileSize": 51920,
+    "fileSize": 52282,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -568,7 +568,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hintfilmizle.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-86d8caa96d6e85bf77394cda243d81f1aa5f8fb827c3b71e069c0a4f28a3b1e6"
+    "fileHash": "sha256-ea08bbaf77e2966f02150d281a081519d99978eac08a25aa96484040e8fe080a"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/InatBox.cs3?v=006c7b68f7deb24c5356c753429c20607896f78009a8edbf27a46bd6ff0651fb",
