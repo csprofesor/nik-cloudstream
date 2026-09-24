@@ -144,7 +144,7 @@
     "fileHash": "sha256-03f8f6c63b88f23b62a434397562777594398e592da90d17be3f011432086294"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=fc892c34723386a708fbbc22a2e449a1bd22eb480924bf5e9aeb6f670c1ab181",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DDizi.cs3?v=94048b32ca712165d4ae2203b1cef870868bed0cae5432658d74ef2a76f5885b",
     "status": 1,
     "version": 1,
     "name": "DDizi",
@@ -153,7 +153,7 @@
       "csprofesor"
     ],
     "description": "Ddizi, dizi izle, dizi seyret, ddizi.im - Güncel ve eski dizileri en iyi görüntü kalitesiyle bulabileceğiniz dizi izleme sitesi.",
-    "fileSize": 28711,
+    "fileSize": 30714,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -161,7 +161,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=ddizi.im&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-fc892c34723386a708fbbc22a2e449a1bd22eb480924bf5e9aeb6f670c1ab181"
+    "fileHash": "sha256-94048b32ca712165d4ae2203b1cef870868bed0cae5432658d74ef2a76f5885b"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziBox.cs3?v=8ab5957d93c8fd9545179085605a9398d96d10209606aab5808e9efbcadb774f",
@@ -265,7 +265,7 @@
     "fileHash": "sha256-9baca9e27e70d6966712b1e82d56050a00fb905c31c8207a1429b9a72bf9cdf9"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3?v=639725fc9d45daa491a68441a2cef50c505ab8057fe7ab3ff0e17d0840e29dbe",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziMom.cs3?v=56a7a34d7ab414da583a0cab8f44c77fe0110d0529b284b6e6c46db0cb8b32e1",
     "status": 1,
     "version": 58,
     "name": "DiziMom",
@@ -274,7 +274,7 @@
       "csprofesor"
     ],
     "description": "Binlerce yerli yabancı dizi arşivi, tüm sezonlar, kesintisiz bölümler. Sadece dizi izle, Dizimom heryerde seninle!",
-    "fileSize": 34844,
+    "fileSize": 34836,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -282,7 +282,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.dizimom.plus&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-639725fc9d45daa491a68441a2cef50c505ab8057fe7ab3ff0e17d0840e29dbe"
+    "fileHash": "sha256-56a7a34d7ab414da583a0cab8f44c77fe0110d0529b284b6e6c46db0cb8b32e1"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/DiziPal.cs3?v=8e7537a984b5cc41b24436e505ca605caf9a53ef551d84abc67574bd0b33c1ff",
@@ -468,7 +468,7 @@
     "fileHash": "sha256-8f2cff5f9fc87f38d415b65c30c7ad3b7c9a5d26f03d8e73b072ff520b499253"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi.cs3?v=26b747c4db190a9f15fb6e4a76b0fb8eb7e1561dbe071acc4a70e8a4237fda17",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi.cs3?v=d3edf0a3cce476d7a5b850950c0fe467102cfacc890da86c5fc39eaecd470c86",
     "status": 1,
     "version": 48,
     "name": "HDFilmCehennemi",
@@ -477,7 +477,7 @@
       "csprofesor"
     ],
     "description": "Türkiye'nin en hızlı hd film izleme sitesi",
-    "fileSize": 35018,
+    "fileSize": 31661,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -486,7 +486,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-26b747c4db190a9f15fb6e4a76b0fb8eb7e1561dbe071acc4a70e8a4237fda17"
+    "fileHash": "sha256-d3edf0a3cce476d7a5b850950c0fe467102cfacc890da86c5fc39eaecd470c86"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3?v=9d40401d743f0104f44cd3344756d516932333697295b808e9b278cbcea2897b",
