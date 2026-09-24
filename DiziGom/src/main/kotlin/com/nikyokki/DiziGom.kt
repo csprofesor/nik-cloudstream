@@ -34,15 +34,9 @@ class DiziGom : MainAPI() {
     override val hasDownloadSupport = true
     override val supportedTypes = setOf(TvType.TvSeries)
 
-    private val genreRoutes = linkedMapOf(
-        "Aksiyon" to "aksiyon", "Komedi" to "komedi", "Dram" to "dram", "Korku" to "korku",
-        "Bilim Kurgu" to "bilim kurgu", "Romantik" to "romantik", "Fantastik" to "fantastik",
-        "Macera" to "macera", "Gerilim" to "gerilim", "Polisiye" to "polisiye"
-    )
-
     override val mainPage = mainPageOf(
-        "$mainUrl/tum-bolumler/" to "Son Bölümler",
-        *genreRoutes.map { (genre, query) -> "search:$query" to genre }.toTypedArray()
+        mainUrl to "Ana Sayfa",
+        "$mainUrl/tum-bolumler/" to "Son Bölümler"
     )
 
     private fun cleanUrl(value: String?): String? = value
@@ -138,12 +132,6 @@ class DiziGom : MainAPI() {
     }
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        if (request.data.startsWith("search:")) {
-            val query = request.data.removePrefix("search:")
-            val results = search(query)
-            return newHomePageResponse(request.name, results, hasNext = false)
-        }
-
         val pageUrl = if (page <= 1) request.data else request.data.trimEnd('/') + "/page/$page/"
         val document = runCatching { app.get(pageUrl, referer = "$mainUrl/").document }.getOrNull()
             ?: return newHomePageResponse(request.name, emptyList(), hasNext = false)
