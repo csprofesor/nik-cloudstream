@@ -4,10 +4,6 @@ package com.keyiflerolsun
 
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
-import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.module.kotlin.KotlinModule
-import com.fasterxml.jackson.module.kotlin.readValue
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.HomePageResponse
 import com.lagradost.cloudstream3.LoadResponse
@@ -89,8 +85,6 @@ class HDFilmCehennemi : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-        objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         val url = request.data.replace("sayfano", page.toString())
         val headers = mapOf(
             "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:137.0) Gecko/20100101 Firefox/137.0",
@@ -100,8 +94,9 @@ class HDFilmCehennemi : MainAPI() {
         val doc = app.get(url, headers = headers, referer = mainUrl, interceptor = interceptor)
         val home: List<SearchResponse>?
         if (!doc.toString().contains("Sayfa Bulunamadı")) {
-            val aa: HDFC = objectMapper.readValue(doc.toString())
-            val document = Jsoup.parse(aa.html)
+            val aa = AppUtils.tryParseJson<HDFC>(doc.toString())
+            val htmlContent = aa?.html.takeIf { !it.isNullOrEmpty() } ?: doc.toString()
+            val document = Jsoup.parse(htmlContent)
 
             home = document.select("a").mapNotNull { it.toSearchResult() }
             return newHomePageResponse(request.name, home)
@@ -370,8 +365,10 @@ override suspend fun loadLinks(
                 referer = data
             ).text
             Log.d("HDCH", "Found videoID: $videoID")
-            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-            Log.d("HDCH", "$iframe » $iframe")
+            val hdfc = AppUtils.tryParseJson<HDFC>(apiGet)
+            val iframeHtml = hdfc?.html.takeIf { !it.isNullOrEmpty() } ?: apiGet
+            val iframeDoc = Jsoup.parse(iframeHtml)
+            var iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src") ?: iframeDoc.selectFirst("iframe")?.attr("src")) ?: return@forEach
             if (iframe.contains("rapidrame")) {
                 iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
             } else if (iframe.contains("mobi")) {
@@ -395,13 +392,21 @@ override suspend fun loadLinks(
         @JsonProperty("results") val results: List<String> = arrayListOf()
     )
     data class HDFC(
-        @JsonProperty("html") val html: String,
-        @JsonProperty("meta") val meta: Meta
+        @JsonProperty("html") private val rootHtml: String? = null,
+        @JsonProperty("data") private val data: HDFCData? = null,
+        @JsonProperty("meta") val meta: Meta? = null
+    ) {
+        val html: String
+            get() = rootHtml ?: data?.html ?: ""
+    }
+
+    data class HDFCData(
+        @JsonProperty("html") val html: String? = null
     )
 
     data class Meta(
-        @JsonProperty("title") val title: String,
-        @JsonProperty("canonical") val canonical: String,
-        @JsonProperty("keywords") val keywords: Boolean
+        @JsonProperty("title") val title: String? = null,
+        @JsonProperty("canonical") val canonical: String? = null,
+        @JsonProperty("keywords") val keywords: Boolean? = null
     )
 }
