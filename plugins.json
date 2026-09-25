@@ -468,7 +468,7 @@
     "fileHash": "sha256-8f2cff5f9fc87f38d415b65c30c7ad3b7c9a5d26f03d8e73b072ff520b499253"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi.cs3?v=dfe7f4034af038623ddd1409b72c38036e9e74683e8f307c470c339a121a6b1d",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi.cs3?v=f977d6fbfb59fb043b23fc5ed66125ee4fb8d4b08af51812ed23c83d51549f19",
     "status": 1,
     "version": 48,
     "name": "HDFilmCehennemi",
@@ -477,7 +477,7 @@
       "csprofesor"
     ],
     "description": "Türkiye'nin en hızlı hd film izleme sitesi",
-    "fileSize": 31748,
+    "fileSize": 31716,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -486,7 +486,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmcehennemi.com&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-dfe7f4034af038623ddd1409b72c38036e9e74683e8f307c470c339a121a6b1d"
+    "fileHash": "sha256-f977d6fbfb59fb043b23fc5ed66125ee4fb8d4b08af51812ed23c83d51549f19"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3?v=018c86425d00c775b066b4d7ef605f13e811f15d6b7a0cba0174b4a3a4656265",
