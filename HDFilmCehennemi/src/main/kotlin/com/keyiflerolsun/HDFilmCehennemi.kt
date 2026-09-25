@@ -370,8 +370,11 @@ override suspend fun loadLinks(
                 referer = data
             ).text
             Log.d("HDCH", "Found videoID: $videoID")
-            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-            Log.d("HDCH", "$iframe » $iframe")
+            val hdfc = AppUtils.tryParseJson<HDFC>(apiGet)
+            val iframeHtml = hdfc?.html.takeIf { !it.isNullOrEmpty() } ?: apiGet
+            val iframeDoc = Jsoup.parse(iframeHtml)
+            var iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src") ?: iframeDoc.selectFirst("iframe")?.attr("src")) ?: return@forEach
+
             if (iframe.contains("rapidrame")) {
                 iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
             } else if (iframe.contains("mobi")) {
