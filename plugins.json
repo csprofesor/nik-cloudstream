@@ -489,7 +489,7 @@
     "fileHash": "sha256-d3edf0a3cce476d7a5b850950c0fe467102cfacc890da86c5fc39eaecd470c86"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3?v=9d40401d743f0104f44cd3344756d516932333697295b808e9b278cbcea2897b",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmCehennemi2.cs3?v=dbfae2564abab65e134c72e708687211fa22a71a2556d6ae1410902952410b4c",
     "status": 1,
     "version": 8,
     "name": "HDFilmCehennemi2",
@@ -498,7 +498,7 @@
       "csprofesor"
     ],
     "description": "Full hd film izleme keyfini hdfilmcehennemi2 ile yaşayın. Türkiyenin en güncel yüksek hd kalitede film izleme sitesi.",
-    "fileSize": 27803,
+    "fileSize": 31510,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -506,7 +506,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=www.hdfilmcehennemi2.nl&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-9d40401d743f0104f44cd3344756d516932333697295b808e9b278cbcea2897b"
+    "fileHash": "sha256-dbfae2564abab65e134c72e708687211fa22a71a2556d6ae1410902952410b4c"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmIzle.cs3?v=48cf5302a6ae123b8ca9a7e6b10a571df13ca656e36d3c607688d971b09d1c2f",
