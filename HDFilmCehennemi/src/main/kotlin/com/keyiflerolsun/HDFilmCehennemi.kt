@@ -300,7 +300,7 @@ class HDFilmCehennemi : MainAPI() {
                 val url = decoded.substringAfter("https", "")
                 if (url.isNotEmpty()) return "https$url"
             } catch (e: Exception) {
-                Log.e("HDCH", "Inline decoder failed: \${e.message}")
+                Log.e("HDCH", "Inline decoder failed: ${e.message}")
             }
         }
         return null
@@ -312,23 +312,23 @@ class HDFilmCehennemi : MainAPI() {
         subtitleCallback: (SubtitleFile) -> Unit,
         callback: (ExtractorLink) -> Unit
     ) {
-        val response = app.get(url, referer = "\${mainUrl}/", interceptor = interceptor)
+        val response = app.get(url, referer = "${mainUrl}/", interceptor = interceptor)
         val html = response.text
-        Log.d("HDCH", "Embed HTML length: \${html.length}")
+        Log.d("HDCH", "Embed HTML length: ${html.length}")
 
         val decryptedUrl = decryptInlineVideoUrl(html)
         if (decryptedUrl == null) {
             Log.e("HDCH", "Video URL could not be decoded from inline dc_ decoder")
             return
         }
-        Log.d("HDCH", "Decoded video URL: \$decryptedUrl")
+        Log.d("HDCH", "Decoded video URL: $decryptedUrl")
 
         val document = Jsoup.parse(html)
         val tracksScript = document.select("script").firstOrNull { it.data().contains("tracks:") }?.data()
         if (tracksScript != null) {
             val subData = tracksScript.substringAfter("tracks: [", "").substringBefore("]", "")
             if (subData.isNotBlank()) {
-                AppUtils.tryParseJson<List<SubSource>>("[\${subData}]")
+                AppUtils.tryParseJson<List<SubSource>>("[${subData}]")
                     ?.filter { it.kind == "captions" }
                     ?.forEach {
                         val subtitleUrl = fixUrlNull(it.file ?: "") ?: return@forEach
@@ -344,7 +344,7 @@ class HDFilmCehennemi : MainAPI() {
             type = ExtractorLinkType.M3U8
         ) {
             headers = mapOf(
-                "Referer" to "\${mainUrl}/",
+                "Referer" to "${mainUrl}/",
                 "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             )
             quality = Qualities.Unknown.value
@@ -368,7 +368,7 @@ override suspend fun loadLinks(
                 if (videoID.isBlank()) return@forEach
 
                 val apiGet = app.get(
-                    "\${mainUrl}/video/\${videoID}/",
+                    "${mainUrl}/video/${videoID}/",
                     interceptor = interceptor,
                     headers = mapOf(
                         "Content-Type" to "application/json",
@@ -381,17 +381,17 @@ override suspend fun loadLinks(
                     .find(apiGet)?.groupValues?.getOrNull(1)?.replace("\\/", "/")
 
                 if (iframeSrc.isNullOrBlank()) {
-                    Log.e("HDCH", "Iframe not found for videoID: \$videoID")
+                    Log.e("HDCH", "Iframe not found for videoID: $videoID")
                     return@forEach
                 }
 
                 var iframe = fixUrlNull(iframeSrc) ?: return@forEach
                 if (iframe.contains("rapidrame")) {
                     val rapidrameId = iframe.substringAfter("?rapidrame_id=", "")
-                    if (rapidrameId.isNotBlank()) iframe = "\${mainUrl}/rplayer/\$rapidrameId"
+                    if (rapidrameId.isNotBlank()) iframe = "${mainUrl}/rplayer/$rapidrameId"
                 }
 
-                Log.d("HDCH", "\$source » \$videoID » \$iframe")
+                Log.d("HDCH", "$source » $videoID » $iframe")
                 invokeLocalSource(source, iframe, subtitleCallback, callback)
             }
         }
