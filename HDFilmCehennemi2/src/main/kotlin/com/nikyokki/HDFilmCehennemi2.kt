@@ -67,7 +67,7 @@ class HDFilmCehennemi2 : MainAPI() {
     )
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
-        val document = app.get("${request.data}page/${page}").document
+        val document = app.get("${request.data}?page=${page}").document
         val home = document.select("a[class*=group/poster]").mapNotNull { it.toMainPageResult() }
         return newHomePageResponse(request.name, home)
     }
@@ -250,10 +250,11 @@ class HDFilmCehennemi2 : MainAPI() {
         callback: (ExtractorLink) -> Unit
     ): Boolean {
         Log.d("HDC", "data » $data")
-        val document = app.get(data).document
+        val responseText = app.get(data).text
+        val document = Jsoup.parse(responseText)
         
         val dataRegex = Regex("""videoPlayerData\(JSON\.parse\('([^']+)'\)""")
-        val match = dataRegex.find(document.outerHtml())
+        val match = dataRegex.find(responseText)
         
         if (match != null) {
             val jsonString = match.groupValues[1].replace("\\u0022", "\"").replace("\\/", "/")
@@ -314,16 +315,23 @@ class HDFilmCehennemi2 : MainAPI() {
     ) {
         Log.d("HDC", "vidloadExtract » $iframe")
         if (iframe.contains("vidload")) {
-            val baseUrl = Regex("""(https?://[^/]+)""").find(iframe)?.groupValues?.get(1) ?: "https://vidload.top"
-            val doc = app.get(
+            val res = app.get(
                 iframe,
                 headers = mapOf(
-                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
-                ), referer = mainUrl
-            ).document
-            val sourcePath = doc.selectFirst("source")?.attr("src")
+                    "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                ), referer = mainUrl,
+                allowRedirects = true
+            )
+            val docHtml = res.text
+            val finalUrl = res.url
+            val baseUrl = Regex("""(https?://[^/]+)""").find(finalUrl)?.groupValues?.get(1) ?: "https://vidload.top"
+
+            val sourceRegex = Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""")
+            val sourceMatch = sourceRegex.find(docHtml)
+            val sourcePath = sourceMatch?.groupValues?.get(1) ?: Jsoup.parse(docHtml).selectFirst("source")?.attr("src")
+
             if (sourcePath != null) {
-                val source = baseUrl + sourcePath
+                val source = if (sourcePath.startsWith("http")) sourcePath else baseUrl + sourcePath
                 callback.invoke(
                     newExtractorLink(
                         source = "Vidload",
@@ -337,21 +345,32 @@ class HDFilmCehennemi2 : MainAPI() {
                 )
             }
             
-            val script =
-                doc.select("script").find { it.data().contains("player.addRemoteTextTrack") }
-                    ?.data() ?: ""
-            val regex =
-                Regex("""src:\s*'([^']*)'.*?label:\s*'([^']*)'""", RegexOption.DOT_MATCHES_ALL)
-            val matches = regex.findAll(script)
-            for (match in matches) {
-                val src = match.groupValues[1]
-                val label = match.groupValues[2]
-                subtitleCallback.invoke(
-                    SubtitleFile(
-                        label,
-                        baseUrl + src
+            val subtitlesRegex = Regex("""subtitleTracks\s*=\s*(\[.*?\])""")
+            val subtitlesMatch = subtitlesRegex.find(docHtml)
+            if (subtitlesMatch != null) {
+                val jsonStr = subtitlesMatch.groupValues[1]
+                val tracks = AppUtils.tryParseJson<List<Map<String, Any>>>(jsonStr)
+                tracks?.forEach { track ->
+                    val file = track["file"] as? String ?: return@forEach
+                    val label = track["label"] as? String ?: "Unknown"
+                    val subUrl = if (file.startsWith("http")) file else baseUrl + file
+                    subtitleCallback.invoke(
+                        SubtitleFile(
+                            label,
+                            subUrl
+                        )
                     )
-                )
+                }
+            } else {
+                // Fallback for older script logic
+                val script = Jsoup.parse(docHtml).select("script").find { it.data().contains("player.addRemoteTextTrack") }?.data() ?: ""
+                val regex = Regex("""src:\s*'([^']*)'.*?label:\s*'([^']*)'""", RegexOption.DOT_MATCHES_ALL)
+                regex.findAll(script).forEach { match ->
+                    val src = match.groupValues[1]
+                    val label = match.groupValues[2]
+                    val subUrl = if (src.startsWith("http")) src else baseUrl + src
+                    subtitleCallback.invoke(SubtitleFile(label, subUrl))
+                }
             }
         }
     }
