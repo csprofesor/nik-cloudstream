@@ -1,7 +1,9 @@
 package com.nikyokki
 
+import android.util.Base64
 import android.util.Log
-import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.annotation.JsonProperty
+
 import com.lagradost.cloudstream3.Actor
 import com.lagradost.cloudstream3.Episode
 import com.lagradost.cloudstream3.HomePageResponse
@@ -23,11 +25,13 @@ import com.lagradost.cloudstream3.newMovieLoadResponse
 import com.lagradost.cloudstream3.newMovieSearchResponse
 import com.lagradost.cloudstream3.newTvSeriesLoadResponse
 import com.lagradost.cloudstream3.newTvSeriesSearchResponse
+import com.lagradost.cloudstream3.utils.AppUtils
 import com.lagradost.cloudstream3.utils.ExtractorLink
 import com.lagradost.cloudstream3.utils.ExtractorLinkType
 import com.lagradost.cloudstream3.utils.Qualities
 import com.lagradost.cloudstream3.utils.loadExtractor
 import com.lagradost.cloudstream3.utils.newExtractorLink
+import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 
 class HDFilmCehennemi2 : MainAPI() {
@@ -64,64 +68,60 @@ class HDFilmCehennemi2 : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get("${request.data}page/${page}").document
-        if (request.name == "Yeni Eklenenler") {
-            val home =
-                document.select("div.tab-content div.poster").mapNotNull { it.toMainPageResult() }
-            return newHomePageResponse(request.name, home)
-        }
-        val home = document.select("div.poster").mapNotNull { it.toMainPageResult() }
-
+        val home = document.select("a[class*=group/poster]").mapNotNull { it.toMainPageResult() }
         return newHomePageResponse(request.name, home)
     }
 
-    private fun Element.toMainPageResult(): SearchResponse {
-        val title = this.selectFirst("div.poster-title h2")?.text()?.replace(" izle", "") ?: ""
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: ""
-        val posterUrl = fixUrlNull(this.selectFirst("div.poster-image img")?.attr("data-src"))
-        val score = this.selectFirst("span.bg-warning")?.text()?.trim()
+    private fun Element.toMainPageResult(): SearchResponse? {
+        val img = this.selectFirst("img") ?: return null
+        val title = img.attr("alt").replace(" izle", "").trim()
+        val href = fixUrlNull(this.attr("href")) ?: return null
+        val posterUrl = fixUrlNull(img.attr("src") ?: img.attr("data-src"))
+        val scoreText = this.select("span").find { it.text().matches(Regex("^[0-9.]+$")) }?.text()
 
         if (href.contains("/dizi/")) {
             return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = posterUrl
-                this.score = Score.from10(score)
+                this.score = Score.from10(scoreText)
             }
         } else {
             return newMovieSearchResponse(title, href, TvType.Movie) {
                 this.posterUrl = posterUrl
-                this.score = Score.from10(score)
+                this.score = Score.from10(scoreText)
             }
         }
     }
 
-    private fun toSearchRes(movie: Movie): SearchResponse {
+    private fun toSearchRes(movie: SearchResult): SearchResponse {
         val title = movie.title ?: ""
-        val posterUrl = fixUrlNull("$mainUrl/uploads/poster/${movie.poster}")
-        if (movie.type == "1") {
-            val href = fixUrlNull("$mainUrl/${movie.slug}") ?: ""
-            return newMovieSearchResponse(title, href, TvType.Movie) { this.posterUrl = posterUrl }
-        } else {
-            val href = fixUrlNull("$mainUrl/${movie.slugPrefix}/${movie.slug}") ?: ""
-            return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
+        val posterUrl = movie.posterUrl
+        val href = fixUrlNull("$mainUrl/${movie.slug}") ?: ""
+        val score = Score.from10(movie.imdbRating?.toString())
+        
+        return if (movie.contentableType == "App\\Models\\TVSeries" || href.contains("/dizi/")) {
+            newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = posterUrl
+                this.score = score
+            }
+        } else {
+            newMovieSearchResponse(title, href, TvType.Movie) { 
+                this.posterUrl = posterUrl
+                this.score = score
             }
         }
     }
 
     override suspend fun search(query: String): List<SearchResponse> {
-        val response = app.post(
-            "${mainUrl}/search",
-            headers = mapOf("X-Requested-With" to "XMLHttpRequest"),
-            referer = "${mainUrl}/",
-            data = mapOf("query" to query)
-        ).document.body().text()
+        val url = "$mainUrl/api/search?q=$query"
+        val response = app.get(
+            url,
+            headers = mapOf("X-Requested-With" to "XMLHttpRequest", "Accept" to "application/json"),
+            referer = "$mainUrl/"
+        ).text
 
-        val result = mutableListOf<SearchResponse>()
-
-        val json = ObjectMapper().readValue(response, HDSearchResponse::class.java)
-        json.result.forEach {
-            result.add(toSearchRes(it))
-        }
-        return result
+        val json = AppUtils.tryParseJson<ApiSearchResponse>(response)
+        
+        return json?.data?.map { toSearchRes(it) } ?: emptyList()
     }
 
     private fun Element.toSearchResult(): SearchResponse? {
@@ -137,38 +137,50 @@ class HDFilmCehennemi2 : MainAPI() {
     override suspend fun load(url: String): LoadResponse {
         val document = app.get(url).document
 
-        val orgTitle =
-            document.selectFirst("div.card-header h1")?.text()?.substringBefore(" izle", "")?.trim()
-                ?: ""
-        val altTitle = document.selectFirst("div.card-header small")?.text()?.trim() ?: ""
-        val title =
-            if (altTitle.isNotEmpty() && orgTitle != altTitle) "$orgTitle - $altTitle" else orgTitle
-        val poster = fixUrlNull(document.selectFirst("picture.poster-auto img")?.attr("data-src"))
-        val description = document.selectFirst("article.text-white p")?.text()?.trim()
-        var year = document.selectFirst("div.release a")?.text()?.trim()?.toIntOrNull()
-        val tags = document.select("div#listelements a").map { it.text() }
-        val rating = document.selectFirst("div.rate")?.text()
+        val title = document.selectFirst("h1")?.text()?.substringBefore(" izle", "")?.trim() ?: ""
+        
+        // Extract metadata from JSON-LD schema
+        val schemaScript = document.select("script[type=application/ld+json]").firstOrNull()?.data()
+        var poster: String? = null
+        var description: String? = null
+        var year: Int? = null
+        val tags = mutableListOf<String>()
+        var rating: String? = null
         val actors = mutableListOf<Actor>()
-        val trailer = document.selectFirst("div.nav-link")?.attr("data-trailer")
-        val listItems = document.select("tbody tr").select("div")
-        var duration = 0
-        for (item in listItems) {
-            if (item.selectFirst("small")?.text()?.contains("Yıl") == true) {
-                year = item.selectFirst("a")?.text()?.toIntOrNull()
-            }
-            if (item.selectFirst("small")?.text()?.contains("Süre") == true) {
-                duration =
-                    item.selectFirst("strong")?.text()?.replace(" dakika", "")?.toIntOrNull()!!
+        
+        if (schemaScript != null) {
+            val schema = AppUtils.tryParseJson<Map<String, Any>>(schemaScript)
+            if (schema != null) {
+                poster = schema["image"] as? String
+                description = schema["description"] as? String
+                val dateCreated = schema["dateCreated"] as? String
+                year = dateCreated?.substringBefore("-")?.toIntOrNull()
+                
+                (schema["genre"] as? List<String>)?.let { tags.addAll(it) }
+                
+                val aggregateRating = schema["aggregateRating"] as? Map<String, Any>
+                rating = aggregateRating?.get("ratingValue")?.toString()
+                
+                val actorList = schema["actor"] as? List<Map<String, Any>>
+                actorList?.forEach {
+                    val name = it["name"] as? String
+                    if (name != null) {
+                        actors.add(Actor(name, null))
+                    }
+                }
             }
         }
-        document.select(".story-item").forEach {
-            val img = fixUrlNull(it.selectFirst("img")?.attr("data-src"))
-            val name = it.selectFirst("div.story-item-title")?.text() ?: ""
-            actors.add(Actor(name = name, image = img))
+        
+        if (poster == null) {
+            poster = fixUrlNull(document.selectFirst("picture img")?.attr("data-src"))
         }
-        val recommendations =
-            document.select("div.glide__slide.poster-container")
-                .mapNotNull { it.toRecommendationResult() }
+        
+        val duration = 0
+        val trailer = document.selectFirst("button[data-modal-target=trailerModal]")?.attr("data-src")?.let {
+            if (it.startsWith("//")) "https:$it" else it
+        }
+
+        val recommendations = document.select("div.glide__slide a, a[class*=group/poster]").mapNotNull { it.toRecommendationResult() }
 
         if (!url.contains("/dizi/")) {
             return newMovieLoadResponse(title, url, TvType.Movie, url) {
@@ -180,20 +192,24 @@ class HDFilmCehennemi2 : MainAPI() {
                 this.duration = duration
                 this.recommendations = recommendations
                 addActors(actors)
-                addTrailer("https://www.youtube.com/embed/$trailer")
+                addTrailer(trailer)
             }
         } else {
             val episodes = mutableListOf<Episode>()
-            document.select("div.seasonsTabs-tabContent div").forEach { szn ->
-                val epSzn = szn.attr("id").substringAfter("seasons-").toIntOrNull()
-                szn.select("div.card-list-item").forEach {
-                    val epHref = it.selectFirst("a")?.attr("href") ?: ""
-                    val epName = it.selectFirst("h3")?.text()
-                    val epnum =
-                        epName?.substringAfter("Sezon ")?.substringBefore(". Bölüm")?.toIntOrNull()
+            document.select("a[href*=/sezon-][href*=/bolum-]").forEach { ep ->
+                val epHref = fixUrlNull(ep.attr("href")) ?: return@forEach
+                val text = ep.text().trim()
+                if (text.isBlank()) return@forEach
+                
+                val seasonMatch = Regex("/sezon-([0-9]+)/").find(epHref)
+                val episodeMatch = Regex("/bolum-([0-9]+)").find(epHref)
+                val epSzn = seasonMatch?.groupValues?.get(1)?.toIntOrNull()
+                val epnum = episodeMatch?.groupValues?.get(1)?.toIntOrNull()
+                
+                if (episodes.none { it.data == epHref }) {
                     episodes.add(
                         newEpisode(epHref) {
-                            this.name = epName
+                            this.name = text
                             this.season = epSzn
                             this.episode = epnum
                         }
@@ -213,12 +229,13 @@ class HDFilmCehennemi2 : MainAPI() {
         }
     }
 
-    private fun Element.toRecommendationResult(): SearchResponse {
-        val title = this.selectFirst("h2")?.text() ?: ""
-        val href = fixUrlNull(this.selectFirst("a")?.attr("href")) ?: ""
-        val posterUrl = fixUrlNull(this.selectFirst("picture img")?.attr("data-src"))
+    private fun Element.toRecommendationResult(): SearchResponse? {
+        val img = this.selectFirst("img") ?: return null
+        val title = img.attr("alt").replace(" izle", "").trim().ifEmpty { this.selectFirst("h2")?.text() ?: "" }
+        val href = fixUrlNull(this.attr("href")) ?: return null
+        val posterUrl = fixUrlNull(img.attr("src") ?: img.attr("data-src"))
         if (href.contains("/dizi/")) {
-            return newTvSeriesSearchResponse(title, href, TvType.Movie) {
+            return newTvSeriesSearchResponse(title, href, TvType.TvSeries) {
                 this.posterUrl = posterUrl
             }
         } else {
@@ -234,62 +251,60 @@ class HDFilmCehennemi2 : MainAPI() {
     ): Boolean {
         Log.d("HDC", "data » $data")
         val document = app.get(data).document
-        if (document.select("div.tab-content div").size > 1) {
-            Log.d("HDC", "Alternatif 1den fazla")
-            document.select("div.tab-content div").forEach {
-                var name = this.name
-                if (it.attr("id") == "videostr") {
-                    name = "Türkçe Dublaj"
-                } else if (it.attr("id") == "videosen") {
-                    name = "Türkçe Altyazılı"
+        
+        val dataRegex = Regex("""videoPlayerData\(JSON\.parse\('([^']+)'\)""")
+        val match = dataRegex.find(document.outerHtml())
+        
+        if (match != null) {
+            val jsonString = match.groupValues[1].replace("\\u0022", "\"").replace("\\/", "/")
+            val videoMap = AppUtils.tryParseJson<Map<String, List<VideoData>>>(jsonString)
+            
+            videoMap?.forEach { (lang, videos) ->
+                val langName = when (lang) {
+                    "tr" -> "Türkçe Dublaj"
+                    "en", "orjinal" -> "Türkçe Altyazılı"
+                    "dual" -> "Dual"
+                    else -> lang
                 }
-                it.select("a").forEach { el ->
-                    val url = el.attr("href")
-                    if (url == data) {
-                        val iframe =
-                            fixUrlNull(document.selectFirst("iframe")?.attr("data-src")) ?: ""
-                        Log.d("HDC", "iframe » $iframe")
-                        if (iframe.contains("vidload")) {
-                            vidloadExtract(iframe, name, callback, subtitleCallback)
-                        } else {
-                            loadExtractor(iframe, url, subtitleCallback, callback)
-                        }
+                videos.forEach { video ->
+                    val link = video.link ?: return@forEach
+                    val templateBase64 = video.template ?: return@forEach
+                    
+                    val templateDecoded = String(Base64.decode(templateBase64, Base64.DEFAULT), Charsets.UTF_8)
+                    val iframeDoc = Jsoup.parse(templateDecoded)
+                    val iframeSrc = iframeDoc.select("iframe").attr("data-src").ifEmpty { iframeDoc.select("iframe").attr("src") }
+                    val finalUrl = iframeSrc.replace("{url}", link).let { if (it.startsWith("//")) "https:$it" else it }
+                    
+                    val name = "${video.serviceName} $langName"
+                    Log.d("HDC", "Extracted video: $name -> $finalUrl")
+                    
+                    if (finalUrl.contains("vidload")) {
+                        vidloadExtract(finalUrl, name, callback, subtitleCallback)
                     } else {
-                        val doc = app.get(url).document
-                        val iframe = fixUrlNull(doc.selectFirst("iframe")?.attr("data-src")) ?: ""
-                        Log.d("HDC", "iframe » $iframe")
-                        if (iframe.contains("vidload")) {
-                            vidloadExtract(iframe, name, callback, subtitleCallback)
-                        } else {
-                            loadExtractor(iframe, url, subtitleCallback, callback)
-                        }
+                        loadExtractor(finalUrl, data, subtitleCallback, callback)
                     }
                 }
             }
         } else {
+            // Fallback for older layouts if any
             val iframe = fixUrlNull(document.selectFirst("iframe")?.attr("data-src")) ?: ""
-            val name =
-                document.selectFirst("div.card-body")?.selectFirst("li.nav-item a")?.text() ?: ""
-            if (iframe.contains("vidload")) {
-                vidloadExtract(iframe, name, callback, subtitleCallback)
-            } else {
-                loadExtractor(iframe, data, subtitleCallback, callback)
-            }
-            document.select("div#videosdual a").forEachIndexed { index, element ->
-                if (index == 0) return@forEachIndexed
-                val url = element.attr("href")
-                val doc = app.get(url).document
-                val ifAlt = fixUrlNull(doc.selectFirst("iframe")?.attr("data-src")) ?: ""
-                if (ifAlt.contains("vidload")) {
-                    vidloadExtract(ifAlt, name, callback, subtitleCallback)
+            if (iframe.isNotEmpty()) {
+                if (iframe.contains("vidload")) {
+                    vidloadExtract(iframe, "Video", callback, subtitleCallback)
                 } else {
-                    loadExtractor(ifAlt, url, subtitleCallback, callback)
+                    loadExtractor(iframe, data, subtitleCallback, callback)
                 }
             }
-
         }
+        
         return true
     }
+
+    data class VideoData(
+        @JsonProperty("link") val link: String? = null,
+        @JsonProperty("service_name") val serviceName: String? = null,
+        @JsonProperty("template") val template: String? = null
+    )
 
     suspend fun vidloadExtract(
         iframe: String,
@@ -299,26 +314,29 @@ class HDFilmCehennemi2 : MainAPI() {
     ) {
         Log.d("HDC", "vidloadExtract » $iframe")
         if (iframe.contains("vidload")) {
-            //val url = iframe.replace("/iframe/", "/ajax/")
-            Log.d("HDC", "vidloadExtract » $iframe")
+            val baseUrl = Regex("""(https?://[^/]+)""").find(iframe)?.groupValues?.get(1) ?: "https://vidload.top"
             val doc = app.get(
                 iframe,
                 headers = mapOf(
                     "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36",
                 ), referer = mainUrl
             ).document
-            val source = "https://vidload.site" + doc.selectFirst("source")?.attr("src")
-            callback.invoke(
-                newExtractorLink(
-                    source = "Vidload",
-                    name = "Vidload $name",
-                    url = source,
-                    ExtractorLinkType.M3U8
-                ) {
-                    this.referer = "https://vidload.site/"
-                    this.quality = Qualities.Unknown.value
-                }
-            )
+            val sourcePath = doc.selectFirst("source")?.attr("src")
+            if (sourcePath != null) {
+                val source = baseUrl + sourcePath
+                callback.invoke(
+                    newExtractorLink(
+                        source = "Vidload",
+                        name = "Vidload $name",
+                        url = source,
+                        ExtractorLinkType.M3U8
+                    ) {
+                        this.referer = "$baseUrl/"
+                        this.quality = Qualities.Unknown.value
+                    }
+                )
+            }
+            
             val script =
                 doc.select("script").find { it.data().contains("player.addRemoteTextTrack") }
                     ?.data() ?: ""
@@ -331,11 +349,25 @@ class HDFilmCehennemi2 : MainAPI() {
                 subtitleCallback.invoke(
                     SubtitleFile(
                         label,
-                        "https://vidload.site$src"
+                        baseUrl + src
                     )
                 )
             }
         }
     }
+
+    data class ApiSearchResponse(
+        @JsonProperty("data") val data: List<SearchResult>? = null
+    )
+
+    data class SearchResult(
+        @JsonProperty("id") val id: String? = null,
+        @JsonProperty("title") val title: String? = null,
+        @JsonProperty("slug") val slug: String? = null,
+        @JsonProperty("contentableType") val contentableType: String? = null,
+        @JsonProperty("posterUrl") val posterUrl: String? = null,
+        @JsonProperty("imdbRating") val imdbRating: Double? = null
+    )
 }
+
 
