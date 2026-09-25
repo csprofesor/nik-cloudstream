@@ -355,6 +355,9 @@ override suspend fun loadLinks(
     Log.d("HDCH", "data » $data")
     val document = app.get(data, interceptor = interceptor).document
 
+    val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
     document.select("div.alternative-links").map { element ->
         element to element.attr("data-lang").uppercase()
     }.forEach { (element, langCode) ->
@@ -370,12 +373,21 @@ override suspend fun loadLinks(
                 referer = data
             ).text
             Log.d("HDCH", "Found videoID: $videoID")
-            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-            Log.d("HDCH", "$iframe » $iframe")
+
+            val hdfc = try {
+                objectMapper.readValue<HDFCApiResponse>(apiGet)
+            } catch (e: Exception) {
+                Log.e("HDCH", "Error parsing HDFC JSON: ${e.message}")
+                null
+            }
+
+            val iframeHtml = hdfc?.data?.html ?: apiGet
+            val iframeDoc = Jsoup.parse(iframeHtml)
+            var iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src") ?: iframeDoc.selectFirst("iframe")?.attr("src")) ?: return@forEach
+
             if (iframe.contains("rapidrame")) {
                 iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
             } else if (iframe.contains("mobi")) {
-                val iframeDoc = Jsoup.parse(apiGet)
                 iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
             }
             Log.d("HDCH", "$source » $videoID » $iframe")
@@ -395,13 +407,22 @@ override suspend fun loadLinks(
         @JsonProperty("results") val results: List<String> = arrayListOf()
     )
     data class HDFC(
-        @JsonProperty("html") val html: String,
-        @JsonProperty("meta") val meta: Meta
+        @JsonProperty("html") val html: String = "",
+        @JsonProperty("meta") val meta: Meta? = null
+    )
+
+    data class HDFCApiResponse(
+        @JsonProperty("success") val success: Boolean? = null,
+        @JsonProperty("data") val data: HDFCData? = null
+    )
+
+    data class HDFCData(
+        @JsonProperty("html") val html: String? = null
     )
 
     data class Meta(
-        @JsonProperty("title") val title: String,
-        @JsonProperty("canonical") val canonical: String,
-        @JsonProperty("keywords") val keywords: Boolean
+        @JsonProperty("title") val title: String? = null,
+        @JsonProperty("canonical") val canonical: String? = null,
+        @JsonProperty("keywords") val keywords: Boolean? = null
     )
 }
