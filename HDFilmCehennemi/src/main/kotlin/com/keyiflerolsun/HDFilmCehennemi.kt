@@ -355,6 +355,9 @@ override suspend fun loadLinks(
     Log.d("HDCH", "data » $data")
     val document = app.get(data, interceptor = interceptor).document
 
+    val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
+    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+
     document.select("div.alternative-links").map { element ->
         element to element.attr("data-lang").uppercase()
     }.forEach { (element, langCode) ->
@@ -370,12 +373,21 @@ override suspend fun loadLinks(
                 referer = data
             ).text
             Log.d("HDCH", "Found videoID: $videoID")
-            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
-            Log.d("HDCH", "$iframe » $iframe")
+
+            val hdfc = try {
+                objectMapper.readValue<HDFC>(apiGet)
+            } catch (e: Exception) {
+                Log.e("HDCH", "Error parsing HDFC JSON: ${e.message}")
+                null
+            }
+
+            val iframeHtml = hdfc?.html ?: apiGet
+            val iframeDoc = Jsoup.parse(iframeHtml)
+            var iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src") ?: iframeDoc.selectFirst("iframe")?.attr("src")) ?: return@forEach
+
             if (iframe.contains("rapidrame")) {
                 iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
             } else if (iframe.contains("mobi")) {
-                val iframeDoc = Jsoup.parse(apiGet)
                 iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
             }
             Log.d("HDCH", "$source » $videoID » $iframe")
