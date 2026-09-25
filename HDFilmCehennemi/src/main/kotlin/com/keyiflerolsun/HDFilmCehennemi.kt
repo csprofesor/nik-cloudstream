@@ -375,8 +375,7 @@ override suspend fun loadLinks(
             if (iframe.contains("rapidrame")) {
                 iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
             } else if (iframe.contains("mobi")) {
-                val iframeDoc = Jsoup.parse(apiGet)
-                iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
+                iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src") ?: iframeDoc.selectFirst("iframe")?.attr("src")) ?: return@forEach
             }
             Log.d("HDCH", "$source » $videoID » $iframe")
             invokeLocalSource(source, iframe, subtitleCallback, callback)
