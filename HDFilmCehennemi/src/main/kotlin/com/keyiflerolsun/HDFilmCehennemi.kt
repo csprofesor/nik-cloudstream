@@ -314,12 +314,7 @@ class HDFilmCehennemi : MainAPI() {
         Log.d("HDCH", "script » $script")
         val unpackedScript = getAndUnpack(script)
         val decryptedUrl = decryptLocalUrl(unpackedScript) ?: return
-        val lastUrl = when {
-            decryptedUrl.startsWith("http://") -> decryptedUrl.replace("http://", "https://")
-            decryptedUrl.startsWith("https://") -> decryptedUrl
-            decryptedUrl.startsWith("//") -> "https:$decryptedUrl"
-            else -> fixUrlNull(decryptedUrl) ?: decryptedUrl
-        }
+        val lastUrl = decryptedUrl.substringAfter("https").let { "https$it" }
         val subData   = script.substringAfter("tracks: [").substringBefore("]")
         Log.d("HDCH", "subData » $subData")
         AppUtils.tryParseJson<List<SubSource>>("[${subData}]")?.filter { it.kind == "captions"}?.forEach {
