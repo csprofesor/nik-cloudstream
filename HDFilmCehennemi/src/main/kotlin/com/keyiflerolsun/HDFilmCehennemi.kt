@@ -60,9 +60,9 @@ class HDFilmCehennemi : MainAPI() {
         override fun intercept(chain: Interceptor.Chain): Response {
             val request  = chain.request()
             val response = chain.proceed(request)
-            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
+            val html     = response.peekBody(1024 * 1024).string()
 
-            if (doc.html().contains("Just a moment")) {
+            if (html.contains("Just a moment") || html.contains("DDoS protection") || html.contains("challenges.cloudflare.com") || html.contains("cf-chl")) {
                 return cloudflareKiller.intercept(chain)
             }
 
