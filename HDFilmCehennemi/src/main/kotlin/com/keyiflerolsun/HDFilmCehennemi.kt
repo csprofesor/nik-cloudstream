@@ -355,9 +355,6 @@ override suspend fun loadLinks(
     Log.d("HDCH", "data » $data")
     val document = app.get(data, interceptor = interceptor).document
 
-    val objectMapper = ObjectMapper().registerModule(KotlinModule.Builder().build())
-    objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-
     document.select("div.alternative-links").map { element ->
         element to element.attr("data-lang").uppercase()
     }.forEach { (element, langCode) ->
@@ -373,21 +370,12 @@ override suspend fun loadLinks(
                 referer = data
             ).text
             Log.d("HDCH", "Found videoID: $videoID")
-
-            val hdfc = try {
-                objectMapper.readValue<HDFC>(apiGet)
-            } catch (e: Exception) {
-                Log.e("HDCH", "Error parsing HDFC JSON: ${e.message}")
-                null
-            }
-
-            val iframeHtml = hdfc?.data?.html ?: apiGet
-            val iframeDoc = Jsoup.parse(iframeHtml)
-            var iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src") ?: iframeDoc.selectFirst("iframe")?.attr("src")) ?: return@forEach
-
+            var iframe = Regex("""data-src=\\"([^"]+)""").find(apiGet)?.groupValues?.get(1)!!.replace("\\", "")
+            Log.d("HDCH", "$iframe » $iframe")
             if (iframe.contains("rapidrame")) {
                 iframe = "${mainUrl}/rplayer/" + iframe.substringAfter("?rapidrame_id=")
             } else if (iframe.contains("mobi")) {
+                val iframeDoc = Jsoup.parse(apiGet)
                 iframe = fixUrlNull(iframeDoc.selectFirst("iframe")?.attr("data-src")) ?: return@forEach
             }
             Log.d("HDCH", "$source » $videoID » $iframe")
@@ -407,12 +395,13 @@ override suspend fun loadLinks(
         @JsonProperty("results") val results: List<String> = arrayListOf()
     )
     data class HDFC(
-        @JsonProperty("data") val data: HDFCData? = null
-    ) {
-        val html: String get() = data?.html ?: ""
-    }
+        @JsonProperty("html") val html: String,
+        @JsonProperty("meta") val meta: Meta
+    )
 
-    data class HDFCData(
-        @JsonProperty("html") val html: String? = null
+    data class Meta(
+        @JsonProperty("title") val title: String,
+        @JsonProperty("canonical") val canonical: String,
+        @JsonProperty("keywords") val keywords: Boolean
     )
 }
