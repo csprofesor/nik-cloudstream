@@ -2,6 +2,7 @@
 
 package com.keyiflerolsun
 
+import android.util.Base64
 import android.util.Log
 import com.fasterxml.jackson.annotation.JsonProperty
 import com.fasterxml.jackson.databind.DeserializationFeature
@@ -272,7 +273,11 @@ class HDFilmCehennemi : MainAPI() {
                         while (paddedResult.length % 4 != 0) {
                             paddedResult += "="
                         }
-                        result = String(android.util.Base64.decode(paddedResult, android.util.Base64.NO_WRAP), Charsets.ISO_8859_1)
+                        try {
+                            result = String(Base64.decode(paddedResult, Base64.DEFAULT), Charsets.ISO_8859_1)
+                        } catch (e: Exception) {
+                            Log.e("HDCH", "Failed to base64 decode: $paddedResult, error: ${e.message}")
+                        }
                     }
                     "rot" -> {
                         val rotShift = action.rotShift
