@@ -68,7 +68,11 @@ class DiziGom : MainAPI() {
             img?.attr("data-src"), img?.attr("data-lazy-src"), img?.attr("data-original"),
             img?.attr("data-image"), img?.attr("src"), backgroundUrl()
         )
-        return candidates
+        val descendantBackground = select("[style]").asSequence()
+            .mapNotNull { it.backgroundUrl() }
+            .firstOrNull()
+
+        return (candidates + sequenceOf(descendantBackground))
             .mapNotNull { it?.substringBefore(",")?.trim()?.substringBefore(" ") }
             .mapNotNull { cleanUrl(it) }
             .firstOrNull()
@@ -90,12 +94,15 @@ class DiziGom : MainAPI() {
             card.selectFirst("a[title]")?.attr("title"),
             card.selectFirst("img")?.attr("alt"),
             card.selectFirst("img")?.attr("title"),
-            card.attr("title")
+            card.attr("title"),
+            if (tagName() == "a") text() else null,
+            card.text()
         ).mapNotNull { it?.trim()?.takeIf { value -> value.isNotBlank() } }.firstOrNull() ?: return null
 
         val href = sequenceOf(
             card.selectFirst("a[href*='/diziler/']")?.attr("href"),
             card.selectFirst("a[href*='/dizi/']")?.attr("href"),
+            if (tagName() == "a") attr("href") else null,
             card.selectFirst("a")?.attr("href"),
             attr("href")
         ).mapNotNull { cleanUrl(it) }.firstOrNull() ?: return null
