@@ -26,7 +26,7 @@ import com.lagradost.cloudstream3.newMovieSearchResponse
 import org.jsoup.nodes.Element
 
 class HDFilmIzle : MainAPI() {
-    override var mainUrl = "https://www.hdfilmizle.vip"
+    override var mainUrl = "https://www.hdfilmizle.live"
     override var name = "HDFilmİzle"
     override val hasMainPage = true
     override var lang = "tr"
