@@ -387,7 +387,7 @@
     "fileHash": "sha256-3e4a185d2f152f73496ead0a4b83ea47fba3f4b213ceb9c2111ab590abbc4a65"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3?v=662e2d93d85edd1cd74b8ba08d869cda1935a362b12503042171b64a38f471e2",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmMakinesi.cs3?v=83c41328e86fbafb7d4701d9d5747ef52439447c45eebe0bfcc7e49964d18ea3",
     "status": 1,
     "version": 59,
     "name": "FilmMakinesi",
@@ -396,7 +396,7 @@
       "csprofesor"
     ],
     "description": "Film Makinesi, en yeni ve en güncel filmleri sitemizde full HD kalite farkı ile izleyebilirsiniz. HD film izle denildiğinde akla gelen en kaliteli film izleme sitesi.",
-    "fileSize": 45102,
+    "fileSize": 44037,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -404,7 +404,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=filmmakinesi.film&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-662e2d93d85edd1cd74b8ba08d869cda1935a362b12503042171b64a38f471e2"
+    "fileHash": "sha256-83c41328e86fbafb7d4701d9d5747ef52439447c45eebe0bfcc7e49964d18ea3"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/FilmModu.cs3?v=3150a6212f052ad843a8b9e67d65c82b35078f502bb9f5032b1af808d87b862e",
@@ -509,7 +509,7 @@
     "fileHash": "sha256-018c86425d00c775b066b4d7ef605f13e811f15d6b7a0cba0174b4a3a4656265"
   },
   {
-    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmIzle.cs3?v=48cf5302a6ae123b8ca9a7e6b10a571df13ca656e36d3c607688d971b09d1c2f",
+    "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmIzle.cs3?v=b4bea413ce4159879b281259f0c12cda829353293fc3e853789e93ffed05f8e6",
     "status": 1,
     "version": 7,
     "name": "HDFilmIzle",
@@ -518,7 +518,7 @@
       "csprofesor"
     ],
     "description": "HDFilmizle ile Full HD izle, 1080p kalitede Yerli ve Yabancı filmlerle Türkçe dublaj veya Altyazı olarak kesintisiz film izlemenin tadını çıkarın.",
-    "fileSize": 32256,
+    "fileSize": 32261,
     "repositoryUrl": "https://github.com/csprofesor/nik-cloudstream",
     "language": "tr",
     "tvTypes": [
@@ -527,7 +527,7 @@
     ],
     "iconUrl": "https://www.google.com/s2/favicons?domain=hdfilmizle.to&sz=%size%",
     "apiVersion": 1,
-    "fileHash": "sha256-48cf5302a6ae123b8ca9a7e6b10a571df13ca656e36d3c607688d971b09d1c2f"
+    "fileHash": "sha256-b4bea413ce4159879b281259f0c12cda829353293fc3e853789e93ffed05f8e6"
   },
   {
     "url": "https://raw.githubusercontent.com/csprofesor/nik-cloudstream/builds/HDFilmSitesi.cs3?v=1e42cb2ba862c2324ee5084f3f5399880d9a57e2d8db41d0f5089fa148c8467c",
